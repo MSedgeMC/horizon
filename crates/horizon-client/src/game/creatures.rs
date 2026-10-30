@@ -3259,6 +3259,13 @@ impl Game<'_> {
                             .iter_mut()
                             .find(|m| m.id == id)
                             .is_some_and(|m| m.damage(amount, source));
+                        // SpectralArrow/Arrow.doPostHurtEffects, as the player arm above.
+                        if hurt
+                            && let Some((e, t)) = effect
+                            && let Some(m) = self.mobs.iter_mut().find(|m| m.id == id)
+                        {
+                            m.add_effect(e, *t, 0);
+                        }
                         dodged = !hurt
                             && self.mobs.iter().find(|m| m.id == id).is_some_and(|m| {
                                 m.species() == Species::Enderman

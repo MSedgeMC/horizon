@@ -76,8 +76,8 @@ Abilities.apply	port	crates/horizon-client/src/game/remote.rs::Game::apply_remot
 Abilities.pack	skip:java		record copy for the abilities packet; the flags are read in remote.rs
 PlayerSkin.with	missing		minor: skin patches (body, cape, elytra and model overrides) are not applied on top of a profile skin
 PlayerSkin.Patch.create	skip:java		record factory for the patch; the patch itself is missing (see PlayerSkin.with)
-SpectralArrow.doPostHurtEffects	missing		player: a spectral arrow shot from a bow or crossbow does not make its target glow; release_bow and crossbow use no effect
-SpectralArrow.tick	missing		player: a spectral arrow in flight leaves no yellow effect trail
+SpectralArrow.doPostHurtEffects	port	crates/horizon-client/src/game/creatures.rs::Game::projectile_hit	200 ticks of Glowing, amplifier 0, on the player or the mob it hits, only when the hurt landed; the release paths carry it
+SpectralArrow.tick	port	crates/horizon-client/src/game/remote_projectiles.rs::Game::arrow_effect_particles	on a client: an effect sparkle at its position every tick while it flies, none once stuck
 Fireball.getSlot	missing		minor: the fireball's item slot (its displayed fire charge) is not modelled
 Fireball.readAdditionalSaveData	missing		unsure: fireball_from_nbt reads no Item key, so the displayed item is not restored
 Fireball.setItem	missing		minor: the displayed item of a fireball is not set
