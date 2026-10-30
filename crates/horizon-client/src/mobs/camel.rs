@@ -502,4 +502,70 @@ mod tests {
         finish_load(&mut m, 5000);
         assert!(!refuse_to_move(&m));
     }
+
+    /// One tick walking `distance` blocks a tick, as the tick loop does it:
+    /// the position the tick started at, then `LivingEntity.updateWalkAnimation`.
+    fn walk_a_tick(m: &mut Mob, distance: f64) {
+        m.previous = m.position;
+        m.position = Vec3::new(m.position.x, m.position.y, m.position.z + distance);
+        m.update_walk_animation();
+    }
+
+    /// `Camel.updateWalkAnimation`: while standing and not dashing the legs
+    /// walk to `min(distance * 6, 1)` smoothed at 0.2, and a sitting or a
+    /// dashing camel's legs stay at 0. LivingEntity's own rule (4, 0.4) put
+    /// this walking camel at 0.32 and a sitting one walking on the spot.
+    #[test]
+    fn a_camel_walks_its_legs_at_its_own_rate() {
+        let mut m = camel();
+        register(&mut m);
+        walk_a_tick(&mut m, 0.2);
+        // 0.2 blocks a tick is 1.2, so the target saturates at 1 and the tick
+        // shows the 0.2 smoothing (a 0.4 one would give 0.4).
+        let target = (0.2_f32 * 6.0).min(1.0);
+        assert!(
+            (m.limb_speed - target * 0.2).abs() < 1.0e-6,
+            "{}",
+            m.limb_speed
+        );
+        let mut events = Vec::new();
+        sit_down(&mut m, &mut events);
+        assert!(sitting(&m));
+        // Sitting (`Pose.SITTING`) the legs go to 0 whatever the distance
+        // moved: a client's camel still slides along, and vanilla walks no
+        // legs for it. Past the sit down (40 ticks) the speed has decayed by
+        // 0.8 a tick from the 0.2 above, and the position stops advancing.
+        for _ in 0..41 {
+            m.age += 1;
+            walk_a_tick(&mut m, 0.2);
+        }
+        assert!(m.limb_speed < 1.0e-4, "{}", m.limb_speed);
+        let settled = m.limb_position;
+        for _ in 0..41 {
+            m.age += 1;
+            walk_a_tick(&mut m, 0.2);
+        }
+        assert!(m.limb_speed < 1.0e-4, "{}", m.limb_speed);
+        assert!((m.limb_position - settled).abs() < 1.0e-3);
+        // Dashing (`Camel.onSyncedDataUpdated(DASH)`): the same, at once.
+        let mut m = camel();
+        register(&mut m);
+        set_dashing(&mut m, true);
+        walk_a_tick(&mut m, 0.2);
+        assert_eq!((m.limb_speed, m.limb_position), (0.0, 0.0));
+    }
+
+    /// Every other species keeps `LivingEntity.updateWalkAnimation`'s own
+    /// `min(distance * 4, 1)` at 0.4.
+    #[test]
+    fn a_cow_keeps_the_default_walk_rule() {
+        let mut m = Mob::new(1, crate::mobs::sensor_scan_tests::kind(), Vec3::ZERO, 0.0);
+        walk_a_tick(&mut m, 0.2);
+        let target = (0.2_f32 * 4.0).min(1.0);
+        assert!(
+            (m.limb_speed - target * 0.4).abs() < 1.0e-6,
+            "{}",
+            m.limb_speed
+        );
+    }
 }

@@ -4704,9 +4704,7 @@ impl Game<'_> {
             horizon_client::mobs::aquatic::squid_client_step(m, &mut mob_fx);
             // WalkAnimationState.update from the horizontal distance moved.
             let (dx, dz) = (m.position.x - m.previous.x, m.position.z - m.previous.z);
-            let target = (((dx * dx + dz * dz).sqrt() * 4.0) as f32).min(1.0);
-            m.limb_speed += (target - m.limb_speed) * 0.4;
-            m.limb_position += m.limb_speed;
+            m.walk_animation((dx * dx + dz * dz).sqrt() as f32);
             if m.species() == horizon_client::mobs::Species::Rabbit {
                 horizon_client::mobs::rabbit::post_tick(m);
             }

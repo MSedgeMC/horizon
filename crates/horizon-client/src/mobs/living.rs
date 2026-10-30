@@ -1277,17 +1277,28 @@ impl Mob {
         let distance = (dx * dx + dy * dy + dz * dz).sqrt() as f32;
         self.previous_limb_speed = self.limb_speed;
         if self.alive() {
-            // Creaking.updateWalkAnimation walks the model faster.
-            let target = if self.species() == super::Species::Creaking {
-                (distance * 25.0).min(3.0)
-            } else {
-                (distance * 4.0).min(1.0)
-            };
-            self.limb_speed += (target - self.limb_speed) * 0.4;
-            self.limb_position += self.limb_speed;
+            self.walk_animation(distance);
         } else {
             self.limb_speed = 0.0;
         }
+    }
+    /// `WalkAnimationState.update` for the distance moved this tick: the walk
+    /// speed the legs follow and how fast they follow it. Creaking walks the
+    /// model faster (`Creaking.updateWalkAnimation`); a camel only walks its
+    /// legs standing and not dashing (`Camel.updateWalkAnimation`).
+    pub fn walk_animation(&mut self, distance: f32) {
+        let camel = super::camel::is_camel(self.species());
+        let (target, rate) = if self.species() == super::Species::Creaking {
+            ((distance * 25.0).min(3.0), 0.4)
+        } else if camel && (super::camel::sitting(self) || self.extra.flag2) {
+            (0.0, 0.2)
+        } else if camel {
+            ((distance * 6.0).min(1.0), 0.2)
+        } else {
+            ((distance * 4.0).min(1.0), 0.4)
+        };
+        self.limb_speed += (target - self.limb_speed) * rate;
+        self.limb_position += self.limb_speed;
     }
 }
 /// LivingEntity.getFluidFallingAdjustedMovement.
