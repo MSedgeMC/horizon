@@ -357,6 +357,12 @@ impl Game<'_> {
                     d.group("chunk_generation", [line.to_owned()]);
                 }
             }
+            // biome: DebugEntryBiome, from the camera entity inside the build height only.
+            let y = p.position.y.floor() as i32;
+            if on("biome") && (self.world.bottom_y()..self.world.top_y()).contains(&y) {
+                let pos = [p.position.x, p.position.y, p.position.z];
+                d.line(format!("Biome: {}", self.biome_at(pos)));
+            }
         }
         if on("simple_performance_impactors") {
             self.debug_performance_lines(&mut d);
