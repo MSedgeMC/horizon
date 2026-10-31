@@ -1074,6 +1074,16 @@ impl Audio {
             heard: Default::default(),
             stopped: Default::default(),
             preview: Default::default(),
+            // The device lists belong to the output this shares, so the
+            // split player polls them as the owner does.
+            #[cfg(feature = "audio")]
+            default_seen: self.default_seen.clone(),
+            #[cfg(feature = "audio")]
+            cards_seen: self.cards_seen.clone(),
+            #[cfg(feature = "audio")]
+            devices_seen: self.devices_seen.clone(),
+            #[cfg(feature = "audio")]
+            device_ticks: 0,
         }
     }
     /// Sync the volume options, refreshing the categories that changed
