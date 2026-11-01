@@ -317,7 +317,7 @@ impl Game<'_> {
             let max_damage = item_render::cit::stack_max_damage(stack, item_max);
             (
                 cit.rules.select(CitKind::Item, stack, hand, max_damage),
-                cit.rules.glint(stack, max_damage),
+                cit.rules.glint(stack, hand, max_damage),
             )
         });
         let mut state = renderer.resolve_with_rule(
