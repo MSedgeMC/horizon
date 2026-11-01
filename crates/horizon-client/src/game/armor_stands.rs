@@ -161,9 +161,7 @@ impl Game<'_> {
     pub(super) fn cit_worn_rule(&self, kind: Kind, stack: &ItemStack) -> Option<&Rule> {
         let rules = &self.pack.item_renderer.cit.as_ref()?.rules;
         let item_max = self.items().get(&stack.item).map_or(0, |i| i.max_damage);
-        let max_damage = horizon_client::item_render::cit::stack_max_damage(stack, item_max);
-        rules
-            .select(kind, stack, Hand::Any, max_damage)
+        horizon_client::item_render::cit::worn_rule(rules, kind, stack, item_max)
             .and_then(|i| rules.rules.get(i))
     }
     /// The atlas rect of an armour layer `texture` of equipment asset `asset`, or of the one CIT
@@ -176,9 +174,9 @@ impl Game<'_> {
         texture: &str,
     ) -> Option<[f32; 4]> {
         let sprites = &self.gui.atlas.sprites;
-        let name =
-            cit_armor::worn_layer_sprite(cit, asset, kind, texture, |s| sprites.contains_key(s));
-        let r = sprites.get(name.as_str())?;
+        let r = cit_armor::worn_layer_sprite(cit, asset, kind, texture)
+            .and_then(|name| sprites.get(name.as_str()))
+            .or_else(|| sprites.get(texture))?;
         Some([r.u0, r.v0, r.u1, r.v1])
     }
     /// `HumanoidArmorLayer` for the player: (model, texture rect, colour,

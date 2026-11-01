@@ -875,8 +875,9 @@ impl Game<'_> {
         };
         let sprites = &self.gui.atlas.sprites;
         let rule = stack.and_then(|s| self.cit_worn_rule(horizon_client::cit::Kind::Elytra, s));
-        let rect = horizon_client::cit_armor::wings_sprite(rule, cape, |s| sprites.contains_key(s))
-            .and_then(|name| sprites.get(name.as_str()));
+        let rect = horizon_client::cit_armor::wings_sprite(rule)
+            .and_then(|name| sprites.get(name.as_str()))
+            .or_else(|| cape.and_then(|c| sprites.get(c)));
         let (Some(model), Some(rect)) = (
             assets
                 .player

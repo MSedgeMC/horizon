@@ -59,34 +59,25 @@ pub fn elytra_sprite(rule: &Rule) -> Option<String> {
     atlas_name(armor_texture(rule, "elytra")?)
 }
 
-/// The atlas sprite a worn armour layer draws: the one CIT armour rule `rule` puts on the layer
+/// The atlas sprite the one CIT armour rule `rule` puts on a worn armour layer: the layer
 /// `vanilla` (an atlas name, `…_overlay` for the dye overlay) of equipment asset `asset` in
-/// equipment layer `kind` (`humanoid_leggings` for the leggings), when the atlas has it (`has`);
-/// else `vanilla`.
+/// equipment layer `kind` (`humanoid_leggings` for the leggings). `None` draws `vanilla`, as does
+/// a name the atlas lacks; nothing is allocated without a rule.
 pub fn worn_layer_sprite(
     rule: Option<&Rule>,
     asset: &str,
     kind: &str,
     vanilla: &str,
-    has: impl Fn(&str) -> bool,
-) -> String {
+) -> Option<String> {
     let leggings = kind == "humanoid_leggings";
     let overlay = vanilla.ends_with("_overlay");
-    rule.and_then(|rule| layer_sprite(rule, asset, leggings, overlay))
-        .filter(|name| has(name.as_str()))
-        .unwrap_or_else(|| vanilla.to_owned())
+    layer_sprite(rule?, asset, leggings, overlay)
 }
 
-/// The atlas sprite worn wings draw: the CIT elytra rule `rule`'s when the atlas has it (`has`),
-/// else the player's `cape`. `None` leaves the equipment asset's own wings texture.
-pub fn wings_sprite(
-    rule: Option<&Rule>,
-    cape: Option<&str>,
-    has: impl Fn(&str) -> bool,
-) -> Option<String> {
-    rule.and_then(elytra_sprite)
-        .filter(|name| has(name.as_str()))
-        .or_else(|| cape.map(str::to_owned))
+/// The atlas sprite the CIT elytra rule `rule` puts on worn wings. `None` draws the player's cape,
+/// else the equipment asset's own wings texture, as does a name the atlas lacks.
+pub fn wings_sprite(rule: Option<&Rule>) -> Option<String> {
+    elytra_sprite(rule?)
 }
 
 /// Sprite ids the armour and elytra rules draw (see [`rule_sprites`]).
@@ -193,10 +184,9 @@ mod tests {
              texture.leather_layer_1=body\ntexture.leather_layer_1_overlay=body_dye\n\
              texture.leather_layer_2=legs\n",
         );
-        let cit = |p: &str| format!("horizon_cit:minecraft/optifine/cit/{p}");
-        let all = |_: &str| true;
+        let cit = |p: &str| Some(format!("horizon_cit:minecraft/optifine/cit/{p}"));
         let pick = |kind: &str, vanilla: &str| {
-            worn_layer_sprite(Some(&r), "minecraft:leather", kind, vanilla, all)
+            worn_layer_sprite(Some(&r), "minecraft:leather", kind, vanilla)
         };
         let body = "entity/equipment/humanoid/leather";
         assert_eq!(pick("humanoid", body), cit("body"));
@@ -213,37 +203,25 @@ mod tests {
         );
         // No `texture.leather_layer_2_overlay` and no `texture`: the overlay stays vanilla.
         let legs_dye = "entity/equipment/humanoid_leggings/leather_overlay";
-        assert_eq!(pick("humanoid_leggings", legs_dye), legs_dye);
-        // A texture the atlas left out, or no rule, draws vanilla's.
-        let missing = worn_layer_sprite(Some(&r), "minecraft:leather", "humanoid", body, |s| {
-            s != cit("body")
-        });
-        assert_eq!(missing, body);
+        assert_eq!(pick("humanoid_leggings", legs_dye), None);
+        // No rule draws vanilla's.
         assert_eq!(
-            worn_layer_sprite(None, "minecraft:leather", "humanoid", body, all),
-            body
+            worn_layer_sprite(None, "minecraft:leather", "humanoid", body),
+            None
         );
     }
 
     #[test]
-    fn wings_take_the_rule_then_the_cape() {
+    fn wings_take_the_rules_texture() {
         let r = rule(
             "assets/minecraft/optifine/cit/wings.properties",
             "type=elytra\ntexture=wings\n",
         );
-        let wings = "horizon_cit:minecraft/optifine/cit/wings";
-        let cape = Some("cape/minecon");
         assert_eq!(
-            wings_sprite(Some(&r), cape, |_| true).as_deref(),
-            Some(wings)
+            wings_sprite(Some(&r)).as_deref(),
+            Some("horizon_cit:minecraft/optifine/cit/wings")
         );
-        assert_eq!(
-            wings_sprite(Some(&r), cape, |s| s != wings).as_deref(),
-            cape
-        );
-        assert_eq!(wings_sprite(None, cape, |_| true).as_deref(), cape);
-        assert_eq!(wings_sprite(None, None, |_| true), None);
-        assert_eq!(wings_sprite(Some(&r), None, |_| false), None);
+        assert_eq!(wings_sprite(None), None);
     }
 
     #[test]
