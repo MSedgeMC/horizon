@@ -4,6 +4,7 @@
 
 pub use horizon_optifine::cit::{Hand, Kind, Rule};
 
+use crate::cit_glint::{Global, StackGlint};
 use horizon_client_core::component::name_text;
 use horizon_client_core::scoreboard::comp_text;
 use horizon_items::item_data::{canon_tag, encode_components};
@@ -16,7 +17,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use std::path::Path;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// Every rule under the root's `optifine/cit/`, `mcpatcher/cit/` and CIT Resewn's
 /// `citresewn/cit/` folders, the one chosen first when several match first (`Rule::priority`).
@@ -48,6 +49,8 @@ pub fn load_rules(root: &Path) -> Vec<Rule> {
 #[derive(Debug, Default)]
 pub struct CitRules {
     pub rules: Vec<Rule>,
+    /// The pack's `cit.properties`.
+    pub global: Global,
     /// Per kind (`Kind as usize`), the rules naming each item, in priority order.
     by_item: [HashMap<String, Vec<u32>>; 4],
     /// Enchantment rules without `items`, in priority order.
@@ -56,6 +59,7 @@ pub struct CitRules {
     literals: Vec<Vec<Prepared>>,
     selected: Mutex<HashMap<u64, Option<u32>>>,
     enchanted: Mutex<HashMap<u64, Vec<u32>>>,
+    glints: Mutex<HashMap<u64, Arc<StackGlint>>>,
 }
 
 #[derive(Debug, Default)]
@@ -70,7 +74,10 @@ const CACHE_LIMIT: usize = 4096;
 impl CitRules {
     /// The enabled packs' rules under the overlay resource root.
     pub fn load(root: &Path) -> Self {
-        Self::new(load_rules(root))
+        Self {
+            global: crate::cit_glint::load_global(root),
+            ..Self::new(load_rules(root))
+        }
     }
 
     /// `rules` in priority order, the winner first.
@@ -154,6 +161,35 @@ impl CitRules {
         found.into_iter().map(|i| i as usize).collect()
     }
 
+    /// The glint layers this stack draws and whether vanilla's still does (`StackGlint`),
+    /// worked out once per stack; `None` when the pack changes no glint.
+    pub fn glint(&self, stack: &ItemStack, max_damage: u32) -> Option<Arc<StackGlint>> {
+        let no_rules =
+            self.any_item.is_empty() && self.by_item[Kind::Enchantment as usize].is_empty();
+        if no_rules && self.global.use_glint {
+            return None;
+        }
+        let comps = encode_components(stack);
+        let key = cache_key(
+            (2, Kind::Enchantment, Hand::Any),
+            stack,
+            max_damage,
+            comps.as_ref(),
+        );
+        if let Some(hit) = lock(&self.glints).get(&key) {
+            return Some(hit.clone());
+        }
+        let matched = self.enchantments(stack, max_damage);
+        let glint = Arc::new(StackGlint::new(
+            &self.rules,
+            &matched,
+            stack.crafting_enchantments(),
+            &self.global,
+        ));
+        remember(&self.glints, key, glint.clone());
+        Some(glint)
+    }
+
     /// Whether rule `i` matches; `hand` None skips the hand test (enchantment glints).
     fn matches(
         &self,
@@ -214,7 +250,7 @@ fn remember<V>(cache: &Mutex<HashMap<u64, V>>, key: u64, value: V) {
     cache.insert(key, value);
 }
 
-/// What a cached answer depends on; `query` tells `select` from `enchantments`.
+/// What a cached answer depends on; `query` tells `select`, `enchantments` and `glint` apart.
 fn cache_key(query: (u8, Kind, Hand), stack: &ItemStack, max: u32, comps: Option<&Tag>) -> u64 {
     let mut h = DefaultHasher::new();
     (query.0, query.1 as u8, query.2 as u8, &*stack.item).hash(&mut h);
@@ -658,5 +694,38 @@ mod tests {
         assert!(glints(new("stick")).is_empty());
         // Glints are never an item's texture.
         assert_eq!(item(&cit, enchanted("diamond_sword", &sharp)), None);
+    }
+
+    #[test]
+    fn a_stack_glint_reads_the_book_and_the_pack_file() {
+        let mut cit = rules(&[
+            ("sharp", "type=enchantment\nenchantments=sharpness"),
+            (
+                "keep",
+                "type=enchantment\nlayer=1\nuseGlint=true\nenchantments=mending",
+            ),
+        ]);
+        // An enchanted book's glint follows its stored enchantments.
+        let mut book = new("enchanted_book");
+        book.data_mut().stored_enchantments = vec![
+            (Arc::from("minecraft:sharpness"), 3),
+            (Arc::from("minecraft:mending"), 1),
+        ];
+        let glint = cit.glint(&book, 0).unwrap();
+        let weights: Vec<_> = glint.layers.iter().map(|l| l.weight).collect();
+        assert_eq!(weights, [0.75, 0.25]);
+        assert!(glint.vanilla);
+        let plain = cit
+            .glint(&enchanted("stick", &[("sharpness", 1)]), 0)
+            .unwrap();
+        assert_eq!(plain.layers.len(), 1);
+        assert!(!plain.vanilla);
+        // No enchantment rules: nothing changes, unless the pack turns vanilla's glint off.
+        let mut bare = rules(&[("stick", "items=stick")]);
+        assert!(bare.glint(&new("stick"), 0).is_none());
+        bare.global.use_glint = false;
+        assert!(!bare.glint(&new("stick"), 0).unwrap().vanilla);
+        cit.global.use_glint = false;
+        assert!(cit.glint(&new("stick"), 0).unwrap().is_empty());
     }
 }

@@ -22,6 +22,7 @@ pub mod chunk_map;
 pub mod cit;
 pub mod cit_armor;
 pub mod cit_assets;
+pub mod cit_glint;
 pub mod clouds;
 pub mod collisions;
 pub mod command_block;
