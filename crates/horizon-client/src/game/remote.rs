@@ -8308,7 +8308,12 @@ impl Game<'_> {
             && let Some(hit) = self.pick()
         {
             // NeoForge posts the attack event before `continueDestroyBlock`.
+            // A canceled attack lets go of the block being dug, as a released
+            // key does.
             if self.interaction_key_canceled(0, "key.attack", "mainhand") {
+                if self.stop_remote_mining() {
+                    self.mining = None;
+                }
                 return;
             }
             let state = self.world.block(hit.pos[0], hit.pos[1], hit.pos[2]);
