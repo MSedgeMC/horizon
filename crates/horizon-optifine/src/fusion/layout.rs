@@ -161,24 +161,22 @@ impl Layout {
     pub fn tiles(self, mask: u8) -> Tiles {
         let sides = mask & SIDES;
         let joined = |bits: u8| mask & bits == bits;
+        let straight = |a, b| match (joined(a), joined(b)) {
+            (false, false) => 0,
+            (false, true) => 1,
+            (true, true) => 2,
+            (true, false) => 3,
+        };
         match self {
             // The 5 tiles are `ctm_compact`'s: alone, joined all round, up and down, left and
             // right, all but the corner.
             Self::Pieced => Tiles::Quarters(crate::ctm::connect::compact_quarters(mask)),
             Self::Simple => Tiles::One(SIMPLE_INDEX[sides as usize]),
             Self::Full => Tiles::One(FULL_INDEX[reduce(mask) as usize]),
-            Self::Vertical => Tiles::One(match (joined(U), joined(D)) {
-                (false, false) => 0,
-                (false, true) => 1,
-                (true, true) => 2,
-                (true, false) => 3,
-            }),
-            Self::Horizontal => Tiles::One(match (joined(L), joined(R)) {
-                (false, false) => 0,
-                (false, true) => 1,
-                (true, true) => 2,
-                (true, false) => 3,
-            }),
+            // Alone, then the end that joins `b` (a column's top, a row's left end), the
+            // middle, the other end.
+            Self::Vertical => Tiles::One(straight(U, D)),
+            Self::Horizontal => Tiles::One(straight(L, R)),
             // An end, the centre, a vertical and a horizontal section and a cross: joined
             // both ways, the centre only with every corner too.
             Self::Compact => Tiles::One(match (joined(L | R), joined(U | D)) {
@@ -210,22 +208,26 @@ mod tests {
         }
     }
 
+    /// The tiles `layout` draws over every mask.
+    fn drawn(layout: Layout) -> std::collections::HashSet<u8> {
+        (0..=255u8).map(|mask| one(layout, mask)).collect()
+    }
+
     #[test]
-    fn every_mask_has_a_drawn_tile() {
+    fn every_tile_is_drawn_for_some_mask() {
+        // A mask a table lacks would fall to tile 0 and leave its own tile unused. The full
+        // template's empty cell, (1, 5), is the one never drawn.
+        let mut full: Vec<u8> = drawn(Layout::Full).into_iter().collect();
+        full.sort_unstable();
+        assert_eq!(full, (0..48).filter(|&t| t != 41).collect::<Vec<_>>());
         for layout in [
             Layout::Simple,
-            Layout::Full,
             Layout::Vertical,
             Layout::Horizontal,
             Layout::Compact,
         ] {
             let (w, h) = layout.grid();
-            for mask in 0..=255u8 {
-                let t = one(layout, mask);
-                assert!(u32::from(t) < w * h, "{layout:?} {mask:#x}: {t}");
-                // The full template's empty cell, (1, 5).
-                assert!(layout != Layout::Full || t != 41, "{mask:#x}");
-            }
+            assert_eq!(drawn(layout).len() as u32, w * h, "{layout:?}");
         }
     }
 
@@ -243,12 +245,16 @@ mod tests {
         assert_eq!(one(Layout::Full, U | UR | R), 25);
         // Every side and only the top-left corner: (5, 5).
         assert_eq!(one(Layout::Full, SIDES | UL), 45);
-        // 47 masks after the corners are reduced, each its own tile.
-        let mut seen = std::collections::HashSet::new();
-        for mask in 0..=255u8 {
-            seen.insert(one(Layout::Full, mask));
-        }
-        assert_eq!(seen.len(), 47);
+        // Every side and some corners, off the bottom two rows: opposite corners (0, 4) and
+        // (0, 5); one corner (4, 4); three (6, 4).
+        assert_eq!(one(Layout::Full, SIDES | UR | DL), 32);
+        assert_eq!(one(Layout::Full, SIDES | UL | DR), 40);
+        assert_eq!(one(Layout::Full, SIDES | DR), 36);
+        assert_eq!(one(Layout::Full, SIDES | DL), 37);
+        assert_eq!(one(Layout::Full, SIDES | UL | UR | DL), 38);
+        // Three sides and one corner between them: (4, 3) and (6, 3).
+        assert_eq!(one(Layout::Full, U | R | L | UL), 28);
+        assert_eq!(one(Layout::Full, U | R | L | UR), 30);
     }
 
     #[test]
@@ -257,6 +263,11 @@ mod tests {
         assert_eq!(one(Layout::Simple, U | L | UL), 15);
         // Corners don't count.
         assert_eq!(one(Layout::Simple, R | D | DR), 10);
+        // The three-side tiles: (0, 2), (1, 2), (0, 3), (1, 3).
+        assert_eq!(one(Layout::Simple, U | R | D), 8);
+        assert_eq!(one(Layout::Simple, R | D | L), 9);
+        assert_eq!(one(Layout::Simple, U | R | L), 12);
+        assert_eq!(one(Layout::Simple, U | D | L), 13);
         // A column: bottom (joined up), middle, top.
         assert_eq!(one(Layout::Vertical, U), 3);
         assert_eq!(one(Layout::Vertical, U | D), 2);
@@ -279,6 +290,8 @@ mod tests {
         // The square's middle, and a plus sign's.
         assert_eq!(one(Layout::Compact, 0xff), 1);
         assert_eq!(one(Layout::Compact, SIDES), 4);
+        // Some corners aren't all of them: still the cross.
+        assert_eq!(one(Layout::Compact, SIDES | UL | UR | DR), 4);
         // A square's corner joins two sides: an end.
         assert_eq!(one(Layout::Compact, R | D | DR), 0);
     }
@@ -304,8 +317,19 @@ mod tests {
         assert_eq!(cells(R), [6]);
         // Sand all round: the ring, (4, 1).
         assert_eq!(cells(0xff), [10]);
-        // Left and down with their corner: one L-shaped tile, (5, 0).
+        // Left and down with their corner: one L-shaped tile, (5, 0); the other pairs and
+        // the three-side tiles from the right half.
         assert_eq!(cells(L | D | DL), [5]);
+        assert_eq!(cells(R | D), [3]);
+        assert_eq!(cells(U | R), [15]);
+        assert_eq!(cells(U | L), [17]);
+        assert_eq!(cells(R | D | L), [4]);
+        assert_eq!(cells(U | R | D), [9]);
+        assert_eq!(cells(U | D | L), [11]);
+        assert_eq!(cells(U | R | L), [16]);
+        // A lone corner each.
+        assert_eq!(cells(DL), [2]);
+        assert_eq!(cells(UL), [14]);
         // Above and below: two edge pieces.
         assert_eq!(cells(U | D), [13, 1]);
         // A column of sand to the left, and sand at the right corners only: the left edge,
