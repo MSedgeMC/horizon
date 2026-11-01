@@ -180,6 +180,7 @@ fn cycle_intensity(layers: &[GlintLayer], fade: f32, index: usize, seconds: f64)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use horizon_optifine::Properties;
 
     const DIR: &str = "assets/minecraft/optifine/cit";
 
