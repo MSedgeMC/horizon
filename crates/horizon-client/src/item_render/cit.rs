@@ -3,7 +3,7 @@
 //! JSON models join the model library, their textures the atlas (`cit_assets`).
 
 use super::{ItemRenderer, corners};
-use crate::cit::{CitRules, Kind};
+use crate::cit::{CitRules, Hand, Kind};
 use crate::cit_assets::{self, model_id, sprite_id};
 use crate::items::ItemStack;
 use glam::Vec3;
@@ -85,6 +85,13 @@ pub fn stack_max_damage(stack: &ItemStack, item_max: u32) -> u32 {
             _ => None,
         })
         .unwrap_or(item_max)
+}
+
+/// The winning `kind` (Armor or Elytra) rule of a worn `stack` whose item has `item_max` max
+/// damage, as an index into `rules.rules`. Worn items count as the main hand: OptiFine's off hand
+/// is the off-hand slot alone.
+pub fn worn_rule(rules: &CitRules, kind: Kind, stack: &ItemStack, item_max: u32) -> Option<usize> {
+    rules.select(kind, stack, Hand::Main, stack_max_damage(stack, item_max))
 }
 
 /// The rules at `root` and `library` with their models, or `library` alone without rules.
@@ -676,6 +683,36 @@ mod tests {
         assert_eq!(with(None), 384);
         assert_eq!(with(Some(Tag::Int(-1))), 384);
         assert_eq!(with(Some(Tag::String("20".into()))), 384);
+    }
+
+    fn armor_rules(text: &str) -> CitRules {
+        let props = horizon_optifine::Properties::parse_equals_first(text);
+        let path = "assets/minecraft/optifine/cit/worn.properties";
+        CitRules::new(vec![
+            crate::cit::Rule::parse(path, &props, |_| true).unwrap(),
+        ])
+    }
+
+    #[test]
+    fn worn_armor_counts_as_the_main_hand() {
+        let rules = armor_rules("type=armor\nitems=diamond_chestplate\ntexture=x\nhand=main\n");
+        let stack = ItemStack::new("minecraft:diamond_chestplate", 1);
+        assert_eq!(worn_rule(&rules, Kind::Armor, &stack, 528), Some(0));
+        let off = armor_rules("type=armor\nitems=diamond_chestplate\ntexture=x\nhand=off\n");
+        assert_eq!(worn_rule(&off, Kind::Armor, &stack, 528), None);
+    }
+
+    #[test]
+    fn worn_damage_reads_the_stacks_max_damage() {
+        let rules = armor_rules("type=armor\nitems=diamond_chestplate\ntexture=x\ndamage=50%\n");
+        let mut stack = ItemStack::new("minecraft:diamond_chestplate", 1);
+        stack.damage = 5;
+        // 5 of the item's 528 is under 1%.
+        assert_eq!(worn_rule(&rules, Kind::Armor, &stack, 528), None);
+        stack
+            .data_mut()
+            .set_other("minecraft:max_damage", Some(Tag::Int(10)));
+        assert_eq!(worn_rule(&rules, Kind::Armor, &stack, 528), Some(0));
     }
 
     #[test]
