@@ -102,14 +102,16 @@ impl Axes {
         }
         let along_u = [0, 1, 2].map(|c| (e1[c] * d2[1] - e2[c] * d1[1]) / det);
         let along_v = [0, 1, 2].map(|c| (e2[c] * d1[0] - e1[c] * d2[0]) / det);
+        // Only a direction close to one of the block's axes (within about 25°): a plant's 45°
+        // planes have none.
         let snap = |v: [f32; 3]| {
             let k = (0..3).max_by(|&a, &b| v[a].abs().total_cmp(&v[b].abs()))?;
+            let length = v.iter().map(|c| c * c).sum::<f32>().sqrt();
             let mut out = [0; 3];
             out[k] = if v[k] > 0.0 { 1 } else { -1 };
-            (v[k] != 0.0).then_some(out)
+            (v[k].abs() > 0.9 * length).then_some(out)
         };
-        // v grows downward: the texture's up is against it. A quad turned off the block's axes
-        // (an element rotated 45°) can snap both to one axis: no directions then.
+        // v grows downward: the texture's up is against it.
         let (right, up) = (snap(along_u)?, neg(snap(along_v)?));
         (dot(right, up) == 0).then_some(Self { right, up })
     }
@@ -638,5 +640,13 @@ mod tests {
         let diagonal = [[0.5, 0.0], [1.0, 0.5], [0.5, 1.0], [0.0, 0.5]];
         assert_eq!(Axes::texture(&north, &diagonal), None);
         assert_eq!(Axes::texture(&north, &[[f32::NAN; 2]; 4]), None);
+        // A plant's plane, turned 45° about y: no block axis to connect along.
+        let plant = [
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 1.0],
+        ];
+        assert_eq!(Axes::texture(&plant, &standard), None);
     }
 }
