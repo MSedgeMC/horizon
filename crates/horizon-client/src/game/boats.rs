@@ -726,46 +726,55 @@ impl Game<'_> {
         // EntityTickEvent.Post comes once AbstractBoat.tick is over, after the
         // passes of `boat_server_passes` (lava, ejection, bubbles, contacts),
         // and before the next boat ticks, as `ServerLevel.tickNonPassenger`.
-        for i in 0..self.boats.len() {
-            // A mod's hook may have removed boats.
-            if i >= self.boats.len() {
-                break;
-            }
-            let p = self.boats[i].position;
+        // A pass (lava breaks a boat) or a mod's hook may remove boats: the next one is found
+        // after this one by its id, so none is skipped or ticked twice.
+        let mut i = 0;
+        while i < self.boats.len() {
             let id = self.boats[i].id;
-            if Some(id) == self.riding
-                || driven.contains(&id)
-                || !ticking(p.x.floor() as i32, p.z.floor() as i32)
-            {
-                // Its rider's client moves it, but the lead still ticks.
-                if ticking(p.x.floor() as i32, p.z.floor() as i32) && self.remote.is_none() {
-                    let mut b = self.boats[i].clone();
-                    self.tick_boat_leash(&mut b);
-                    self.boats[i] = b;
+            'boat: {
+                let p = self.boats[i].position;
+                if Some(id) == self.riding
+                    || driven.contains(&id)
+                    || !ticking(p.x.floor() as i32, p.z.floor() as i32)
+                {
+                    // Its rider's client moves it, but the lead still ticks.
+                    if ticking(p.x.floor() as i32, p.z.floor() as i32) && self.remote.is_none() {
+                        let mut b = self.boats[i].clone();
+                        self.tick_boat_leash(&mut b);
+                        self.boats[i] = b;
+                    }
+                    self.boat_server_passes(id, &driven, &ticking, &round);
+                    break 'boat;
                 }
+                let kind = if round.listening() {
+                    self.boats[i].entity_type()
+                } else {
+                    String::new()
+                };
+                if !self.native_tick_pre_one(&mut round, id, &kind) {
+                    self.boat_server_passes(id, &driven, &ticking, &round);
+                    break 'boat;
+                }
+                // The hook may have removed boats.
+                let Some(i) = Some(i)
+                    .filter(|&i| self.boats.get(i).is_some_and(|b| b.id == id))
+                    .or_else(|| self.boats.iter().position(|b| b.id == id))
+                else {
+                    break 'boat;
+                };
+                let b = self.boats[i].clone();
+                self.boats[i] = self.tick_boat(b, false);
                 self.boat_server_passes(id, &driven, &ticking, &round);
-                continue;
+                self.native_tick_post_one(&round, id, &kind);
             }
-            let kind = if round.listening() {
-                self.boats[i].entity_type()
-            } else {
-                String::new()
+            i = match self.boats.get(i) {
+                Some(b) if b.id == id => i + 1,
+                _ => self
+                    .boats
+                    .iter()
+                    .position(|b| b.id == id)
+                    .map_or(i, |k| k + 1),
             };
-            if !self.native_tick_pre_one(&mut round, id, &kind) {
-                self.boat_server_passes(id, &driven, &ticking, &round);
-                continue;
-            }
-            // The hook may have removed boats.
-            let Some(i) = Some(i)
-                .filter(|&i| self.boats.get(i).is_some_and(|b| b.id == id))
-                .or_else(|| self.boats.iter().position(|b| b.id == id))
-            else {
-                continue;
-            };
-            let b = self.boats[i].clone();
-            self.boats[i] = self.tick_boat(b, false);
-            self.boat_server_passes(id, &driven, &ticking, &round);
-            self.native_tick_post_one(&round, id, &kind);
         }
     }
     /// The rest of `AbstractBoat.tick` on the server, for every boat, the
