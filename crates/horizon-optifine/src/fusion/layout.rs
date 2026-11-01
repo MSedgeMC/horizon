@@ -2,8 +2,9 @@
 //! for the neighbours that join it (a [`crate::ctm::connect`] mask). Tiles are numbered row by
 //! row from the top left of the grid.
 //!
-//! The tables are FusionExamples' `templates/template <layout>.png`: each tile marks its joined
-//! sides (and, where both sides beside a corner join, that corner) in green.
+//! The tiles are FusionExamples' `templates/template <layout>.png`: each marks its joined sides
+//! (and, where both sides beside a corner join, that corner) in green. `compact`'s template
+//! names its 5 tiles, not their masks; which one a face takes is the wiki's GIF of the layout.
 
 use crate::ctm::connect::{D, DL, DR, L, R, U, UL, UR, overlay_tiles, reduce};
 
@@ -15,7 +16,9 @@ pub enum Layout {
     Simple,
     /// 47 tiles: the sides and the corners.
     Full,
+    /// 4 tiles in a column: alone, a column's top, middle and bottom.
     Vertical,
+    /// 4 tiles in a row: alone, a row's left end, middle and right end.
     Horizontal,
     /// 5 tiles, a whole one per face.
     Compact,

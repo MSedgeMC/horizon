@@ -10,8 +10,8 @@
 //!
 //! Written from OptiFine's public documentation of the file formats (and ETF's, for its additions
 //! to random entities and emissive textures); `cit` also from CIT Resewn's wiki and the conditions of its MIT-licensed
-//! source (THIRD_PARTY_NOTICES.md); `fusion` from Fusion's wiki. No OptiFine or Fusion code was
-//! read.
+//! source (THIRD_PARTY_NOTICES.md); `fusion` from Fusion's wiki and FusionExamples' MIT-licensed
+//! layout templates (THIRD_PARTY_NOTICES.md). No OptiFine or Fusion code was read.
 
 pub mod blink;
 pub mod cem;
