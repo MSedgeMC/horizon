@@ -212,8 +212,8 @@ fn wrap_border((name, w, h, data): &PackedImage) -> PackedImage {
     }
     (name.clone(), bw, bh, out)
 }
-/// The textures the enabled packs' Custom Item Textures item rules draw, theirs and their JSON
-/// models', under their `cit_assets` ids, beyond those already packed; with their flags and
+/// The textures the enabled packs' Custom Item Textures rules draw (items, theirs and their JSON
+/// models'; worn armour and elytra), under their `cit_assets` ids, beyond those already packed; with their flags and
 /// whether they animate. They are item textures, so an animated strip keeps its first frame.
 /// None without `optifine/cit` rules.
 fn cit_sprites(
@@ -227,6 +227,7 @@ fn cit_sprites(
     if !rules.is_empty() {
         let models = crate::cit_assets::load_models(root, &rules);
         ids.extend(crate::cit_assets::model_sprites(&models));
+        ids.extend(crate::cit_armor::armor_sprites(&rules));
     }
     for id in ids {
         // Vanilla's sprites are packed without their namespace, as `sprite_name` looks them up.
