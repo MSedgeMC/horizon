@@ -166,7 +166,9 @@ impl Meta {
         };
         let per_tile_animation =
             || Ok::<_, String>(bool_field(json, "per_tile_animation")?.unwrap_or(false));
-        let ty = str_field(json, "type")?.ok_or("no `type`")?;
+        // Without a type the options stand alone (Fusion Emissive Ores' overlays: only
+        // `emissive` and `render_type`).
+        let ty = str_field(json, "type")?.unwrap_or("base");
         let kind = match kind(ty) {
             "base" => Kind::Base,
             "connecting" => Kind::Connecting {
@@ -197,7 +199,8 @@ impl Meta {
                 .expect("a default"),
                 seed: match json.get("seed") {
                     None => None,
-                    Some(_) => Some(int_field(json, "seed", i64::MIN..=i64::MAX, 0)?),
+                    // JSON numbers here are `f64`s: past 2^53 a seed isn't the one written.
+                    Some(_) => Some(int_field(json, "seed", -(1 << 53)..=1 << 53, 0)?),
                 },
                 sub_texture: sub_texture()?,
                 per_tile_animation: per_tile_animation()?,
@@ -250,6 +253,21 @@ mod tests {
         assert_eq!(
             Meta::from_mcmeta(r#"{"animation": {"frametime": 2}}"#),
             Ok(None)
+        );
+    }
+
+    #[test]
+    fn options_without_a_type_are_base() {
+        assert_eq!(
+            meta(r#"{"fusion": {"emissive": true, "render_type": "cutout"}}"#),
+            Meta {
+                base: Base {
+                    emissive: true,
+                    render_type: Some(RenderType::Cutout),
+                    tinting: None,
+                },
+                kind: Kind::Base,
+            }
         );
     }
 
@@ -350,7 +368,7 @@ mod tests {
     #[test]
     fn refuses_bad_values() {
         for bad in [
-            r#"{"fusion": {}}"#,
+            r#"{"fusion": {"type": "random", "seed": 1e19}}"#,
             r#"{"fusion": {"type": "glowing"}}"#,
             r#"{"fusion": {"type": "connecting", "layout": "diagonal"}}"#,
             r#"{"fusion": {"type": "base", "emissive": "yes"}}"#,
