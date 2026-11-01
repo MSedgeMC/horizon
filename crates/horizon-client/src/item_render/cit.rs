@@ -34,12 +34,11 @@ struct Plan {
     textures: Vec<(String, String)>,
 }
 
-/// One swapped bake: the model and the sprite each changed slot takes, `None`
-/// for a slot cleared.
+/// One swapped bake: the model and the sprite each changed slot takes.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 struct CitBake {
     base: String,
-    slots: BTreeMap<String, Option<String>>,
+    slots: BTreeMap<String, String>,
 }
 
 /// The enabled packs' rules and what their item rules bake to.
@@ -191,7 +190,8 @@ impl ItemRenderer {
 
     /// The model choice for one leaf, as CIT Resewn's wiki (CIT Item) gives it:
     /// `model.<leaf>` draws that model. `texture.<leaf>` replaces the leaf
-    /// with the item generated from it; on a leaf of several layers, one of
+    /// with the item generated from it (on a model with elements, its every
+    /// face); on a leaf of several layers, one of
     /// which is a slot or a sprite file named `<leaf>` (the 26.x potion's
     /// bottle is `layer1`, file `potion`), it is that layer's texture instead.
     /// Else `model` (or the leaf) with `texture` in every slot of a model, or
@@ -267,48 +267,22 @@ impl ItemRenderer {
             // on every face, as does the rule's `model` with `texture`.
             Some(sprite) if (named.is_none() && plan.model.is_some()) || !generated => {
                 for slot in textures.keys() {
-                    slots.insert(slot.clone(), Some(sprite.clone()));
+                    slots.insert(slot.clone(), sprite.clone());
                 }
             }
-            // The item generated from the one sprite. When a `texture.<name>`
-            // claims `layer0`, the sprite takes every other layer
-            // (`texture.potion_overlay` with `texture`: the bottle). Else it
-            // is `layer0` and the layers up to the highest one claimed, so
-            // they stay contiguous, and the leaf's layers above are cleared:
-            // `bake_resolved` stops at the first layer without a texture.
+            // The item generated from the sprite: it takes every layer the
+            // leaf has that no `texture.<name>` claims, as OptiFine's generic
+            // texture does. A pack's art for a potion holds its liquid's
+            // colour; on `layer0` alone it would be tinted by the potion's.
             Some(sprite) => {
-                let top = if claimed.contains_key("layer0") {
-                    u32::MAX
-                } else {
-                    claimed.keys().filter_map(|s| layer(s)).max().unwrap_or(0)
-                };
-                slots.insert("layer0".to_owned(), Some(sprite.clone()));
-                let mut cleared = false;
-                for slot in textures.keys() {
-                    match layer(slot) {
-                        Some(n) if n <= top => {
-                            slots.insert(slot.clone(), Some(sprite.clone()));
-                        }
-                        Some(_) => {
-                            slots.insert(slot.clone(), None);
-                            cleared = true;
-                        }
-                        None => {}
-                    }
-                }
-                // `particle` is `#layer0` in vanilla; a pack's leaf may point
-                // it at a layer cleared above.
-                if cleared && textures.contains_key("particle") {
-                    slots.insert("particle".to_owned(), Some(sprite.clone()));
+                slots.insert("layer0".to_owned(), sprite.clone());
+                for slot in textures.keys().filter(|s| layer(s).is_some()) {
+                    slots.insert(slot.clone(), sprite.clone());
                 }
             }
             None => {}
         }
-        slots.extend(
-            claimed
-                .into_iter()
-                .map(|(slot, sprite)| (slot, Some(sprite))),
-        );
+        slots.extend(claimed);
         (base != leaf || !slots.is_empty()).then_some(CitBake { base, slots })
     }
 
@@ -317,16 +291,10 @@ impl ItemRenderer {
             .slots
             .iter()
             .map(|(slot, sprite)| {
-                let texture = match sprite {
-                    Some(sprite) => TextureSlot::Material(Material {
-                        sprite: sprite.clone(),
-                        force_translucent: false,
-                    }),
-                    // A slot referring to itself: whatever its name, it
-                    // resolves to nothing (`ModelLibrary::resolve_with_textures`
-                    // stops at the loop and leaves it unresolved).
-                    None => TextureSlot::Reference(slot.clone()),
-                };
+                let texture = TextureSlot::Material(Material {
+                    sprite: sprite.clone(),
+                    force_translucent: false,
+                });
                 (slot.clone(), texture)
             })
             .collect();
@@ -574,8 +542,12 @@ mod tests {
                 (1, cit("b"))
             ]))
         );
-        // A plain `texture` is the item generated from it: no vanilla bottle over it.
-        assert_eq!(layer("whole"), Some(BTreeSet::from([(0, cit("a"))])));
+        // A plain `texture` takes every layer: no vanilla bottle over it, and an untinted copy
+        // over the tinted one, as OptiFine draws the pack's whole picture.
+        assert_eq!(
+            layer("whole"),
+            Some(BTreeSet::from([(0, cit("a")), (1, cit("a"))]))
+        );
         // ... unless a `texture.<name>` fills the bottle, even one named like the leaf.
         assert_eq!(
             layer("overlay_and_bottle"),
