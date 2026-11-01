@@ -233,9 +233,39 @@ fn cit_sprites(
     }
     let ids: Vec<String> = ids
         .into_iter()
-        // Vanilla's sprites are packed without their namespace, as `sprite_name` looks them up.
-        .filter(|id| !have.contains(id.strip_prefix("minecraft:").unwrap_or(id)))
+        // Vanilla's sprites are packed without their namespace, as `sprite_name` looks them up;
+        // Horizon's own (`horizon/white`, the run-time slots) are added after, and stay its own.
+        .filter(|id| {
+            let name = id.strip_prefix("minecraft:").unwrap_or(id);
+            !have.contains(name) && !name.starts_with("horizon/")
+        })
         .collect();
+    // No more than the atlas could ever hold, by their headers, so a pack naming thousands of
+    // big textures is cut short before they are decoded, not after.
+    let atlas = u64::from(MAX_ATLAS_SIZE).pow(2);
+    let used: u64 = packed.iter().map(|i| u64::from(i.1) * u64::from(i.2)).sum();
+    let mut left = atlas.saturating_sub(used);
+    let before = ids.len();
+    let ids: Vec<String> = ids
+        .into_iter()
+        .take_while(|id| {
+            let path = crate::atlas_sources::texture_path(root, id, "textures");
+            let (w, h) = png_size(&path).unwrap_or((0, 0));
+            match left.checked_sub(u64::from(w) * u64::from(h)) {
+                Some(rest) => {
+                    left = rest;
+                    true
+                }
+                None => false,
+            }
+        })
+        .collect();
+    if ids.len() < before {
+        log::warn!(
+            "left out {} custom item textures: more than the atlas holds",
+            before - ids.len()
+        );
+    }
     // Decoded on the threads `pack` decodes the rest on: a big pack names thousands.
     let threads = std::thread::available_parallelism().map_or(1, |n| n.get());
     let chunk = ids.len().div_ceil(threads).max(1);
@@ -246,7 +276,12 @@ fn cit_sprites(
             .collect();
         workers
             .into_iter()
-            .flat_map(|w| w.join().unwrap_or_else(|_| Vec::new()))
+            .flat_map(|w| {
+                w.join().unwrap_or_else(|_| {
+                    log::warn!("a custom item texture decoder panicked; its textures are left out");
+                    Vec::new()
+                })
+            })
             .collect()
     })
 }
@@ -557,6 +592,25 @@ impl HudAtlas {
             random_textures: Default::default(),
         }
     }
+    /// `layout`, but when `extras` (Custom Item Textures) make the images more than `max`
+    /// holds, without them: they are left out, not the packs.
+    fn layout_leaving_out(
+        images: &mut Vec<PackedImage>,
+        animated: &mut Vec<String>,
+        extras: &HashSet<String>,
+        max: u32,
+    ) -> Result<(u32, Vec<(u32, u32)>, u32)> {
+        match Self::layout(images, max) {
+            Err(e) if !extras.is_empty() => {
+                images.retain(|i| !extras.contains(&i.0));
+                animated.retain(|n| !extras.contains(n));
+                let layout = Self::layout(images, max)?;
+                log::warn!("left out the custom item textures: {e}");
+                Ok(layout)
+            }
+            layout => layout,
+        }
+    }
     /// Shelf placements of `images` (tallest first) in the narrowest atlas
     /// width from 4096 up that keeps the atlas, glyph rows included, within
     /// `max` texels a side; and the first row free for glyphs. High-resolution
@@ -796,18 +850,8 @@ impl HudAtlas {
             }
         }
         images.sort_by(|a, b| b.2.cmp(&a.2).then(b.1.cmp(&a.1)));
-        let (width, placements, glyph_region) = match Self::layout(&images, MAX_ATLAS_SIZE) {
-            Ok(layout) => layout,
-            // Custom Item Textures are extras: more than the atlas holds leaves them out, not
-            // the packs.
-            Err(e) if !cit_names.is_empty() => {
-                log::warn!("left out the custom item textures: {e}");
-                images.retain(|i| !cit_names.contains(&i.0));
-                animated.retain(|n| !cit_names.contains(n));
-                Self::layout(&images, MAX_ATLAS_SIZE)?
-            }
-            Err(e) => return Err(e),
-        };
+        let (width, placements, glyph_region) =
+            Self::layout_leaving_out(&mut images, &mut animated, &cit_names, MAX_ATLAS_SIZE)?;
         // A multiple of 1024 rather than a power of two: the default resources
         // need 4096x5120 (8192 rows before), Faithful 32x 4096x12288 (16384).
         let height = (glyph_region + GLYPH_ROWS).next_multiple_of(1024);
@@ -2649,7 +2693,8 @@ texture=wide",
         let cit = root.join("assets/minecraft/optifine/cit");
         write_strip(&cit.join("b.png"), 2, 2, &[[5, 6, 7, 255]], None);
         fs::write(cit.join("broken.png"), b"not a png").unwrap();
-        write_strip(&cit.join("wide.png"), 1040, 16, &[[1, 1, 1, 255]], None);
+        // Square after the crop a still texture gets, and still past the limit.
+        write_strip(&cit.join("wide.png"), 1040, 1040, &[[1, 1, 1, 255]], None);
         // Vanilla's stick is already packed when the CIT pass runs.
         let stick = ("item/stick".to_owned(), 16, 16, vec![0; 16 * 16 * 4]);
         let added = cit_sprites(&root, &[stick]);
@@ -2664,6 +2709,39 @@ texture=wide",
                 .contains_key("horizon_cit:minecraft/optifine/cit/b")
         );
         assert!(atlas.sprites.contains_key("item/stick"));
+    }
+    #[test]
+    fn a_wide_grid_animation_packs_its_frame() {
+        // 1104 wide is past the limit for a still texture, not for a row of 16x16 frames.
+        let root = cit_root("grid", &[("a.properties", "items=stick\ntexture=a")]);
+        let cit = root.join("assets/minecraft/optifine/cit");
+        write_strip(&cit.join("a.png"), 1104, 16, &[[9, 9, 9, 255]], None);
+        let mcmeta = r#"{"animation":{"width":16,"height":16}}"#;
+        fs::write(cit.join("a.png.mcmeta"), mcmeta).unwrap();
+        let added = cit_sprites(&root, &[]);
+        let _ = fs::remove_dir_all(&root);
+        let sizes: Vec<_> = added.iter().map(|(i, _, _)| (i.1, i.2)).collect();
+        assert_eq!(sizes, [(16, 16)]);
+    }
+    #[test]
+    fn too_many_custom_item_textures_leave_them_out() {
+        // A 1024 atlas holds the stick and the glyph rows, not an image 1100 wide.
+        let image = |name: &str, side: u32| {
+            let pixels = vec![0; (side * side * 4) as usize];
+            (name.to_owned(), side, side, pixels)
+        };
+        let mut images = vec![image("item/stick", 16), image("horizon_cit:big", 1100)];
+        let mut animated = vec!["horizon_cit:big".to_owned()];
+        let extras = HashSet::from(["horizon_cit:big".to_owned()]);
+        assert!(HudAtlas::layout(&images, 1024).is_err());
+        HudAtlas::layout_leaving_out(&mut images, &mut animated, &extras, 1024).unwrap();
+        let names: Vec<_> = images.iter().map(|i| i.0.as_str()).collect();
+        assert_eq!(names, ["item/stick"]);
+        assert!(animated.is_empty());
+        // Without extras to leave out, it fails as before.
+        let mut alone = vec![image("item/big", 1100)];
+        let none = HashSet::new();
+        assert!(HudAtlas::layout_leaving_out(&mut alone, &mut animated, &none, 1024).is_err());
     }
     #[test]
     fn a_root_without_cit_rules_packs_the_same_sprites() {
