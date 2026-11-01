@@ -215,6 +215,7 @@ impl ItemRenderer {
             return self.library.resolves(model).then(|| CitBake {
                 base: model.clone(),
                 slots: BTreeMap::new(),
+                untinted: None,
             });
         }
         let resolved = |name: &str| self.library.resolve(name).ok();
