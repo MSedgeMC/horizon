@@ -77,7 +77,8 @@ impl Connections {
             .map_or(Ok(Self::Textures), Self::parse)
     }
 
-    /// A child model's over its parent's: a child's keys add to and replace the parent's.
+    /// A child model's over its parent's: a child's keys add to and replace the parent's, and a
+    /// parent's predicates for every face stand for the keys the child doesn't define.
     pub fn inherit(self, parent: &Self) -> Self {
         match (self, parent) {
             (Self::Textures, parent) => parent.clone(),
@@ -86,6 +87,12 @@ impl Connections {
                     if !child.iter().any(|(k, _)| k == key) {
                         child.push((key.clone(), entry.clone()));
                     }
+                }
+                Self::Keys(child)
+            }
+            (Self::Keys(mut child), Self::All(all)) => {
+                if !child.iter().any(|(k, _)| k == "default") {
+                    child.push(("default".to_owned(), Entry::Predicate(all.clone())));
                 }
                 Self::Keys(child)
             }
