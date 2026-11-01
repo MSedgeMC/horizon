@@ -379,8 +379,8 @@ impl ConnectedTextures {
                     return pick;
                 }
                 let own = self.list(&self.by_state, state as usize);
-                // Rules that were tried on the face's sprite already are not tried again (an
-                // overlay would draw twice).
+                // Rules tried on the face's sprite already (those before this one) are not tried
+                // again: an overlay would draw twice.
                 let first = self.list(&self.by_layer, layer as usize);
                 let again = self
                     .list(&self.by_layer, picked as usize)
@@ -388,7 +388,7 @@ impl ConnectedTextures {
                     .map(|&j| (j, &self.rules[usize::from(j)]))
                     .filter(|&(j, r)| {
                         j != i
-                            && !first.contains(&j)
+                            && !(j < i && first.contains(&j))
                             && (r.rule.match_blocks.is_empty() || own.contains(&j))
                     });
                 for (_, r) in again {
@@ -620,6 +620,8 @@ mod tests {
                 "minecraft:block/glass" => Some(3),
                 // The tile `b0` of a rule second in order (`a_picked_tile_can_be_picked_again`).
                 "assets/minecraft/optifine/ctm/b0.png" => Some(2000),
+                // And `a0` of the first rule.
+                "assets/minecraft/optifine/ctm/a0.png" => Some(1000),
                 _ => None,
             },
         )
@@ -1032,6 +1034,16 @@ mod tests {
         let ctm = chain("matchTiles=glass optifine/ctm/b0.png\nmethod=overlay_fixed\ntiles=0");
         let (overlays, pick) = overlays_in(&ctm, 1, Face::Up, &[]);
         assert_eq!((overlays, pick), (vec![1000], tile(2000)));
+        // A rule after the one that picked, naming both the face's sprite and the tile, wasn't
+        // tried: it chains.
+        let ctm = world(&[
+            ("a.properties", "matchTiles=glass\nmethod=fixed\ntiles=a0"),
+            (
+                "c.properties",
+                "matchTiles=glass optifine/ctm/a0.png\nmethod=fixed\ntiles=0",
+            ),
+        ]);
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
     }
 
     #[test]
