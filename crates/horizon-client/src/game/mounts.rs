@@ -17,6 +17,9 @@ use horizon_core::{
     random::RandomSource,
 };
 
+/// The entity type tag `Entity.dismountsUnderwater` reads.
+const DISMOUNTS_UNDERWATER: &str = "minecraft:dismounts_underwater";
+
 fn steering_item(species: Species, main: Option<&str>, offhand: Option<&str>) -> bool {
     let item = match species {
         Species::Pig => "minecraft:carrot_on_a_stick",
@@ -373,6 +376,13 @@ impl Game<'_> {
             self.dismount_mount();
             return true;
         }
+        // `LivingEntity.baseTick`: a rider whose eyes are in the water gets
+        // off a mount whose type is in the `minecraft:dismounts_underwater`
+        // tag (a pig, a horse, a camel, a strider, a llama...).
+        if self.rider_eye_in_water() && self.mount_dismounts_underwater(i) {
+            self.dismount_mount();
+            return true;
+        }
         let strafe = f32::from(u8::from(keys.left)) - f32::from(u8::from(keys.right));
         let forward = f32::from(u8::from(keys.forward)) - f32::from(u8::from(keys.backward));
         // LocalPlayer.aiStep: the riding jump charges while space is held.
@@ -421,6 +431,22 @@ impl Game<'_> {
             client: self.lan_acting.is_some(),
         });
         true
+    }
+    /// `LivingEntity.isEyeInFluid(WATER)` at the rider's eye. A rider does not
+    /// run its own fluid tick, so the eye is sampled from the level here.
+    fn rider_eye_in_water(&self) -> bool {
+        let Some(p) = self.player.as_ref() else {
+            return false;
+        };
+        let eye_y = p.position.y + f64::from(p.dimensions.eye_height);
+        self.eye_in_water(p.position.x, eye_y, p.position.z)
+    }
+    /// `Entity.dismountsUnderwater`: the mount's entity type is in the
+    /// `minecraft:dismounts_underwater` tag.
+    fn mount_dismounts_underwater(&self, i: usize) -> bool {
+        self.res
+            .mob_data()
+            .entity_has(DISMOUNTS_UNDERWATER, &self.mobs[i].kind.id)
     }
     /// `positionRider`: the player sits on the mount after it moves.
     pub(super) fn position_rider(&mut self) {
@@ -846,6 +872,42 @@ fn strider_dismount_location(
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    /// `Entity.dismountsUnderwater` reads an entity type tag, so the mounts
+    /// whose underwater rider gets off must be the ones the shipped data
+    /// lists. Skips without the prepared resources.
+    #[test]
+    fn the_underwater_dismount_tag_lists_the_rideable_mounts() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.local/horizon-client")
+            .join(horizon_core::VANILLA_VERSION);
+        if !root.join("mob-data.json").exists() {
+            return;
+        }
+        let tags = crate::items::load_tags(
+            &root,
+            "entity_type",
+            &horizon_world::loot::PackOverlay::NONE,
+        )
+        .unwrap();
+        let tag = tags
+            .get(DISMOUNTS_UNDERWATER)
+            .expect("the tag the mount check reads");
+        for mount in [
+            "minecraft:pig",
+            "minecraft:horse",
+            "minecraft:donkey",
+            "minecraft:mule",
+            "minecraft:camel",
+            "minecraft:strider",
+            "minecraft:llama",
+            "minecraft:ravager",
+            "minecraft:spider",
+        ] {
+            assert!(tag.contains(mount), "{mount} dismounts underwater");
+        }
+        assert!(!tag.contains("minecraft:cow"));
+    }
 
     #[test]
     fn steering_accepts_the_correct_item_in_either_hand() {
