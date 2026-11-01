@@ -370,6 +370,13 @@ mod tests {
             }
         );
         assert_eq!(
+            meta(r#"{"fusion": {"type": "continuous"}}"#).kind,
+            Kind::Continuous {
+                columns: 1,
+                rows: 1
+            }
+        );
+        assert_eq!(
             meta(r#"{"fusion": {"type": "scrolling"}}"#).kind,
             Kind::Scrolling(Scrolling {
                 from: Corner::TopLeft,
