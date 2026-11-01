@@ -74,10 +74,36 @@ pub fn worn_layer_sprite(
     layer_sprite(rule?, asset, leggings, overlay)
 }
 
-/// The atlas sprite the CIT elytra rule `rule` puts on worn wings. `None` draws the player's cape,
-/// else the equipment asset's own wings texture, as does a name the atlas lacks.
+/// The CIT elytra rule's wings sprite. On `None`, or a name the atlas lacks, the caller draws the
+/// cape, else the equipment asset's own wings.
 pub fn wings_sprite(rule: Option<&Rule>) -> Option<String> {
     elytra_sprite(rule?)
+}
+
+/// What a worn layer draws, looked up with `get` (the atlas): the rule's sprite
+/// ([`worn_layer_sprite`]), else `vanilla` when there is no rule or the atlas lacks its texture.
+pub fn worn_layer<R>(
+    rule: Option<&Rule>,
+    asset: &str,
+    kind: &str,
+    vanilla: &str,
+    get: impl Fn(&str) -> Option<R>,
+) -> Option<R> {
+    worn_layer_sprite(rule, asset, kind, vanilla)
+        .and_then(|name| get(&name))
+        .or_else(|| get(vanilla))
+}
+
+/// What worn wings draw, looked up with `get`: the rule's sprite, else the cape; `None` leaves
+/// them to the equipment asset's own wings.
+pub fn wings<R>(
+    rule: Option<&Rule>,
+    cape: Option<&str>,
+    get: impl Fn(&str) -> Option<R>,
+) -> Option<R> {
+    wings_sprite(rule)
+        .and_then(|name| get(&name))
+        .or_else(|| cape.and_then(&get))
 }
 
 /// Sprite ids the armour and elytra rules draw (see [`rule_sprites`]).
@@ -254,5 +280,47 @@ mod tests {
                 "horizon_cit:minecraft/optifine/cit/wings",
             ]
         );
+    }
+
+    #[test]
+    fn the_atlas_lookup_falls_back_to_vanilla_and_the_cape() {
+        let iron = rule(
+            "assets/minecraft/optifine/cit/iron.properties",
+            "type=armor\nitems=iron_chestplate\ntexture.iron_layer_1=plate",
+        );
+        let plate = "horizon_cit:minecraft/optifine/cit/plate";
+        let vanilla = "entity/equipment/humanoid/iron";
+        let with = |names: &'static [&'static str]| {
+            move |s: &str| names.contains(&s).then(|| s.to_owned())
+        };
+        let layer = |rule, get| worn_layer(rule, "minecraft:iron", "humanoid", vanilla, get);
+        assert_eq!(
+            layer(Some(&iron), with(&[plate, vanilla])).as_deref(),
+            Some(plate)
+        );
+        // The rule's texture didn't reach the atlas, or there's no rule: vanilla's layer.
+        assert_eq!(
+            layer(Some(&iron), with(&[vanilla])).as_deref(),
+            Some(vanilla)
+        );
+        assert_eq!(
+            layer(None, with(&[plate, vanilla])).as_deref(),
+            Some(vanilla)
+        );
+        let wings_rule = rule(
+            "assets/minecraft/optifine/cit/w.properties",
+            "type=elytra\ntexture=wings",
+        );
+        let w = "horizon_cit:minecraft/optifine/cit/wings";
+        let wing = |rule, get| wings(rule, Some("cape/x"), get);
+        assert_eq!(
+            wing(Some(&wings_rule), with(&[w, "cape/x"])).as_deref(),
+            Some(w)
+        );
+        assert_eq!(
+            wing(Some(&wings_rule), with(&["cape/x"])).as_deref(),
+            Some("cape/x")
+        );
+        assert_eq!(wings(None, None, with(&[w])), None);
     }
 }

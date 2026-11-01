@@ -174,9 +174,7 @@ impl Game<'_> {
         texture: &str,
     ) -> Option<[f32; 4]> {
         let sprites = &self.gui.atlas.sprites;
-        let r = cit_armor::worn_layer_sprite(cit, asset, kind, texture)
-            .and_then(|name| sprites.get(name.as_str()))
-            .or_else(|| sprites.get(texture))?;
+        let r = cit_armor::worn_layer(cit, asset, kind, texture, |s| sprites.get(s))?;
         Some([r.u0, r.v0, r.u1, r.v1])
     }
     /// `HumanoidArmorLayer` for the player: (model, texture rect, colour,
