@@ -197,6 +197,7 @@ mod native_claimed_items;
 mod native_components;
 mod native_criteria;
 mod native_entities;
+mod native_equipment;
 mod native_explosions;
 mod native_falling;
 mod native_hooks;
@@ -2408,6 +2409,10 @@ struct Game<'a> {
     died: horizon_client::fast_hash::FxHashSet<u32>,
     /// Client-ticked block-entity animation state (`game/block_entity_anims.rs`).
     be_anims: horizon_client::block_entity_anim::BlockEntityAnims,
+    /// Each mob's equipment from the last server tick, by entity ID and
+    /// `EquipmentSlot` (`game/native_equipment.rs`): what a mob's slots are
+    /// compared with to hear them change.
+    mob_equipment: HashMap<u32, [Option<ItemStack>; 8]>,
     /// Item being used (eaten): hotbar slot and ticks used.
     using: Option<(usize, u32)>,
     /// `getUseDuration` when that use started, as a mod left it
@@ -11350,6 +11355,8 @@ impl Game<'_> {
     }
     fn tick_mobs(&mut self) -> Result<()> {
         self.tick_creatures()?;
+        // `LivingEntity.detectEquipmentUpdates`, once the mobs have ticked.
+        self.detect_mob_equipment_changes();
         self.position_rider();
         self.tick_stats();
         self.tick_scoreboard();
@@ -17972,6 +17979,7 @@ impl<'a> Game<'a> {
                 anims.classify(registry);
                 anims
             },
+            mob_equipment: HashMap::new(),
             using: None,
             use_duration: 0,
             use_ticks_set: false,

@@ -1,0 +1,12 @@
+{
+  "hooks": [
+    {
+      "name": "living_equipment_change",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_living_equipment_change",
+      "neoforge": "LivingEquipmentChangeEvent",
+      "side": "server"
+    }
+  ],
+  "rust_summary": "a mob's equipment slot taking a different item (`native_living_equipment_change`).",
+  "doc_summary": "`native_living_equipment_change(dimension, entity, kind, slot, from, to)` is heard when a mob's equipment slot holds a different item than the tick before: `entity` and `kind` name the mob, `slot` is `mainhand`, `offhand`, `feet`, `legs`, `chest`, `head` or `saddle`, and `from`/`to` are the stacks (none for an empty slot), as NeoForge's `LivingEquipmentChangeEvent` reports them. The comparison runs once a tick after the mobs ticked, with `ItemStack.matches`, and a mob new to the level counts from empty, so a mob that spawns equipped is heard on its first tick. A player's equips stay `native_on_equip`'s. It only hears. Server-side. Bundles need \"hooks\": @API:living_equipment_change@."
+}

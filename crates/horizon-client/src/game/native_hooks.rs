@@ -2820,6 +2820,26 @@ impl Game<'_> {
     pub(super) fn native_on_equip(&mut self, slot: &str, new: Option<&ItemStack>) {
         let _ = (slot, new);
     }
+    /// A mob's equipment slot `slot` (`mainhand`, `offhand`, `feet`, `legs`,
+    /// `chest`, `head`, `saddle`) took a different item in `dimension`:
+    /// `LivingEntity.collectEquipmentChanges`, which NeoForge posts as
+    /// `LivingEquipmentChangeEvent`. `entity` is the mob's ID and `kind` its
+    /// type; `from` and `to` are the stacks (none for empty). The slots are
+    /// compared once a tick, after the mobs ticked, and a mob new to the level
+    /// counts from empty, so one that spawns equipped is heard on its first
+    /// tick. Players are `native_on_equip`'s. It only hears, and cannot be
+    /// cancelled. Server-side. @API:living_equipment_change@.
+    pub(super) fn native_living_equipment_change(
+        &mut self,
+        dimension: &str,
+        entity: u32,
+        kind: &str,
+        slot: &str,
+        from: Option<&ItemStack>,
+        to: Option<&ItemStack>,
+    ) {
+        let _ = (dimension, entity, kind, slot, from, to);
+    }
     /// `MobEffect.shouldApplyEffectTickThisTick` for a content mod's effect
     /// `effect` (`ruby:bleeding`), each tick a player or a mob has it, in
     /// `MobEffectInstance.tickServer` before it counts down: `tick_count` is
