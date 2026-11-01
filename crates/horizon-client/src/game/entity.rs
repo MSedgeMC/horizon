@@ -3,8 +3,9 @@
 //!
 //! Default methods follow vanilla's `Entity`; a kind overrides one only where
 //! its vanilla class does. [`EntityHandle`] names one entity by list and index,
-//! so a system can collect handles and reach each entity after other borrows of
-//! `Game` end. A new kind is one line in `entity_lists!` and one `impl Entity`.
+//! so a system can walk handles and reach each entity after other borrows of
+//! `Game` end. The walk allocates nothing and dispatch is static: hot paths pay
+//! no vtable. A new kind is one line in `entity_lists!` and one `impl Entity`.
 
 use super::{FallingBlock, Game};
 use super::{
@@ -69,9 +70,30 @@ macro_rules! stored_motion {
     };
 }
 
-/// The game's lists of entities, in the order systems walk them.
+/// The game's lists of entities, in the order systems walk them. Hands them to
+/// `$then`, so one list drives the handles and every typed dispatch.
 macro_rules! entity_lists {
-    ($($kind:ident: $($list:ident).+,)*) => {
+    ($then:ident, $($args:tt)*) => {
+        $crate::game::entity::$then! {
+            ($($args)*)
+            Mob: mobs,
+            Item: dropped,
+            Boat: boats,
+            Cart: carts,
+            ArmorStand: armor_stands,
+            Tnt: tnts,
+            Falling: falling,
+            Orb: orbs,
+            Projectile: creatures.projectiles,
+            Rocket: rockets,
+            Trident: tridents,
+        }
+    };
+}
+pub(crate) use entity_lists;
+
+macro_rules! define_entity_handles {
+    (() $($kind:ident: $($list:ident).+,)*) => {
         /// One entity, by list and index.
         #[derive(Clone, Copy, Hash, PartialEq, Eq)]
         pub(super) enum EntityHandle {
@@ -79,40 +101,48 @@ macro_rules! entity_lists {
         }
 
         impl Game<'_> {
-            pub(super) fn entity_handles(&self) -> Vec<EntityHandle> {
-                let mut handles = Vec::new();
-                $(handles.extend((0..self$(.$list)+.len()).map(EntityHandle::$kind));)*
-                handles
-            }
-
-            pub(super) fn entity(&self, handle: EntityHandle) -> &dyn Entity {
-                match handle {
-                    $(EntityHandle::$kind(i) => &self$(.$list)+[i],)*
-                }
-            }
-
-            pub(super) fn entity_mut(&mut self, handle: EntityHandle) -> &mut dyn Entity {
-                match handle {
-                    $(EntityHandle::$kind(i) => &mut self$(.$list)+[i],)*
-                }
+            /// Every entity's handle: lengths read now, nothing allocated, and
+            /// no borrow of `Game` held, so the caller can change it mid-walk.
+            pub(super) fn entity_handles(&self) -> impl Iterator<Item = EntityHandle> + use<> {
+                std::iter::empty()
+                    $(.chain((0..self$(.$list)+.len()).map(EntityHandle::$kind)))*
             }
         }
     };
 }
+pub(crate) use define_entity_handles;
 
-entity_lists! {
-    Mob: mobs,
-    Item: dropped,
-    Boat: boats,
-    Cart: carts,
-    ArmorStand: armor_stands,
-    Tnt: tnts,
-    Falling: falling,
-    Orb: orbs,
-    Projectile: creatures.projectiles,
-    Rocket: rockets,
-    Trident: tridents,
+entity_lists!(define_entity_handles,);
+
+macro_rules! match_entity {
+    (($binding:pat, $game:expr, $handle:expr, $body:expr)
+     $($kind:ident: $($list:ident).+,)*) => {
+        match $handle {
+            $($crate::game::entity::EntityHandle::$kind(i) => {
+                let $binding = $game$(.$list)+[i];
+                $body
+            })*
+        }
+    };
 }
+pub(crate) use match_entity;
+
+/// Runs `$body` with `$entity` bound to the handle's entity, as its own type:
+/// one match, each arm compiled for its kind, so nothing goes through a vtable.
+macro_rules! with_entity {
+    ($game:expr, $handle:expr, $entity:ident => $body:expr) => {
+        $crate::game::entity::entity_lists!(match_entity, ref $entity, $game, $handle, $body)
+    };
+}
+pub(super) use with_entity;
+
+/// [`with_entity`], with the entity mutable.
+macro_rules! with_entity_mut {
+    ($game:expr, $handle:expr, $entity:ident => $body:expr) => {
+        $crate::game::entity::entity_lists!(match_entity, ref mut $entity, $game, $handle, $body)
+    };
+}
+pub(super) use with_entity_mut;
 
 impl Entity for Mob {
     stored_motion!();

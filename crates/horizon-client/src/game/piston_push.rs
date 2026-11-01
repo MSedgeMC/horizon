@@ -9,7 +9,10 @@
 //! then run through the block collision scan, so a pushed entity stops at a
 //! wall instead of passing through it.
 //!
-use super::{Game, entity::EntityHandle};
+use super::{
+    Game,
+    entity::{Entity, EntityHandle, with_entity, with_entity_mut},
+};
 use horizon_client::collisions::{EntityCollisions, SceneCollisions, with_piston_noclip};
 use horizon_core::geometry::{Aabb, Axis, Direction, ShapeOp, Vec3, border::BorderGeometry};
 use horizon_core::position::BlockPos;
@@ -177,8 +180,7 @@ impl Game<'_> {
                 delta_progress,
             )
         });
-        let targets = self.push_targets();
-        for &target in &targets {
+        for target in self.push_targets() {
             let Some(body) = self.push_body(target, pos, &steps) else {
                 continue;
             };
@@ -235,7 +237,7 @@ impl Game<'_> {
         // Vanilla selects honey passengers after all collided entities have moved.
         if honey && movement.normal()[1] == 0 {
             let area = piston_push::sticky_area(pos, piston.shape_state(), sticky_top);
-            for target in targets {
+            for target in self.push_targets() {
                 let Some(body) = self.push_body(target, pos, &steps) else {
                     continue;
                 };
@@ -335,22 +337,21 @@ impl Game<'_> {
 
     /// The entities a moving block can run into: the window's player, the LAN
     /// guests in the level, then the mobs.
-    fn push_targets(&self) -> Vec<Target> {
-        let mut targets = Vec::new();
-        if self.player.is_some() {
-            targets.push(Target::Player);
-        }
-        if let Some(host) = self.lan.as_ref() {
-            targets.extend(
-                host.hub
-                    .guests
-                    .iter()
-                    .filter(|g| host.hub.here(g) && g.loaded && !g.dead)
-                    .map(|g| Target::Guest(g.conn)),
-            );
-        }
-        targets.extend(self.entity_handles().into_iter().map(Target::Entity));
-        targets
+    fn push_targets(&self) -> impl Iterator<Item = Target> + use<> {
+        let player = self.player.is_some().then_some(Target::Player);
+        // Empty, and so unallocated, unless guests are here.
+        let guests: Vec<Target> = self.lan.as_ref().map_or_else(Vec::new, |host| {
+            host.hub
+                .guests
+                .iter()
+                .filter(|g| host.hub.here(g) && g.loaded && !g.dead)
+                .map(|g| Target::Guest(g.conn))
+                .collect()
+        });
+        player
+            .into_iter()
+            .chain(guests)
+            .chain(self.entity_handles().map(Target::Entity))
     }
 
     /// What the push needs from one entity, or `None` when it is not pushed:
@@ -391,19 +392,18 @@ impl Game<'_> {
                         .is_some_and(|m| m.ground.supporting_block == Some(pos)),
                 })
             }
-            Target::Entity(handle) => {
-                let entity = self.entity(handle);
+            Target::Entity(handle) => with_entity!(self, handle, entity => {
                 if !entity.is_alive() || entity.get_piston_push_reaction() == IgnoreEntity {
                     return None;
                 }
                 Some(Body {
-                    bounds: entity.bounds(),
+                    bounds: Entity::bounds(entity),
                     position: entity.position(),
                     on_ground: entity.on_ground(),
                     step_height: entity.get_step_height(),
                     supported: entity.is_supported_by(pos),
                 })
-            }
+            }),
         }
     }
 
@@ -503,7 +503,9 @@ impl Game<'_> {
                     }
                 }
             }
-            Target::Entity(handle) => self.entity_mut(handle).move_by_piston(movement),
+            Target::Entity(handle) => {
+                with_entity_mut!(self, handle, entity => entity.move_by_piston(movement))
+            }
         }
     }
 
@@ -523,7 +525,9 @@ impl Game<'_> {
                     motion.velocity = piston_push::bounce_velocity(movement, motion.velocity);
                 }
             }
-            Target::Entity(handle) => self.entity_mut(handle).piston_slime_bounce(movement),
+            Target::Entity(handle) => {
+                with_entity_mut!(self, handle, entity => Entity::piston_slime_bounce(entity, movement))
+            }
         }
     }
 }
