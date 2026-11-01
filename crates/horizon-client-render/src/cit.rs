@@ -28,13 +28,8 @@ pub fn load_rules(root: &Path) -> Vec<Rule> {
         .into_iter()
         .filter(|path| !path.ends_with("/cit.properties"))
         .filter_map(|path| {
-            // Java reads `.properties` as Latin-1: a pack saved that way still loads.
-            let bytes = fs::read(root.join(&path)).ok()?;
-            let text = String::from_utf8(bytes)
-                .unwrap_or_else(|e| e.into_bytes().iter().map(|&b| char::from(b)).collect());
-            let rule = Rule::parse(&path, &Properties::parse_equals_first(&text), |p| {
-                root.join(p).is_file()
-            });
+            let props = read_properties(&root.join(&path))?;
+            let rule = Rule::parse(&path, &props, |p| root.join(p).is_file());
             if rule.is_none() {
                 log::warn!("custom item textures: {path} is not a rule Horizon can read");
             }
@@ -43,6 +38,16 @@ pub fn load_rules(root: &Path) -> Vec<Rule> {
         .collect();
     rules.sort_by(Rule::priority);
     rules
+}
+
+/// A `.properties` file as CIT Resewn reads them (`Properties::parse_equals_first`): UTF-8,
+/// else Latin-1 as Java reads them, so a pack saved that way still loads. `None` when it can't
+/// be read.
+pub fn read_properties(path: &Path) -> Option<Properties> {
+    let bytes = fs::read(path).ok()?;
+    let text = String::from_utf8(bytes)
+        .unwrap_or_else(|e| e.into_bytes().iter().map(|&b| char::from(b)).collect());
+    Some(Properties::parse_equals_first(&text))
 }
 
 /// The rules with an index by item and a cache of what each stack matched.
@@ -130,13 +135,14 @@ impl CitRules {
         let found = candidates
             .iter()
             .copied()
-            .find(|&i| self.matches(i, stack, Some(hand), max_damage, comps.as_ref()));
+            .find(|&i| self.matches(i, stack, hand, max_damage, comps.as_ref()));
         remember(&self.selected, key, found);
         found.map(|i| i as usize)
     }
 
-    /// Every matching Enchantment rule, in priority order (layers are the glint PR's business).
-    pub fn enchantments(&self, stack: &ItemStack, max_damage: u32) -> Vec<usize> {
+    /// Every matching Enchantment rule for the stack drawn in `hand` (`Hand::Main` for one in a
+    /// GUI), in priority order.
+    pub fn enchantments(&self, stack: &ItemStack, hand: Hand, max_damage: u32) -> Vec<usize> {
         let named = self.by_item[Kind::Enchantment as usize]
             .get(&*stack.item)
             .map_or(&[][..], Vec::as_slice);
@@ -145,7 +151,7 @@ impl CitRules {
         }
         let comps = encode_components(stack);
         let key = cache_key(
-            (1, Kind::Enchantment, Hand::Any),
+            (1, Kind::Enchantment, hand),
             stack,
             max_damage,
             comps.as_ref(),
@@ -154,16 +160,17 @@ impl CitRules {
         let found = hit.unwrap_or_else(|| {
             let mut all: Vec<u32> = named.iter().chain(&self.any_item).copied().collect();
             all.sort_unstable();
-            all.retain(|&i| self.matches(i, stack, None, max_damage, comps.as_ref()));
+            all.retain(|&i| self.matches(i, stack, hand, max_damage, comps.as_ref()));
             remember(&self.enchanted, key, all.clone());
             all
         });
         found.into_iter().map(|i| i as usize).collect()
     }
 
-    /// The glint layers this stack draws and whether vanilla's still does (`StackGlint`),
-    /// worked out once per stack; `None` when the pack changes no glint.
-    pub fn glint(&self, stack: &ItemStack, max_damage: u32) -> Option<Arc<StackGlint>> {
+    /// The glint layers this stack draws in `hand` (`Hand::Main` in a GUI) and whether
+    /// vanilla's still does (`StackGlint`), worked out once per stack and hand; `None` when the
+    /// pack changes no glint.
+    pub fn glint(&self, stack: &ItemStack, hand: Hand, max_damage: u32) -> Option<Arc<StackGlint>> {
         let no_rules =
             self.any_item.is_empty() && self.by_item[Kind::Enchantment as usize].is_empty();
         if no_rules && self.global.use_glint {
@@ -171,7 +178,7 @@ impl CitRules {
         }
         let comps = encode_components(stack);
         let key = cache_key(
-            (2, Kind::Enchantment, Hand::Any),
+            (2, Kind::Enchantment, hand),
             stack,
             max_damage,
             comps.as_ref(),
@@ -179,7 +186,7 @@ impl CitRules {
         if let Some(hit) = lock(&self.glints).get(&key) {
             return Some(hit.clone());
         }
-        let matched = self.enchantments(stack, max_damage);
+        let matched = self.enchantments(stack, hand, max_damage);
         let glint = Arc::new(StackGlint::new(
             &self.rules,
             &matched,
@@ -190,17 +197,17 @@ impl CitRules {
         Some(glint)
     }
 
-    /// Whether rule `i` matches; `hand` None skips the hand test (enchantment glints).
+    /// Whether rule `i` matches the stack drawn in `hand`.
     fn matches(
         &self,
         i: u32,
         stack: &ItemStack,
-        hand: Option<Hand>,
+        hand: Hand,
         max_damage: u32,
         comps: Option<&Tag>,
     ) -> bool {
         let rule = &self.rules[i as usize];
-        if hand.is_some_and(|h| rule.hand != Hand::Any && rule.hand != h) {
+        if rule.hand != Hand::Any && rule.hand != hand {
             return false;
         }
         let count = i32::try_from(stack.count).unwrap_or(i32::MAX);
@@ -682,7 +689,7 @@ mod tests {
         );
         assert_eq!(item(&cit, enchanted("stone", &mixed)), Some("any3"));
         let glints = |stack: ItemStack| -> Vec<&str> {
-            let found = cit.enchantments(&stack, 0).into_iter();
+            let found = cit.enchantments(&stack, Hand::Main, 0).into_iter();
             found.map(|i| stem(&cit, Some(i)).unwrap()).collect()
         };
         let sharp = [("sharpness", 1)];
@@ -711,21 +718,41 @@ mod tests {
             (Arc::from("minecraft:sharpness"), 3),
             (Arc::from("minecraft:mending"), 1),
         ];
-        let glint = cit.glint(&book, 0).unwrap();
+        let glint = cit.glint(&book, Hand::Main, 0).unwrap();
         let weights: Vec<_> = glint.layers.iter().map(|l| l.weight).collect();
         assert_eq!(weights, [0.75, 0.25]);
         assert!(glint.vanilla);
         let plain = cit
-            .glint(&enchanted("stick", &[("sharpness", 1)]), 0)
+            .glint(&enchanted("stick", &[("sharpness", 1)]), Hand::Main, 0)
             .unwrap();
         assert_eq!(plain.layers.len(), 1);
         assert!(!plain.vanilla);
         // No enchantment rules: nothing changes, unless the pack turns vanilla's glint off.
         let mut bare = rules(&[("stick", "items=stick")]);
-        assert!(bare.glint(&new("stick"), 0).is_none());
+        assert!(bare.glint(&new("stick"), Hand::Main, 0).is_none());
         bare.global.use_glint = false;
-        assert!(!bare.glint(&new("stick"), 0).unwrap().vanilla);
+        assert!(!bare.glint(&new("stick"), Hand::Main, 0).unwrap().vanilla);
         cit.global.use_glint = false;
-        assert!(cit.glint(&new("stick"), 0).unwrap().is_empty());
+        assert!(cit.glint(&new("stick"), Hand::Main, 0).unwrap().is_empty());
+    }
+
+    #[test]
+    fn an_off_hand_layer_draws_only_in_the_off_hand() {
+        let cit = rules(&[
+            ("left", "type=enchantment\nlayer=1\nhand=off"),
+            ("both", "type=enchantment"),
+        ]);
+        let sword = enchanted("diamond_sword", &[("sharpness", 1)]);
+        let layers = |hand| -> Vec<&str> {
+            let glint = cit.glint(&sword, hand, 0).unwrap();
+            glint
+                .layers
+                .iter()
+                .map(|l| stem(&cit, Some(l.rule)).unwrap())
+                .collect()
+        };
+        assert_eq!(layers(Hand::Off), ["both", "left"]);
+        // Asked in this order, a cache keyed without the hand would answer as for the off hand.
+        assert_eq!(layers(Hand::Main), ["both"]);
     }
 }
