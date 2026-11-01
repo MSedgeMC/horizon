@@ -212,17 +212,23 @@ fn wrap_border((name, w, h, data): &PackedImage) -> PackedImage {
     }
     (name.clone(), bw, bh, out)
 }
-/// The textures the enabled packs' Custom Item Textures item rules draw, under their
-/// `cit_assets` ids, beyond those already packed; with their flags and whether they animate.
-/// They are item textures, so an animated strip keeps its first frame. None without
-/// `optifine/cit` rules.
+/// The textures the enabled packs' Custom Item Textures item rules draw, theirs and their JSON
+/// models', under their `cit_assets` ids, beyond those already packed; with their flags and
+/// whether they animate. They are item textures, so an animated strip keeps its first frame.
+/// None without `optifine/cit` rules.
 fn cit_sprites(
     root: &Path,
     packed: &[PackedImage],
 ) -> Vec<(PackedImage, Option<TextureFlags>, bool)> {
     let have: HashSet<&str> = packed.iter().map(|i| i.0.as_str()).collect();
     let mut out = Vec::new();
-    for id in crate::cit_assets::item_sprites(&crate::cit::load_rules(root)) {
+    let rules = crate::cit::load_rules(root);
+    let mut ids = crate::cit_assets::item_sprites(&rules);
+    if !rules.is_empty() {
+        let models = crate::cit_assets::load_models(root, &rules);
+        ids.extend(crate::cit_assets::model_sprites(&models));
+    }
+    for id in ids {
         // Vanilla's sprites are packed without their namespace, as `sprite_name` looks them up.
         let name = id.strip_prefix("minecraft:").unwrap_or(&id);
         if have.contains(name) {
