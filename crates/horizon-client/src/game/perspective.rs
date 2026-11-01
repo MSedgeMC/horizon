@@ -800,19 +800,19 @@ impl Game<'_> {
         light: u32,
         out: &mut Vec<horizon_client::mesher::Vertex>,
     ) {
+        let stack = m.extra.armor[1]
+            .as_ref()
+            .filter(|s| chest == Some(&*s.item));
         self.wings_geometry(
             chest,
+            stack,
             m.cape.as_deref(),
             false,
             horizon_client::mobs::render::base_transform(m, partial, camera),
             m.extra.elytra.angles(partial),
             m.extra.crouching,
             light,
-            self.wings_overlay(
-                m.extra.armor[1]
-                    .as_ref()
-                    .filter(|s| chest == Some(&*s.item)),
-            ),
+            self.wings_overlay(stack),
             out,
         );
     }
@@ -831,11 +831,14 @@ impl Game<'_> {
     /// `WingsLayer.submit` for any wearer: the wings of `chest`'s equipment
     /// asset on `base` (the wearer's model transform), `baby` for the baby
     /// elytra model. `cape` is a player's own cape texture, which has its
-    /// elytra (`WingsLayer.getPlayerElytraTexture`).
+    /// elytra (`WingsLayer.getPlayerElytraTexture`). `stack` is the worn
+    /// stack when known: an OptiFine CIT elytra rule for it replaces the
+    /// texture, the cape's too, as OptiFine's `LayerElytra` does.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn wings_geometry(
         &self,
         chest: Option<&str>,
+        stack: Option<&horizon_client::items::ItemStack>,
         cape: Option<&str>,
         baby: bool,
         base: glam::Mat4,
@@ -861,7 +864,12 @@ impl Game<'_> {
             return;
         };
         let sprites = &self.gui.atlas.sprites;
-        let rect = cape.and_then(|c| sprites.get(c));
+        let custom = stack
+            .and_then(|s| self.cit_worn_rule(horizon_client::cit::Kind::Elytra, s))
+            .and_then(horizon_client::cit_armor::elytra_sprite);
+        let rect = custom
+            .and_then(|name| sprites.get(name.as_str()))
+            .or_else(|| cape.and_then(|c| sprites.get(c)));
         let (Some(model), Some(rect)) = (
             assets
                 .player
