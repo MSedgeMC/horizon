@@ -94,12 +94,12 @@ impl Game<'_> {
             Vec3::new(lid[3], lid[4], lid[5]),
         );
         let at = BlockPos::new(pos[0], pos[1], pos[2]);
-        for target in self.push_targets() {
+        self.push_targets().for_each(|target| {
             let Some(body) = self.push_body(target, at, steps) else {
-                continue;
+                return;
             };
             if !body.bounds.intersects(area) {
-                continue;
+                return;
             }
             let Ok(moved) = pushed_movement(
                 SceneCollisions {
@@ -114,12 +114,12 @@ impl Game<'_> {
                 body.step_height,
                 body.on_ground,
             ) else {
-                continue;
+                return;
             };
             if moved.length_squared() > 0.0 {
                 self.apply_push(target, moved);
             }
-        }
+        });
     }
 
     fn push_for_piston(
@@ -180,9 +180,11 @@ impl Game<'_> {
                 delta_progress,
             )
         });
-        for target in self.push_targets() {
+        // `for_each`: a chain folds list by list, where `next` would re-check every
+        // link for each entity.
+        self.push_targets().for_each(|target| {
             let Some(body) = self.push_body(target, pos, &steps) else {
-                continue;
+                return;
             };
             let amount = piston_push::collided_amount(
                 &boxes,
@@ -233,7 +235,7 @@ impl Game<'_> {
                     );
                 }
             }
-        }
+        });
         // Vanilla selects honey passengers after all collided entities have moved.
         if honey && movement.normal()[1] == 0 {
             let area = piston_push::sticky_area(pos, piston.shape_state(), sticky_top);
