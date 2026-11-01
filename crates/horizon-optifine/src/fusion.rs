@@ -1,5 +1,5 @@
 //! Fusion's resource pack format (the Fusion Connected Textures mod): a `fusion` section in a
-//! texture's `.mcmeta` (`texture`: connecting, random, continuous and scrolling textures, and
+//! texture's `.mcmeta` ([`texture`]: connecting, random, continuous and scrolling textures, and
 //! the emissive, render type and tinting options every type takes), the connection predicates
 //! that say when a connecting texture joins a neighbour ([`predicate`]), the `connections` of a
 //! `fusion:connecting` block model (`model`), and which tiles of a connecting texture's image a
@@ -14,9 +14,11 @@
 
 pub mod layout;
 pub mod predicate;
+pub mod texture;
 
 pub use layout::{Layout, Tiles};
 pub use predicate::Connection;
+pub use texture::Meta;
 
 use crate::cem::json::Json;
 
@@ -25,10 +27,36 @@ fn kind(name: &str) -> &str {
     name.strip_prefix("fusion:").unwrap_or(name)
 }
 
+fn bool_field(json: &Json, key: &str) -> Result<Option<bool>, String> {
+    match json.get(key) {
+        None => Ok(None),
+        Some(Json::Bool(b)) => Ok(Some(*b)),
+        Some(_) => Err(format!("`{key}` is not true or false")),
+    }
+}
+
 fn str_field<'a>(json: &'a Json, key: &str) -> Result<Option<&'a str>, String> {
     match json.get(key) {
         None => Ok(None),
         Some(Json::Str(s)) => Ok(Some(s)),
         Some(_) => Err(format!("`{key}` is not a string")),
+    }
+}
+
+/// An integer field in `range`, else `default`.
+fn int_field(
+    json: &Json,
+    key: &str,
+    range: std::ops::RangeInclusive<i64>,
+    default: i64,
+) -> Result<i64, String> {
+    match json.get(key) {
+        None => Ok(default),
+        Some(Json::Num(n)) if n.fract() == 0.0 && range.contains(&(*n as i64)) => Ok(*n as i64),
+        Some(_) => Err(format!(
+            "`{key}` is not an integer from {} to {}",
+            range.start(),
+            range.end()
+        )),
     }
 }
