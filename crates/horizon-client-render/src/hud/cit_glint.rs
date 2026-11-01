@@ -8,10 +8,12 @@ use super::HudVertex;
 use horizon_optifine::cit::{Blend, Factor, Kind, Rule};
 use std::path::Path;
 
-/// Slots the shader's table holds; rules past it draw no layer.
+/// Slots the shader's table holds; rules past it draw no layer (and match no stack).
 pub const MAX_SLOTS: usize = 256;
 /// The largest side the shared texture size takes: bigger glints are scaled down to it.
 const MAX_SIDE: u32 = 1024;
+/// The most the texture array takes, in bytes: past it the shared size is halved.
+const MAX_BYTES: u64 = 64 << 20;
 
 /// One slot's constants.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -29,10 +31,11 @@ pub struct Slot {
 pub struct GlintTextures {
     pub width: u32,
     pub height: u32,
-    /// One `width` x `height` RGBA image per slot, slot after slot.
+    /// One `width` x `height` RGBA image per slot, slot after slot. Kept after the upload: every
+    /// split-screen player's renderer builds its own array from it.
     pub pixels: Vec<u8>,
-    /// Per rule (an index into `CitRules::rules`): its slot; `None` for other kinds of rules and
-    /// textures that did not load.
+    /// Per rule (an index into `CitRules::rules`): its slot; `None` for other kinds of rules,
+    /// textures that did not load and rules past `MAX_SLOTS`.
     pub slot_of: Vec<Option<u8>>,
     pub slots: Vec<Slot>,
     /// The blends the slots use, once each: the HUD makes a pipeline per entry.
@@ -42,31 +45,36 @@ pub struct GlintTextures {
 impl GlintTextures {
     /// The textures of `rules` under the overlay resource root.
     pub fn load(root: &Path, rules: &[Rule]) -> Self {
-        let images = rules
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.kind == Kind::Enchantment)
-            .filter_map(|(i, r)| {
-                let path = r.texture.as_deref()?;
-                match super::decode(&root.join(path)) {
-                    Ok(image) => Some((i, image)),
-                    Err(e) => {
-                        log::warn!("custom item textures: glint {path} left out: {e}");
-                        None
-                    }
-                }
-            })
-            .take(MAX_SLOTS)
-            .collect();
-        Self::new(rules, images)
+        let mut images = Vec::new();
+        let mut past = 0;
+        for (i, rule) in rules.iter().enumerate() {
+            let Some(path) = rule.texture.as_deref() else {
+                continue;
+            };
+            if rule.kind != Kind::Enchantment {
+                continue;
+            }
+            if images.len() == MAX_SLOTS {
+                past += 1;
+                continue;
+            }
+            match super::decode(&root.join(path)) {
+                Ok(image) => images.push((i, image)),
+                Err(e) => log::warn!("custom item textures: glint {path} left out: {e}"),
+            }
+        }
+        if past > 0 {
+            log::warn!(
+                "custom item textures: {past} glint rules past the first {MAX_SLOTS} left out"
+            );
+        }
+        Self::new(rules, images, MAX_BYTES)
     }
 
-    /// `images`: (rule, (width, height, RGBA)).
-    fn new(rules: &[Rule], images: Vec<(usize, (u32, u32, Vec<u8>))>) -> Self {
-        let side = |pick: fn(&(u32, u32, Vec<u8>)) -> u32| {
-            images.iter().map(|(_, im)| pick(im).min(MAX_SIDE)).max()
-        };
-        let (Some(width), Some(height)) = (side(|im| im.0), side(|im| im.1)) else {
+    /// `images`: (rule, (width, height, RGBA)), in at most `budget` bytes.
+    fn new(rules: &[Rule], images: Vec<(usize, (u32, u32, Vec<u8>))>, budget: u64) -> Self {
+        let sizes = images.iter().map(|(_, (w, h, _))| (*w, *h));
+        let Some((width, height)) = shared_size(sizes, images.len(), budget) else {
             return Self::default();
         };
         let mut out = Self {
@@ -76,8 +84,9 @@ impl GlintTextures {
             ..Self::default()
         };
         for (rule, (w, h, rgba)) in images {
-            out.pixels.extend(resize(&rgba, w, h, width, height));
             let glint = &rules[rule].glint;
+            out.pixels
+                .extend(resize(&rgba, (w, h), (width, height), glint.blur));
             let blend = match out.blends.iter().position(|b| *b == glint.blend) {
                 Some(i) => i,
                 None => {
@@ -100,18 +109,66 @@ impl GlintTextures {
     }
 }
 
-/// Nearest-neighbour scaling: the glint repeats over the item, so its scale does not show.
-fn resize(rgba: &[u8], w: u32, h: u32, to_w: u32, to_h: u32) -> Vec<u8> {
-    if (w, h) == (to_w, to_h) {
+/// The size every slot takes: the largest width and height of `sizes`, each at most
+/// `MAX_SIDE`, then halved until `layers` RGBA images of it fit in `budget` bytes.
+fn shared_size(
+    sizes: impl Iterator<Item = (u32, u32)>,
+    layers: usize,
+    budget: u64,
+) -> Option<(u32, u32)> {
+    let (mut w, mut h) = sizes.fold(None, |max: Option<(u32, u32)>, (w, h)| {
+        let (w, h) = (w.clamp(1, MAX_SIDE), h.clamp(1, MAX_SIDE));
+        Some(max.map_or((w, h), |(mw, mh)| (mw.max(w), mh.max(h))))
+    })?;
+    let bytes = |w: u32, h: u32| u64::from(w) * u64::from(h) * 4 * layers as u64;
+    while bytes(w, h) > budget && (w > 1 || h > 1) {
+        (w, h) = ((w / 2).max(1), (h / 2).max(1));
+    }
+    Some((w, h))
+}
+
+/// `rgba` (`from` texels) scaled to `to`: bilinearly for a `blur` glint, as the GPU would have
+/// filtered the texture at its own size, else to the nearest texel. Both wrap at the edges, as
+/// the glint repeats over the item.
+fn resize(rgba: &[u8], from: (u32, u32), to: (u32, u32), smooth: bool) -> Vec<u8> {
+    if from == to {
         return rgba.to_vec();
     }
-    let mut out = Vec::with_capacity((to_w * to_h * 4) as usize);
+    let ((w, h), (to_w, to_h)) = (from, to);
+    let texel = |x: i64, y: i64| {
+        let (x, y) = (x.rem_euclid(i64::from(w)), y.rem_euclid(i64::from(h)));
+        let at = (y as usize * w as usize + x as usize) * 4;
+        &rgba[at..at + 4]
+    };
+    // Where texel `i` of `n` samples the source's `size` texels, in source texels.
+    let centre = |i: u32, n: u32, size: u32| (f64::from(i) + 0.5) * f64::from(size) / f64::from(n);
+    let mut out = Vec::with_capacity(to_w as usize * to_h as usize * 4);
     for y in 0..to_h {
-        let sy = (u64::from(y) * u64::from(h) / u64::from(to_h)) as usize;
+        let sy = centre(y, to_h, h);
         for x in 0..to_w {
-            let sx = (u64::from(x) * u64::from(w) / u64::from(to_w)) as usize;
-            let at = (sy * w as usize + sx) * 4;
-            out.extend_from_slice(&rgba[at..at + 4]);
+            let sx = centre(x, to_w, w);
+            if !smooth {
+                let pick = |i: u32, n: u32, size: u32| {
+                    (u64::from(i) * u64::from(size) / u64::from(n)) as i64
+                };
+                out.extend_from_slice(texel(pick(x, to_w, w), pick(y, to_h, h)));
+                continue;
+            }
+            let (fx, fy) = (sx - 0.5, sy - 0.5);
+            let (x0, y0) = (fx.floor() as i64, fy.floor() as i64);
+            let (tx, ty) = (fx - fx.floor(), fy - fy.floor());
+            let [a, b, c, d] = [
+                texel(x0, y0),
+                texel(x0 + 1, y0),
+                texel(x0, y0 + 1),
+                texel(x0 + 1, y0 + 1),
+            ];
+            let lerp =
+                |p: &[u8], q: &[u8], k: usize| f64::from(p[k]) * (1.0 - tx) + f64::from(q[k]) * tx;
+            out.extend((0..4).map(|k| {
+                let (top, bottom) = (lerp(a, b, k), lerp(c, d, k));
+                (top * (1.0 - ty) + bottom * ty).round() as u8
+            }));
         }
     }
     out
@@ -189,6 +246,27 @@ impl CitGlintPass {
         if textures.is_empty() {
             return None;
         }
+        // wgpu's OpenGL backend makes 1 layer a 2D texture and 6n a cube map
+        // (`gfx::array_layers`): pad with empty layers, within the GPU's limit. Slots past the
+        // layers kept sample the last one.
+        let gl = device.adapter_info().backend == wgpu::Backend::Gl;
+        let max = device.limits().max_texture_array_layers.max(1);
+        let slots = textures.slots.len() as u32;
+        let mut kept = slots.min(max);
+        while kept > 1 && crate::gfx::array_layers(kept, gl) > max {
+            kept -= 1;
+        }
+        if kept < slots {
+            log::warn!("custom item textures: the GPU holds {kept} of {slots} glint textures");
+        }
+        let layers = crate::gfx::array_layers(kept, gl).min(max);
+        let layer_bytes = textures.width as usize * textures.height as usize * 4;
+        let mut data = std::borrow::Cow::Borrowed(&textures.pixels[..]);
+        if layers != slots {
+            let mut padded = textures.pixels[..layer_bytes * kept as usize].to_vec();
+            padded.resize(layer_bytes * layers as usize, 0);
+            data = std::borrow::Cow::Owned(padded);
+        }
         let texture = device.create_texture_with_data(
             queue,
             &wgpu::TextureDescriptor {
@@ -196,7 +274,7 @@ impl CitGlintPass {
                 size: wgpu::Extent3d {
                     width: textures.width,
                     height: textures.height,
-                    depth_or_array_layers: textures.slots.len() as u32,
+                    depth_or_array_layers: layers,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -206,7 +284,7 @@ impl CitGlintPass {
                 view_formats: &[],
             },
             wgpu::util::TextureDataOrder::LayerMajor,
-            &textures.pixels,
+            &data,
         );
         let view = texture.create_view(&wgpu::TextureViewDescriptor {
             dimension: Some(wgpu::TextureViewDimension::D2Array),
@@ -382,6 +460,7 @@ mod tests {
                 (2, (2, 2, quad.clone())),
                 (3, (2, 2, quad.clone())),
             ],
+            MAX_BYTES,
         );
         assert_eq!((t.width, t.height), (2, 2));
         assert_eq!(t.slot_of, [Some(0), None, Some(1), Some(2)]);
@@ -398,7 +477,53 @@ mod tests {
         assert_eq!(blends, [0, 1, 0]);
         assert_eq!(t.slots[0].rgba, [0.5, 1.0, 1.0, 1.0]);
         assert!(!t.slots[1].blur && t.slots[2].blur);
-        assert!(GlintTextures::new(&rules, Vec::new()).is_empty());
+        assert!(GlintTextures::new(&rules, Vec::new(), MAX_BYTES).is_empty());
+    }
+
+    #[test]
+    fn big_glints_are_scaled_down_to_the_largest_side() {
+        let rules = [rule("wide", "type=enchantment\nblur=false")];
+        // 2048 x 1, texel x holding x in red and green: every other texel is kept.
+        let wide: Vec<u8> = (0..2048u32)
+            .flat_map(|x| [(x % 256) as u8, (x / 256) as u8, 0, 255])
+            .collect();
+        let t = GlintTextures::new(&rules, vec![(0, (2048, 1, wide))], MAX_BYTES);
+        assert_eq!((t.width, t.height), (1024, 1));
+        for x in [0u32, 1, 300, 1023] {
+            let at = x as usize * 4;
+            let source = 2 * x;
+            let want = [(source % 256) as u8, (source / 256) as u8, 0, 255];
+            assert_eq!(t.pixels[at..at + 4], want, "texel {x}");
+        }
+    }
+
+    #[test]
+    fn the_array_is_halved_until_it_fits() {
+        let sizes = |n: usize| std::iter::repeat_n((1024, 1024), n);
+        // 16 layers of 1024 x 1024 RGBA are 64 MiB; a 17th halves both sides.
+        assert_eq!(shared_size(sizes(16), 16, 64 << 20), Some((1024, 1024)));
+        assert_eq!(shared_size(sizes(17), 17, 64 << 20), Some((512, 512)));
+        // The largest of each side, never past MAX_SIDE.
+        let mixed = [(16, 4096), (64, 32)].into_iter();
+        assert_eq!(shared_size(mixed, 2, 64 << 20), Some((64, 1024)));
+        assert_eq!(shared_size(std::iter::empty(), 0, 64 << 20), None);
+    }
+
+    #[test]
+    fn blurred_glints_grow_smoothly_and_sharp_ones_by_texel() {
+        // Black then white, doubled: the wrapping blend of the two, or each texel twice.
+        let row = [0, 0, 0, 255, 255, 255, 255, 255];
+        let red = |rgba: Vec<u8>| rgba.chunks(4).map(|t| t[0]).collect::<Vec<_>>();
+        assert_eq!(red(resize(&row, (2, 1), (4, 1), true)), [64, 64, 191, 191]);
+        assert_eq!(red(resize(&row, (2, 1), (4, 1), false)), [0, 0, 255, 255]);
+    }
+
+    #[test]
+    fn a_layer_vertex_carries_its_slot_and_intensity() {
+        // Unorm8x4 reads the colour's bytes in memory order: r, g, b, a.
+        assert_eq!(vertex_color(3, 0.5).to_le_bytes(), [3, 0, 0, 128]);
+        assert_eq!(vertex_color(200, 2.0).to_le_bytes(), [200, 0, 0, 255]);
+        assert_eq!(vertex_color(0, -1.0).to_le_bytes(), [0, 0, 0, 0]);
     }
 
     #[test]
@@ -434,6 +559,5 @@ mod tests {
             blend_state(parse_blend("replace").unwrap()),
             wgpu::BlendState::REPLACE
         );
-        assert_eq!(vertex_color(3, 0.5), super::super::rgba(3, 0, 0, 128));
     }
 }

@@ -63,8 +63,12 @@ struct CitSlots {
     let blurred = textureSampleLevel(cit_tex, cit_blur, in.glint_uv, index, 0.0);
     let sharp = textureSampleLevel(cit_tex, cit_nearest, in.glint_uv, index, 0.0);
     if mask < 0.1 { discard; }
-    let c = select(sharp, blurred, slot.blur.x > 0.5) * slot.rgba;
-    return vec4(c.rgb * hud.size.w, c.a * in.color.a);
+    // The layer's colour times its intensity (the glint strength option included) in alpha,
+    // cut where vanilla's glint shader cuts, which CIT Resewn draws through.
+    var t = select(sharp, blurred, slot.blur.x > 0.5) * slot.rgba;
+    t.a *= in.color.a;
+    if t.a < 0.1 { discard; }
+    return t;
 }
 @fragment fn fs_crosshair(in: Out) -> @location(0) vec4<f32> {
     let c = textureSample(atlas, atlas_sampler, in.uv) * in.color;

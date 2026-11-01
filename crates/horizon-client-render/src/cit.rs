@@ -118,6 +118,19 @@ impl CitRules {
         self.rules.is_empty()
     }
 
+    /// Leave out the Enchantment rules `keep` refuses (those without a drawable texture): they
+    /// match no stack, so vanilla's glint and the other rules of their layer stay.
+    pub fn keep_glints(&mut self, keep: impl Fn(usize) -> bool) {
+        self.any_item.retain(|&i| keep(i as usize));
+        let named = &mut self.by_item[Kind::Enchantment as usize];
+        for list in named.values_mut() {
+            list.retain(|&i| keep(i as usize));
+        }
+        named.retain(|_, list| !list.is_empty());
+        lock(&self.enchanted).clear();
+        lock(&self.glints).clear();
+    }
+
     /// The winning rule of `kind` (Item, Armor or Elytra) for this stack, as an index into `rules`.
     pub fn select(
         &self,
@@ -784,6 +797,34 @@ mod tests {
             cit.glint(&overridden(new("stick"), true), Hand::Main, 0, false)
                 .is_none()
         );
+    }
+
+    #[test]
+    fn a_rule_left_out_of_the_glints_matches_nothing() {
+        let mut cit = rules(&[
+            ("broken", "type=enchantment\nitems=diamond_sword\nweight=1"),
+            ("shown", "type=enchantment"),
+        ]);
+        let sword = enchanted("diamond_sword", &[("sharpness", 1)]);
+        let layers = |cit: &CitRules| -> Vec<String> {
+            let glint = glint(cit, &sword, false).unwrap();
+            let stems = glint
+                .layers
+                .iter()
+                .map(|l| stem(cit, Some(l.rule)).unwrap());
+            stems.map(str::to_owned).collect()
+        };
+        // The heavier rule wins the layer, until its texture is missing.
+        assert_eq!(layers(&cit), ["broken"]);
+        let broken = (0..cit.rules.len())
+            .find(|&i| stem(&cit, Some(i)) == Some("broken"))
+            .unwrap();
+        cit.keep_glints(|i| i != broken);
+        assert_eq!(layers(&cit), ["shown"]);
+        assert_eq!(cit.enchantments(&sword, Hand::Main, 0).len(), 1);
+        // None left: vanilla's glint stays.
+        cit.keep_glints(|_| false);
+        assert!(glint(&cit, &sword, false).is_none());
     }
 
     #[test]

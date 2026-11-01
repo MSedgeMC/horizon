@@ -120,6 +120,12 @@ pub(super) fn load(
     };
     let mut models = CitModels::new(rules);
     models.glint_textures = GlintTextures::load(root, &models.rules.rules);
+    // An enchantment rule whose texture has no slot draws nothing, so it must not take its
+    // layer (or vanilla's glint) from the stack either.
+    let slots = &models.glint_textures.slot_of;
+    models
+        .rules
+        .keep_glints(|i| slots.get(i).copied().flatten().is_some());
     (library, Some(models))
 }
 

@@ -1005,7 +1005,7 @@ const SPRITE_ARRAYS: u32 = 8;
 /// array. wgpu's OpenGL backend picks a texture's target from its layer
 /// count when it is created: one layer makes a 2D texture and a multiple of
 /// six a cube map, neither of which can be viewed as an array.
-fn array_layers(count: u32, gl: bool) -> u32 {
+pub(crate) fn array_layers(count: u32, gl: bool) -> u32 {
     match count {
         _ if !gl => count,
         0 | 1 => 2,

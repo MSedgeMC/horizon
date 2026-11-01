@@ -296,8 +296,6 @@ impl Game<'_> {
     ) -> ItemRenderState {
         self.resolve_item_in_hand(stack, display, owner, seed, CitHand::Main)
     }
-    /// [`Self::resolve_item`] of a stack held in `hand`, which OptiFine CIT rules can test
-    /// (GUI items count as the main hand).
     /// `ItemStack.hasFoil`, with the item's default glint.
     fn has_foil(&self, stack: &ItemStack) -> bool {
         let item_glint = self
@@ -309,6 +307,8 @@ impl Game<'_> {
             .is_some_and(|p| p.glint);
         stack.has_foil(item_glint)
     }
+    /// [`Self::resolve_item`] of a stack held in `hand`, which OptiFine CIT rules can test
+    /// (GUI items count as the main hand).
     pub(super) fn resolve_item_in_hand(
         &self,
         stack: &ItemStack,
@@ -342,14 +342,20 @@ impl Game<'_> {
             rule,
         );
         if let Some(glint) = glint {
-            // The pack's enchantment rules replace vanilla's glint unless one keeps it.
-            if !glint.vanilla {
+            // The pack's enchantment rules replace vanilla's glint unless one keeps it, so far
+            // only in the GUI, where their own layers draw: held, dropped and framed items keep
+            // vanilla's until theirs do. The pack's `useGlint=false` removes it everywhere.
+            let gui = display == DisplayContext::Gui;
+            let pack_keeps = renderer
+                .cit
+                .as_ref()
+                .is_none_or(|c| c.rules.global.use_glint);
+            if !glint.vanilla && (gui || !pack_keeps) {
                 for layer in &mut state.layers {
                     layer.foil = horizon_assets::item_model::FoilType::None;
                 }
             }
-            // Their own layers draw in the GUI only so far.
-            if display == DisplayContext::Gui && !glint.is_empty() {
+            if gui && !glint.is_empty() {
                 state.cit_glint = Some(glint);
             }
         }
