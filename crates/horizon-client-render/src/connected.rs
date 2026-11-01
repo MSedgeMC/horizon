@@ -369,6 +369,27 @@ impl ConnectedTextures {
                 && let Some(pick) =
                     self.apply(r, state, layer, face, pos, &neighbour, &biome, &mut overlay)
             {
+                // "Tiles output by CTM rules can also be matched by another rule": once, by the
+                // tile rules naming the picked tile (and this block, if they name blocks).
+                let Pick::Tile(TileLayer::Layer { layer: picked, .. }) = pick else {
+                    return pick;
+                };
+                let own = self.list(&self.by_state, state as usize);
+                let again = self
+                    .list(&self.by_layer, picked as usize)
+                    .iter()
+                    .map(|&j| (j, &self.rules[usize::from(j)]))
+                    .filter(|&(j, r)| {
+                        j != i && (r.rule.match_blocks.is_empty() || own.contains(&j))
+                    });
+                for (_, r) in again {
+                    // Joins by tile still compare the face's own sprite with its neighbours'.
+                    match self.apply(r, state, layer, face, pos, &neighbour, &biome, &mut overlay) {
+                        Some(Pick::Keep) => return pick,
+                        Some(chained) => return chained,
+                        None => {}
+                    }
+                }
                 return pick;
             }
         }
@@ -588,6 +609,8 @@ mod tests {
             |name| match name {
                 "minecraft:block/stone" => Some(7),
                 "minecraft:block/glass" => Some(3),
+                // The tile `b0` of a rule second in order (`a_picked_tile_can_be_picked_again`).
+                "assets/minecraft/optifine/ctm/b0.png" => Some(2000),
                 _ => None,
             },
         )
@@ -976,6 +999,26 @@ mod tests {
         // draws nothing; c draws; the face keeps its own sprite.
         let (layers, pick) = overlays_in(&ctm, 1, Face::North, &[([-1, 0, 0], 1)]);
         assert_eq!((layers, pick), (vec![1001, 3000], Pick::Keep));
+    }
+
+    #[test]
+    fn a_picked_tile_can_be_picked_again() {
+        // b (rule 1) gives glass its tile b0, layer 2000; t (rule 0, a tile rule, tried first)
+        // names that tile, so it draws in b0's place.
+        let chain = |t: &str| {
+            world(&[
+                ("b.properties", "matchBlocks=glass\nmethod=fixed\ntiles=b0"),
+                ("t.properties", t),
+            ])
+        };
+        let ctm = chain("matchTiles=optifine/ctm/b0.png\nmethod=fixed\ntiles=0");
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(1000));
+        // A chained rule keeping the tile (<default>) leaves b's.
+        let ctm = chain("matchTiles=optifine/ctm/b0.png\nmethod=fixed\ntiles=<default>");
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
+        // One that names another block doesn't chain on glass.
+        let ctm = chain("matchTiles=optifine/ctm/b0.png\nmatchBlocks=stone\nmethod=fixed\ntiles=0");
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
     }
 
     #[test]
