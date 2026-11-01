@@ -652,25 +652,21 @@ impl HudAtlas {
     /// packs fill a 4096-wide atlas past what GPUs allow (Faithful 64x needs
     /// 32768 rows); vanilla's stitcher fails the reload when its atlases don't
     /// fit, and the packs are then turned off (`Minecraft.clearResourcePacksOnError`).
+    /// A width where the plain shelves (each image after the last) leave too
+    /// much unused is tried again with each image in the first shelf with
+    /// room: a pack of thousands of mixed sizes (server packs with custom
+    /// items) fits where the shelves' ragged ends would not.
     fn layout(images: &[PackedImage], max: u32) -> Result<(u32, Vec<(u32, u32)>, u32)> {
         let mut width = 4096.min(max);
         loop {
-            let mut placements = Vec::with_capacity(images.len());
-            let (mut x, mut y, mut row) = (0u32, 0u32, 0u32);
-            for (_, w, h, _) in images {
-                if x + w + 1 > width {
-                    x = 0;
-                    y += row + 1;
-                    row = 0;
-                }
-                placements.push((x, y));
-                x += w + 1;
-                row = row.max(*h);
-            }
-            let glyph_region = y + row + 1;
             let wide_enough = images.iter().all(|i| i.1 < width);
-            if wide_enough && glyph_region + GLYPH_ROWS <= max {
-                return Ok((width, placements, glyph_region));
+            if wide_enough {
+                for first_fit in [false, true] {
+                    let (placements, glyph_region) = Self::shelves(images, width, first_fit);
+                    if glyph_region + GLYPH_ROWS <= max {
+                        return Ok((width, placements, glyph_region));
+                    }
+                }
             }
             if width >= max {
                 let texels: u64 = images.iter().map(|i| u64::from(i.1) * u64::from(i.2)).sum();
@@ -682,6 +678,33 @@ impl HudAtlas {
             }
             width = (width * 2).min(max);
         }
+    }
+    /// `layout`'s shelves at one width: the placements and the first row below
+    /// them. `first_fit` puts an image in the first shelf that is tall enough
+    /// and has room, instead of only the last one.
+    fn shelves(images: &[PackedImage], width: u32, first_fit: bool) -> (Vec<(u32, u32)>, u32) {
+        // Each shelf: its top row, its height (its first image's) and the next free column.
+        let mut shelves: Vec<(u32, u32, u32)> = Vec::new();
+        let mut placements = Vec::with_capacity(images.len());
+        for (_, w, h, _) in images {
+            let open = if first_fit {
+                shelves.iter().position(|s| s.1 >= *h && s.2 + w < width)
+            } else {
+                shelves
+                    .len()
+                    .checked_sub(1)
+                    .filter(|&i| shelves[i].1 >= *h && shelves[i].2 + w < width)
+            };
+            let i = open.unwrap_or_else(|| {
+                let top = shelves.last().map_or(0, |s| s.0 + s.1 + 1);
+                shelves.push((top, *h, 0));
+                shelves.len() - 1
+            });
+            placements.push((shelves[i].2, shelves[i].0));
+            shelves[i].2 += w + 1;
+        }
+        let glyph_region = shelves.last().map_or(1, |s| s.0 + s.1 + 1);
+        (placements, glyph_region)
     }
     /// Pack the textures under these folders of `textures/`, and for the
     /// `full` atlas the generated sprites and the run-time slots too.
@@ -3043,6 +3066,19 @@ texture=wide",
         let (width, placements, free) = HudAtlas::layout(&images, MAX_ATLAS_SIZE).unwrap();
         assert_eq!(width, 8192);
         assert!(free + GLYPH_ROWS <= MAX_ATLAS_SIZE);
+        assert_inside(&images, width, &placements, free);
+    }
+    #[test]
+    fn mixed_sizes_fill_the_ends_of_the_shelves() {
+        // 15 images 9000 wide leave 7383 of a 16384 shelf unused each; the
+        // 4000-wide ones (same height) come after them, and on shelves of their
+        // own (4 to a shelf) the atlas is 19 shelves tall: past 16384 rows.
+        // Each in a gap, it is 15.
+        let mut images = sized(15, 9000, 1000);
+        images.extend(sized(15, 4000, 1000));
+        let (width, placements, free) = HudAtlas::layout(&images, 16384).unwrap();
+        assert_eq!(width, 16384);
+        assert!(free + GLYPH_ROWS <= 16384);
         assert_inside(&images, width, &placements, free);
     }
     #[test]
