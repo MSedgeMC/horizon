@@ -179,14 +179,14 @@ impl Game<'_> {
     }
     /// `HumanoidArmorLayer` for the player: (model, texture rect, colour,
     /// overlay) of each worn piece, head to feet.
-    pub(super) fn player_armor_layers(&self) -> Vec<(&Part, [f32; 4], u32, u32)> {
+    pub(super) fn player_armor_layers(&self) -> Vec<(&Part, [f32; 4], u32, u32, bool)> {
         self.stack_armor_layers(&self.armor)
     }
     /// `HumanoidArmorLayer` for worn stacks (head to feet), trims included.
     pub(super) fn stack_armor_layers(
         &self,
         armor: &[Option<ItemStack>; 4],
-    ) -> Vec<(&Part, [f32; 4], u32, u32)> {
+    ) -> Vec<(&Part, [f32; 4], u32, u32, bool)> {
         self.armor_layers(
             armor
                 .each_ref()
@@ -195,7 +195,7 @@ impl Game<'_> {
     }
     /// `HumanoidArmorLayer` for another player's model: the armour it wears
     /// (`extra.head` .. `extra.feet`).
-    pub(super) fn worn_armor_layers(&self, m: &Mob) -> Vec<(&Part, [f32; 4], u32, u32)> {
+    pub(super) fn worn_armor_layers(&self, m: &Mob) -> Vec<(&Part, [f32; 4], u32, u32, bool)> {
         let e = &m.extra;
         self.armor_layers(
             [
@@ -212,8 +212,14 @@ impl Game<'_> {
     fn armor_layers(
         &self,
         worn: [Option<(&str, Option<&ItemStack>)>; 4],
-    ) -> Vec<(&Part, [f32; 4], u32, u32)> {
+    ) -> Vec<(&Part, [f32; 4], u32, u32, bool)> {
         let assets = &self.armor_stand_assets;
+        let emissive = self
+            .res
+            .mob_data()
+            .emissive
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         let mut out = Vec::new();
         for (item, layer) in worn
             .into_iter()
@@ -263,13 +269,20 @@ impl Game<'_> {
                     continue;
                 };
                 let color = layer_color(*undyed, stack);
-                out.push((part, uv, color, if i == 0 { overlay } else { 0 }));
+                out.push((part, uv, color, if i == 0 { overlay } else { 0 }, false));
+                // The layer's OptiFine emissive overlay, full bright without the glint.
+                if let Some(g) = emissive
+                    .overlay(texture)
+                    .and_then(|e| self.gui.atlas.sprites.get(e))
+                {
+                    out.push((part, [g.u0, g.v0, g.u1, g.v1], color, 0, true));
+                }
             }
             if let Some(r) = stack
                 .and_then(|s| assets.trim_texture(&asset, kind, s))
                 .and_then(|t| self.gui.atlas.sprites.get(&t.sprite()))
             {
-                out.push((part, [r.u0, r.v0, r.u1, r.v1], 0xFFFF_FFFF, overlay));
+                out.push((part, [r.u0, r.v0, r.u1, r.v1], 0xFFFF_FFFF, overlay, false));
             }
         }
         out
