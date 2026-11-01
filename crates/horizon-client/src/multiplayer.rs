@@ -1676,10 +1676,12 @@ impl Screen {
     pub fn focused_box(&self, (w, _h): (f32, f32)) -> Option<[f32; 4]> {
         let y = match self {
             Self::Edit { focus: 0, .. } => 66.0,
-            Self::Edit { .. } => 106.0,
+            Self::Edit { focus: 1, .. } => 106.0,
+            Self::Edit { .. } => return None,
             Self::Direct { .. } => 116.0,
             Self::Friend { focus: 0, .. } => 64.0,
-            Self::Friend { .. } => 105.0,
+            Self::Friend { focus: 1, .. } => 105.0,
+            Self::Friend { .. } => return None,
             _ => return None,
         };
         Some([(w / 2.0).floor() - 100.0, y, 200.0, 20.0])
@@ -1691,11 +1693,20 @@ impl Screen {
                 address,
                 focus,
                 ..
-            } => Some(if *focus == 0 { name } else { address }),
+            } => match *focus {
+                0 => Some(name),
+                1 => Some(address),
+                // A button has the focus.
+                _ => None,
+            },
             Self::Direct { address } => Some(address),
             Self::Friend {
                 code, relay, focus, ..
-            } => Some(if *focus == 0 { code } else { relay }),
+            } => match *focus {
+                0 => Some(code),
+                1 => Some(relay),
+                _ => None,
+            },
             _ => None,
         }
     }
@@ -1776,9 +1787,31 @@ impl Screen {
             128
         }
     }
-    pub fn tab(&mut self) {
-        if let Self::Edit { focus, .. } | Self::Friend { focus, .. } = self {
-            *focus = (*focus + 1) % 2;
+    /// Tab (`reverse`: Shift+Tab) through the focus order of `ManageServerScreen`
+    /// and the friend screen: the text fields, then the enabled `buttons`, then
+    /// round to the first field. `button` is the focused button, if any; a field
+    /// has the focus (`focus` below 2) only while no button does.
+    pub fn tab_dir(&mut self, reverse: bool, buttons: &[u8], button: &mut Option<u8>) {
+        let (Self::Edit { focus, .. } | Self::Friend { focus, .. }) = self else {
+            return;
+        };
+        let stops = 2 + buttons.len();
+        let at = match *button {
+            Some(id) => buttons.iter().position(|&b| b == id).map(|i| 2 + i),
+            None => Some(usize::from(*focus).min(1)),
+        }
+        .unwrap_or(0);
+        let next = if reverse {
+            (at + stops - 1) % stops
+        } else {
+            (at + 1) % stops
+        };
+        if next < 2 {
+            *focus = next as u8;
+            *button = None;
+        } else {
+            *focus = 2;
+            *button = Some(buttons[next - 2]);
         }
     }
     /// Escape: back to the list, or out of it (true).
