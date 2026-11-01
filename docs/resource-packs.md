@@ -73,9 +73,10 @@ harness named checks that loader against vanilla).
 | Locator bar styles | `waypoint_style/` | **no** | the locator bar isn't drawn yet |
 | Post effects (spectating a creeper, spider or enderman; glowing outlines) | `post_effect/`, `shaders/post/` | **no** | Horizon's effects are WGSL; a pack's GLSL post chain isn't run |
 | Core shaders | `shaders/core/`, `shaders/include/` | partly | `core/text` draws the GUI's text (HUDs moved by its vertex shader, text effects), translated by naga (`horizon-shaders` `core_shader.rs`, `hud/pack_text.rs`); the other core shaders aren't run |
+| OptiFine / CIT Resewn custom item textures (`type=item`: `texture`, `model`, `texture.<name>`, `model.<name>`) | `optifine/cit/`, `mcpatcher/cit/`, `citresewn/cit/` | partly | `item_render/cit.rs` tests; worn armour, elytra and enchantment glints come in later PRs; special renderers (heads, shields, banners) keep their vanilla look |
 | GPU warn list, regional compliance | `gpu_warnlist.json`, `regional_compliancies.json` | n/a | OpenGL driver warnings and play-time notices for some regions; not used |
 
-Summary: 45 rows; 32 work, 4 partly, 7 don't (interpolated animation, TrueType fonts, credits and end poem,
+Summary: 46 rows; 32 work, 5 partly, 7 don't (interpolated animation, TrueType fonts, credits and end poem,
 villager hats, trims on worn armour, locator bar styles, post effects), 2 don't apply. Except the
 shaders, the missing pieces are missing vanilla features too, and each vanilla parity fix covers the pack case as well.
 
