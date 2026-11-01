@@ -36,7 +36,7 @@ const HELP: &[&str] = &[
     "type TEXT                      type into the open chat box (key enter tap sends)",
     "chat-log [N]                   the newest N chat messages (default 10)",
     "options [PAGE]                 open the options (video sound controls keybinds mouse chat accessibility language font packs mods graphics graphics-advanced graphics-hdr)",
-    "stats [reset]                  frame-time summary since the last reset",
+    "stats [reset] [raw]            frame-time summary since the last reset (raw: every frame time too)",
     "narration                      the narrator's status and the last messages it was asked to say",
     "bench SECONDS                  reset stats, wait, then reply with the summary",
     "fly X1 Y1 Z1 X2 Y2 Z2 SECONDS [PITCH [raw]]  fly the camera along a line at constant speed, then reply with the frame summary (raw: every frame time too)",
@@ -859,8 +859,13 @@ impl Game<'_> {
                 })))
             }
             "stats" => {
-                let summary = self.summary_with_passes();
-                if words.get(1) == Some(&"reset") {
+                let mut summary = self.summary_with_passes();
+                if words[1..].contains(&"raw") {
+                    summary["frame_ms"] = self.frame_stats.frame_millis().into();
+                    summary["cpu_ms"] = self.frame_stats.cpu_millis().into();
+                    summary["gpu_ms"] = self.frame_stats.gpu_millis().into();
+                }
+                if words[1..].contains(&"reset") {
                     self.frame_stats.reset();
                 }
                 Ok(Some(summary))
