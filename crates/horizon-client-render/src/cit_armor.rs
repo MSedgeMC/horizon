@@ -6,7 +6,7 @@
 //! chestplate, boots) and `entity/equipment/humanoid_leggings/diamond` (layer 2), so the layers
 //! are mapped back to the old names here. An elytra rule's `texture` replaces the wings'.
 
-use crate::cit_assets::sprite_id;
+use crate::cit_assets::{rule_sprites, sprite_id};
 use horizon_optifine::cit::{Kind, Rule};
 use std::collections::BTreeSet;
 
@@ -59,28 +59,39 @@ pub fn elytra_sprite(rule: &Rule) -> Option<String> {
     atlas_name(armor_texture(rule, "elytra")?)
 }
 
-/// Sprite ids the armour and elytra rules draw: their `texture` and `texture.<layer>` values. A
-/// path no id can name is skipped with a warning.
+/// The atlas sprite a worn armour layer draws: the one CIT armour rule `rule` puts on the layer
+/// `vanilla` (an atlas name, `…_overlay` for the dye overlay) of equipment asset `asset` in
+/// equipment layer `kind` (`humanoid_leggings` for the leggings), when the atlas has it (`has`);
+/// else `vanilla`.
+pub fn worn_layer_sprite(
+    rule: Option<&Rule>,
+    asset: &str,
+    kind: &str,
+    vanilla: &str,
+    has: impl Fn(&str) -> bool,
+) -> String {
+    let leggings = kind == "humanoid_leggings";
+    let overlay = vanilla.ends_with("_overlay");
+    rule.and_then(|rule| layer_sprite(rule, asset, leggings, overlay))
+        .filter(|name| has(name.as_str()))
+        .unwrap_or_else(|| vanilla.to_owned())
+}
+
+/// The atlas sprite worn wings draw: the CIT elytra rule `rule`'s when the atlas has it (`has`),
+/// else the player's `cape`. `None` leaves the equipment asset's own wings texture.
+pub fn wings_sprite(
+    rule: Option<&Rule>,
+    cape: Option<&str>,
+    has: impl Fn(&str) -> bool,
+) -> Option<String> {
+    rule.and_then(elytra_sprite)
+        .filter(|name| has(name.as_str()))
+        .or_else(|| cape.map(str::to_owned))
+}
+
+/// Sprite ids the armour and elytra rules draw (see [`rule_sprites`]).
 pub fn armor_sprites(rules: &[Rule]) -> BTreeSet<String> {
-    let mut out = BTreeSet::new();
-    for rule in rules
-        .iter()
-        .filter(|r| matches!(r.kind, Kind::Armor | Kind::Elytra))
-    {
-        let named = rule.textures.iter().map(|(_, path)| path);
-        for path in rule.texture.iter().chain(named) {
-            match sprite_id(path) {
-                Some(id) => {
-                    out.insert(id);
-                }
-                None => log::warn!(
-                    "custom item textures: {} names {path}, which is not a valid texture id",
-                    rule.path
-                ),
-            }
-        }
-    }
-    out
+    rule_sprites(rules, |kind| matches!(kind, Kind::Armor | Kind::Elytra))
 }
 
 #[cfg(test)]
@@ -166,12 +177,73 @@ mod tests {
     }
 
     #[test]
-    fn a_texture_under_textures_keeps_its_vanilla_atlas_name() {
+    fn a_vanilla_texture_path_keeps_its_atlas_name() {
         let r = rule(
             "assets/minecraft/optifine/cit/wings.properties",
             "type=elytra\ntexture=minecraft:textures/entity/wings/dragon.png\n",
         );
         assert_eq!(elytra_sprite(&r).as_deref(), Some("entity/wings/dragon"));
+    }
+
+    #[test]
+    fn worn_layers_pick_the_rules_texture_for_their_layer() {
+        let r = rule(
+            "assets/minecraft/optifine/cit/dye.properties",
+            "type=armor\nitems=leather_chestplate leather_leggings\n\
+             texture.leather_layer_1=body\ntexture.leather_layer_1_overlay=body_dye\n\
+             texture.leather_layer_2=legs\n",
+        );
+        let cit = |p: &str| format!("horizon_cit:minecraft/optifine/cit/{p}");
+        let all = |_: &str| true;
+        let pick = |kind: &str, vanilla: &str| {
+            worn_layer_sprite(Some(&r), "minecraft:leather", kind, vanilla, all)
+        };
+        let body = "entity/equipment/humanoid/leather";
+        assert_eq!(pick("humanoid", body), cit("body"));
+        assert_eq!(
+            pick("humanoid", "entity/equipment/humanoid/leather_overlay"),
+            cit("body_dye")
+        );
+        assert_eq!(
+            pick(
+                "humanoid_leggings",
+                "entity/equipment/humanoid_leggings/leather"
+            ),
+            cit("legs")
+        );
+        // No `texture.leather_layer_2_overlay` and no `texture`: the overlay stays vanilla.
+        let legs_dye = "entity/equipment/humanoid_leggings/leather_overlay";
+        assert_eq!(pick("humanoid_leggings", legs_dye), legs_dye);
+        // A texture the atlas left out, or no rule, draws vanilla's.
+        let missing = worn_layer_sprite(Some(&r), "minecraft:leather", "humanoid", body, |s| {
+            s != cit("body")
+        });
+        assert_eq!(missing, body);
+        assert_eq!(
+            worn_layer_sprite(None, "minecraft:leather", "humanoid", body, all),
+            body
+        );
+    }
+
+    #[test]
+    fn wings_take_the_rule_then_the_cape() {
+        let r = rule(
+            "assets/minecraft/optifine/cit/wings.properties",
+            "type=elytra\ntexture=wings\n",
+        );
+        let wings = "horizon_cit:minecraft/optifine/cit/wings";
+        let cape = Some("cape/minecon");
+        assert_eq!(
+            wings_sprite(Some(&r), cape, |_| true).as_deref(),
+            Some(wings)
+        );
+        assert_eq!(
+            wings_sprite(Some(&r), cape, |s| s != wings).as_deref(),
+            cape
+        );
+        assert_eq!(wings_sprite(None, cape, |_| true).as_deref(), cape);
+        assert_eq!(wings_sprite(None, None, |_| true), None);
+        assert_eq!(wings_sprite(Some(&r), None, |_| false), None);
     }
 
     #[test]
@@ -183,17 +255,23 @@ mod tests {
             ),
             rule(
                 "assets/minecraft/optifine/cit/plate.properties",
-                "type=armor\nitems=iron_chestplate\ntexture.iron_layer_1=plate\n",
+                "type=armor\nitems=iron_chestplate iron_leggings\ntexture=plate\n\
+                 texture.iron_layer_2=legs\n",
             ),
             rule(
                 "assets/minecraft/optifine/cit/wings.properties",
                 "type=elytra\ntexture=wings\n",
+            ),
+            rule(
+                "assets/minecraft/optifine/cit/glint.properties",
+                "type=enchantment\nenchantments=sharpness\ntexture=glint\n",
             ),
         ];
         let got: Vec<String> = armor_sprites(&rules).into_iter().collect();
         assert_eq!(
             got,
             [
+                "horizon_cit:minecraft/optifine/cit/legs",
                 "horizon_cit:minecraft/optifine/cit/plate",
                 "horizon_cit:minecraft/optifine/cit/wings",
             ]

@@ -160,13 +160,14 @@ impl Game<'_> {
     /// without CIT rules.
     pub(super) fn cit_worn_rule(&self, kind: Kind, stack: &ItemStack) -> Option<&Rule> {
         let rules = &self.pack.item_renderer.cit.as_ref()?.rules;
-        let max_damage = self.items().get(&stack.item).map_or(0, |i| i.max_damage);
+        let item_max = self.items().get(&stack.item).map_or(0, |i| i.max_damage);
+        let max_damage = horizon_client::item_render::cit::stack_max_damage(stack, item_max);
         rules
             .select(kind, stack, Hand::Any, max_damage)
             .and_then(|i| rules.rules.get(i))
     }
-    /// The atlas rect of an armour layer `texture` of equipment asset `asset`, the one CIT armour
-    /// rule `cit` puts there when the atlas has it.
+    /// The atlas rect of an armour layer `texture` of equipment asset `asset`, or of the one CIT
+    /// armour rule `cit` puts there when the atlas has it.
     fn armor_layer_rect(
         &self,
         cit: Option<&Rule>,
@@ -175,13 +176,9 @@ impl Game<'_> {
         texture: &str,
     ) -> Option<[f32; 4]> {
         let sprites = &self.gui.atlas.sprites;
-        let custom = cit.and_then(|rule| {
-            let overlay = texture.ends_with("_overlay");
-            cit_armor::layer_sprite(rule, asset, kind == "humanoid_leggings", overlay)
-        });
-        let r = custom
-            .and_then(|name| sprites.get(name.as_str()))
-            .or_else(|| sprites.get(texture))?;
+        let name =
+            cit_armor::worn_layer_sprite(cit, asset, kind, texture, |s| sprites.contains_key(s));
+        let r = sprites.get(name.as_str())?;
         Some([r.u0, r.v0, r.u1, r.v1])
     }
     /// `HumanoidArmorLayer` for the player: (model, texture rect, colour,
@@ -215,7 +212,7 @@ impl Game<'_> {
         )
     }
     /// The layers of the armour items `worn` (with their stacks when known,
-    /// for trims), head to feet.
+    /// for trims and CIT armour rules), head to feet.
     fn armor_layers(
         &self,
         worn: [Option<(&str, Option<&ItemStack>)>; 4],
