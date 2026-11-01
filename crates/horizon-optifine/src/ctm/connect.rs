@@ -97,7 +97,7 @@ impl Axes {
         let (e1, e2, d1, d2) = (edge(1), edge(3), step(1), step(3));
         // The edges in UV terms: e = du * (d/du) + dv * (d/dv), solved for the two gradients.
         let det = d1[0] * d2[1] - d2[0] * d1[1];
-        if det.abs() < 1e-6 {
+        if !det.is_finite() || det.abs() < 1e-6 {
             return None;
         }
         let along_u = [0, 1, 2].map(|c| (e1[c] * d2[1] - e2[c] * d1[1]) / det);
@@ -108,11 +108,10 @@ impl Axes {
             out[k] = if v[k] > 0.0 { 1 } else { -1 };
             (v[k] != 0.0).then_some(out)
         };
-        // v grows downward: the texture's up is against it.
-        Some(Self {
-            right: snap(along_u)?,
-            up: neg(snap(along_v)?),
-        })
+        // v grows downward: the texture's up is against it. A quad turned off the block's axes
+        // (an element rotated 45°) can snap both to one axis: no directions then.
+        let (right, up) = (snap(along_u)?, neg(snap(along_v)?));
+        (dot(right, up) == 0).then_some(Self { right, up })
     }
 
     /// On a vanilla cube: `BlockElement`'s default UVs (OptiFine's `ctm`, Continuity's
@@ -634,7 +633,10 @@ mod tests {
                 up: EAST
             })
         );
-        // UVs that don't span the quad.
+        // UVs that don't span the quad, or that run diagonally across it.
         assert_eq!(Axes::texture(&north, &[[0.5, 0.5]; 4]), None);
+        let diagonal = [[0.5, 0.0], [1.0, 0.5], [0.5, 1.0], [0.0, 0.5]];
+        assert_eq!(Axes::texture(&north, &diagonal), None);
+        assert_eq!(Axes::texture(&north, &[[f32::NAN; 2]; 4]), None);
     }
 }
