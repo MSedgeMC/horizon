@@ -9,13 +9,14 @@
 //! then run through the block collision scan, so a pushed entity stops at a
 //! wall instead of passing through it.
 //!
-use super::Game;
+use super::{Game, entity::EntityHandle};
 use horizon_client::collisions::{EntityCollisions, SceneCollisions, with_piston_noclip};
 use horizon_core::geometry::{Aabb, Axis, Direction, ShapeOp, Vec3, border::BorderGeometry};
 use horizon_core::position::BlockPos;
 use horizon_world::{
-    block_collision_scan::BlockCollisionWorld, level::pistons::MovingPiston,
-    piston_movement::PistonMovement, piston_push, world_movement::EntityMovementWorld,
+    block_collision_scan::BlockCollisionWorld, level::data::PushReaction::IgnoreEntity,
+    level::pistons::MovingPiston, piston_movement::PistonMovement, piston_push,
+    world_movement::EntityMovementWorld,
 };
 
 /// What one piston asks for this tick: where it is, its state, and the progress
@@ -33,20 +34,7 @@ pub(super) type ShulkerPush = ([i32; 3], u8, [f64; 6]);
 enum Target {
     Player,
     Guest(u32),
-    Mob(usize),
-    Item(usize),
-    Boat(usize),
-    Cart(usize),
-    ArmorStand(usize),
-    /// Primed TNT (`PrimedTnt`): slime piston bounce (#4550).
-    Tnt(usize),
-    /// Every other entity `getEntities` returns is pushed too: only
-    /// `PushReaction.IGNORE_ENTITY` (a marker armor stand) is spared.
-    Falling(usize),
-    Orb(usize),
-    Projectile(usize),
-    Rocket(usize),
-    Trident(usize),
+    Entity(EntityHandle),
 }
 
 /// `Entity.getStepHeight` of each body, read before the push.
@@ -361,24 +349,13 @@ impl Game<'_> {
                     .map(|g| Target::Guest(g.conn)),
             );
         }
-        targets.extend((0..self.mobs.len()).map(Target::Mob));
-        targets.extend((0..self.dropped.len()).map(Target::Item));
-        targets.extend((0..self.boats.len()).map(Target::Boat));
-        targets.extend((0..self.carts.len()).map(Target::Cart));
-        targets.extend((0..self.armor_stands.len()).map(Target::ArmorStand));
-        targets.extend((0..self.tnts.len()).map(Target::Tnt));
-        targets.extend((0..self.falling.len()).map(Target::Falling));
-        targets.extend((0..self.orbs.len()).map(Target::Orb));
-        targets.extend((0..self.creatures.projectiles.len()).map(Target::Projectile));
-        targets.extend((0..self.rockets.len()).map(Target::Rocket));
-        targets.extend((0..self.tridents.len()).map(Target::Trident));
+        targets.extend(self.entity_handles().into_iter().map(Target::Entity));
         targets
     }
 
     /// What the push needs from one entity, or `None` when it is not pushed:
     /// removed, dead, a spectator, or an armor-stand marker.
     fn push_body(&self, target: Target, pos: BlockPos, steps: &StepHeights) -> Option<Body> {
-        let at = [pos.x, pos.y, pos.z];
         match target {
             Target::Player => {
                 let p = self.player.as_ref()?;
@@ -414,131 +391,17 @@ impl Game<'_> {
                         .is_some_and(|m| m.ground.supporting_block == Some(pos)),
                 })
             }
-            Target::Mob(i) => {
-                let m = &self.mobs[i];
-                if m.removed || !m.alive() {
-                    return None;
-                }
-                Some(Body {
-                    bounds: m.bounds(),
-                    position: m.position,
-                    on_ground: m.on_ground,
-                    step_height: m.kind.step_height as f32,
-                    supported: m.supporting == Some(at),
-                })
-            }
-            Target::Item(i) => {
-                let entity = &self.dropped[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: entity.on_ground,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Boat(i) => {
-                let entity = &self.boats[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: entity.on_ground,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Cart(i) => {
-                let entity = &self.carts[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: entity.on_ground,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::ArmorStand(i) => {
-                let entity = &self.armor_stands[i];
-                if entity.marker {
+            Target::Entity(handle) => {
+                let entity = self.entity(handle);
+                if !entity.is_alive() || entity.get_piston_push_reaction() == IgnoreEntity {
                     return None;
                 }
                 Some(Body {
                     bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: entity.on_ground,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Tnt(i) => {
-                let entity = &self.tnts[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: entity.on_ground,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Falling(i) => {
-                let entity = &self.falling[i];
-                Some(Body {
-                    bounds: horizon_client::falling_block::bounds(entity.position),
-                    position: entity.position,
-                    on_ground: false,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Orb(i) => {
-                let entity = &self.orbs[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: entity.on_ground,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Projectile(i) => {
-                let entity = &self.creatures.projectiles[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: false,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Rocket(i) => {
-                let entity = &self.rockets[i];
-                Some(Body {
-                    bounds: entity.bounds(),
-                    position: entity.position,
-                    on_ground: false,
-                    step_height: 0.0,
-                    supported: false,
-                })
-            }
-            Target::Trident(i) => {
-                let entity = &self.tridents[i];
-                Some(Body {
-                    bounds: Aabb::new(
-                        Vec3::new(
-                            entity.position.x - 0.25,
-                            entity.position.y,
-                            entity.position.z - 0.25,
-                        ),
-                        Vec3::new(
-                            entity.position.x + 0.25,
-                            entity.position.y + 0.5,
-                            entity.position.z + 0.25,
-                        ),
-                    ),
-                    position: entity.position,
-                    on_ground: false,
-                    step_height: 0.0,
-                    supported: false,
+                    position: entity.position(),
+                    on_ground: entity.on_ground(),
+                    step_height: entity.get_step_height(),
+                    supported: entity.is_supported_by(pos),
                 })
             }
         }
@@ -583,7 +446,7 @@ impl Game<'_> {
         // Entity.move updates an authoritative living entity's ground flag
         // even for a horizontal piston push. Keeping the old support flag
         // would run Frost Walker while the stand is moving over open water.
-        if let Target::ArmorStand(i) = target {
+        if let Target::Entity(EntityHandle::ArmorStand(i)) = target {
             self.armor_stands[i].on_ground = limited.y < 0.0 && limited.y != resolved.y;
         }
         if resolved.length_squared() <= 1.0e-7
@@ -614,7 +477,7 @@ impl Game<'_> {
                 let g = host.hub.guests.iter_mut().find(|g| g.conn == conn)?;
                 limit(&mut g.motion.as_deref_mut()?.piston)
             }
-            Target::Mob(i) => limit(&mut self.mobs[i].piston),
+            Target::Entity(EntityHandle::Mob(i)) => limit(&mut self.mobs[i].piston),
             _ => limit(accumulators.entry(target).or_default()),
         }
     }
@@ -640,45 +503,7 @@ impl Game<'_> {
                     }
                 }
             }
-            Target::Mob(i) => {
-                let m = &mut self.mobs[i];
-                m.position = m.position.add_vector(movement);
-            }
-            Target::Item(i) => {
-                let item = &mut self.dropped[i];
-                item.position = item.position.add_vector(movement);
-                // Entity.move(MoverType.PISTON): onGround only if the push was down.
-                if movement.y != 0.0 {
-                    item.on_ground = movement.y < 0.0;
-                }
-            }
-            Target::Boat(i) => self.boats[i].position = self.boats[i].position.add_vector(movement),
-            Target::Cart(i) => self.carts[i].position = self.carts[i].position.add_vector(movement),
-            Target::ArmorStand(i) => {
-                self.armor_stands[i].position = self.armor_stands[i].position.add_vector(movement)
-            }
-            Target::Tnt(i) => self.tnts[i].position = self.tnts[i].position.add_vector(movement),
-            Target::Falling(i) => {
-                self.falling[i].position = self.falling[i].position.add_vector(movement)
-            }
-            Target::Orb(i) => {
-                let orb = &mut self.orbs[i];
-                orb.position = orb.position.add_vector(movement);
-                if movement.y != 0.0 {
-                    orb.on_ground = movement.y < 0.0;
-                }
-            }
-            Target::Projectile(i) => {
-                let p = &mut self.creatures.projectiles[i];
-                p.position = p.position.add_vector(movement);
-                p.needs_sync = true;
-            }
-            Target::Rocket(i) => {
-                self.rockets[i].position = self.rockets[i].position.add_vector(movement)
-            }
-            Target::Trident(i) => {
-                self.tridents[i].position = self.tridents[i].position.add_vector(movement)
-            }
+            Target::Entity(handle) => self.entity_mut(handle).move_by_piston(movement),
         }
     }
 
@@ -690,10 +515,6 @@ impl Game<'_> {
                     p.velocity = piston_push::bounce_velocity(movement, p.velocity);
                 }
             }
-            Target::Mob(i) => {
-                let m = &mut self.mobs[i];
-                m.velocity = piston_push::bounce_velocity(movement, m.velocity);
-            }
             Target::Guest(conn) => {
                 if let Some(host) = self.lan.as_mut()
                     && let Some(guest) = host.hub.guests.iter_mut().find(|g| g.conn == conn)
@@ -702,48 +523,7 @@ impl Game<'_> {
                     motion.velocity = piston_push::bounce_velocity(movement, motion.velocity);
                 }
             }
-            Target::Item(i) => self.dropped[i].piston_slime_bounce(movement),
-            Target::Boat(i) => {
-                self.boats[i].velocity =
-                    piston_push::bounce_velocity(movement, self.boats[i].velocity)
-            }
-            Target::Cart(i) => {
-                self.carts[i].velocity =
-                    piston_push::bounce_velocity(movement, self.carts[i].velocity)
-            }
-            Target::ArmorStand(i) => {
-                self.armor_stands[i].velocity =
-                    piston_push::bounce_velocity(movement, self.armor_stands[i].velocity)
-            }
-            Target::Tnt(i) => {
-                self.tnts[i].velocity =
-                    piston_push::bounce_velocity(movement, self.tnts[i].velocity);
-                // Leave the ground so the next tick does not apply the
-                // on-ground Y * -0.5 friction that cancels the launch.
-                self.tnts[i].on_ground = false;
-            }
-            Target::Falling(i) => {
-                self.falling[i].velocity =
-                    piston_push::bounce_velocity(movement, self.falling[i].velocity)
-            }
-            Target::Orb(i) => {
-                self.orbs[i].velocity =
-                    piston_push::bounce_velocity(movement, self.orbs[i].velocity);
-                self.orbs[i].on_ground = false;
-            }
-            Target::Projectile(i) => {
-                let p = &mut self.creatures.projectiles[i];
-                p.velocity = piston_push::bounce_velocity(movement, p.velocity);
-                p.needs_sync = true;
-            }
-            Target::Rocket(i) => {
-                self.rockets[i].velocity =
-                    piston_push::bounce_velocity(movement, self.rockets[i].velocity)
-            }
-            Target::Trident(i) => {
-                self.tridents[i].velocity =
-                    piston_push::bounce_velocity(movement, self.tridents[i].velocity)
-            }
+            Target::Entity(handle) => self.entity_mut(handle).piston_slime_bounce(movement),
         }
     }
 }
