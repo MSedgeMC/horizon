@@ -105,6 +105,13 @@ def cases(count):
                     'chatOnly': True, 'opacity': 0.5, 'mouse': [0, 0], 'blink': 0,
                     'actions': [{'type': 'key', 'key': 'left'}, {'type': 'key', 'key': 'left'},
                                 {'type': 'key', 'key': 'end'}]})
+    # A long value with codes in it, past the box's width: the box scrolls to
+    # the cursor and the drawn window keeps the codes it contains.
+    for keys in ([], ['home'], ['end'], ['shift+home'], ['ctrl+a'], ['home', 'shift+end']):
+        out.append({'width': 320, 'height': 240, 'initial': '\u00a7a' + 'x' * 100 + '\u00a7b' + 'y' * 100,
+                    'history': [], 'autoSuggest': True, 'chatOnly': True, 'opacity': 0.5, 'mouse': [0, 0],
+                    'blink': 0, 'actions': [{'type': 'key', 'key': 'end'}]
+                                            + [{'type': 'key', 'key': key} for key in keys]})
     # A history entry longer than the box is recalled cut to its length, and
     # the draft typed before going back through the history is not lost when
     # the history is walked forward again.
