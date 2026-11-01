@@ -371,16 +371,25 @@ impl ConnectedTextures {
             {
                 // "Tiles output by CTM rules can also be matched by another rule": once, by the
                 // tile rules naming the picked tile (and this block, if they name blocks).
+                // A tile on the face's own sprite (`tiles=stone`) is no new tile.
                 let Pick::Tile(TileLayer::Layer { layer: picked, .. }) = pick else {
                     return pick;
                 };
+                if picked == layer {
+                    return pick;
+                }
                 let own = self.list(&self.by_state, state as usize);
+                // Rules that were tried on the face's sprite already are not tried again (an
+                // overlay would draw twice).
+                let first = self.list(&self.by_layer, layer as usize);
                 let again = self
                     .list(&self.by_layer, picked as usize)
                     .iter()
                     .map(|&j| (j, &self.rules[usize::from(j)]))
                     .filter(|&(j, r)| {
-                        j != i && (r.rule.match_blocks.is_empty() || own.contains(&j))
+                        j != i
+                            && !first.contains(&j)
+                            && (r.rule.match_blocks.is_empty() || own.contains(&j))
                     });
                 for (_, r) in again {
                     // Joins by tile still compare the face's own sprite with its neighbours'.
@@ -1019,6 +1028,10 @@ mod tests {
         // One that names another block doesn't chain on glass.
         let ctm = chain("matchTiles=optifine/ctm/b0.png\nmatchBlocks=stone\nmethod=fixed\ntiles=0");
         assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
+        // An overlay tried on the face's own sprite and on the picked tile draws once.
+        let ctm = chain("matchTiles=glass optifine/ctm/b0.png\nmethod=overlay_fixed\ntiles=0");
+        let (overlays, pick) = overlays_in(&ctm, 1, Face::Up, &[]);
+        assert_eq!((overlays, pick), (vec![1000], tile(2000)));
     }
 
     #[test]
