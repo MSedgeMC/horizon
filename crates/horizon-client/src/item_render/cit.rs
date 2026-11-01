@@ -41,10 +41,6 @@ struct CitBake {
     slots: BTreeMap<String, Option<String>>,
 }
 
-/// The slot a cleared slot refers to. No model defines it, so the reference
-/// stays unresolved (`ModelLibrary::resolve_with_textures`).
-const CLEARED: &str = "horizon_cit_cleared";
-
 /// The enabled packs' rules and what their item rules bake to.
 #[derive(Debug)]
 pub struct CitModels {
@@ -180,14 +176,16 @@ impl ItemRenderer {
     }
 
     /// The model choice for one leaf, as CIT Resewn's wiki (CIT Item) gives it:
-    /// `model.<leaf>` draws that model. `texture.<leaf>` names a slot when a
-    /// slot of the leaf, or its sprite's file, is `<leaf>` (the 26.x potion's
-    /// bottle is `layer1`, file `potion`); otherwise it replaces the leaf with
-    /// the item generated from it. Else `model` (or the leaf) with `texture`
-    /// in every slot of a model, or the item generated from `texture`. Then
-    /// each `texture.<name>` goes to the slot `name` and to every slot whose
-    /// sprite's file is `name` (`potion_overlay`). A model that did not load,
-    /// or whose parents do not, leaves the leaf as it is.
+    /// `model.<leaf>` draws that model. `texture.<leaf>` replaces the leaf
+    /// with the item generated from it; on a leaf of several layers, one of
+    /// which is a slot or a sprite file named `<leaf>` (the 26.x potion's
+    /// bottle is `layer1`, file `potion`), it is that layer's texture instead.
+    /// Else `model` (or the leaf) with `texture` in every slot of a model, or
+    /// the item generated from `texture`. Each `texture.<name>` goes to the
+    /// slot `name` and to every slot whose sprite's file is `name`
+    /// (`potion_overlay`); the generic `texture` takes the layers none of
+    /// them claims. A model that did not load, or whose parents do not,
+    /// leaves the leaf as it is.
     fn cit_plan(&self, cit: &CitModels, rule: usize, leaf: &str) -> Option<CitBake> {
         let plan = cit.plans.get(rule)?.as_ref()?;
         let sub = short(leaf);
@@ -197,24 +195,24 @@ impl ItemRenderer {
                 slots: BTreeMap::new(),
             });
         }
-        let resolved = |name: &str| {
-            self.library
-                .resolve(name)
-                .map(|r| r.textures)
-                .unwrap_or_default()
-        };
+        let resolved = |name: &str| self.library.resolve(name).ok();
         let matches = |name: &str, slot: &str, material: &Material| {
             slot == name || short(&material.sprite) == name
         };
-        let leaf_textures = resolved(leaf);
+        let layer = |slot: &str| {
+            slot.strip_prefix("layer")
+                .and_then(|n| n.parse::<u32>().ok())
+        };
+        let leaf_model = resolved(leaf);
+        let leaf_textures = leaf_model
+            .as_ref()
+            .map(|m| m.textures.clone())
+            .unwrap_or_default();
         // `texture.<leaf>` swaps the leaf (`texture.bow_pulling_1`). On a leaf
         // of several layers, one of which answers to the name (`potion`'s
         // bottle), it is that layer's swap instead, done below, and leaves
         // `model` and `texture` to the rule.
-        let layers = leaf_textures
-            .keys()
-            .filter(|slot| slot.starts_with("layer"))
-            .count();
+        let layers = leaf_textures.keys().filter(|s| layer(s).is_some()).count();
         let named = plan
             .textures
             .iter()
@@ -233,43 +231,70 @@ impl ItemRenderer {
         if base != leaf && !self.library.resolves(&base) {
             return None;
         }
-        let textures = if base == leaf {
-            leaf_textures
+        let base_model = if base == leaf {
+            leaf_model
         } else {
             resolved(&base)
         };
+        let generated = base_model.as_ref().is_some_and(|m| m.uses_item_generator());
+        let textures = base_model.map(|m| m.textures).unwrap_or_default();
+        // The slots each `texture.<name>` claims, by name or by sprite file.
+        let mut claimed = BTreeMap::new();
+        for (name, sprite) in &plan.textures {
+            for (slot, material) in &textures {
+                if matches(name.as_str(), slot.as_str(), material) {
+                    claimed.insert(slot.clone(), sprite.clone());
+                }
+            }
+        }
         let mut slots = BTreeMap::new();
         match named.or(plan.texture.as_ref()) {
-            Some(sprite) if named.is_none() && plan.model.is_some() => {
+            // A model's elements (a block item, a 3D model) draw the sprite
+            // on every face, as does the rule's `model` with `texture`.
+            Some(sprite) if (named.is_none() && plan.model.is_some()) || !generated => {
                 for slot in textures.keys() {
                     slots.insert(slot.clone(), Some(sprite.clone()));
                 }
             }
-            // The item generated from the one sprite: `layer0`, with the
-            // leaf's other layers cleared (a `texture.<name>` below may still
-            // fill one). A cleared slot is a reference to a slot no model has:
-            // it resolves to nothing, and `bake_resolved` stops the generated
-            // layers at the first slot without a texture.
+            // The item generated from the one sprite. When a `texture.<name>`
+            // claims `layer0`, the sprite takes every other layer
+            // (`texture.potion_overlay` with `texture`: the bottle). Else it
+            // is `layer0` and the layers up to the highest one claimed, so
+            // they stay contiguous, and the leaf's layers above are cleared:
+            // `bake_resolved` stops at the first layer without a texture.
             Some(sprite) => {
+                let top = if claimed.contains_key("layer0") {
+                    u32::MAX
+                } else {
+                    claimed.keys().filter_map(layer).max().unwrap_or(0)
+                };
                 slots.insert("layer0".to_owned(), Some(sprite.clone()));
+                let mut cleared = false;
                 for slot in textures.keys() {
-                    let layer = slot
-                        .strip_prefix("layer")
-                        .and_then(|n| n.parse::<u32>().ok());
-                    if layer.is_some_and(|n| n > 0) {
-                        slots.insert(slot.clone(), None);
+                    match layer(slot) {
+                        Some(n) if n <= top => {
+                            slots.insert(slot.clone(), Some(sprite.clone()));
+                        }
+                        Some(_) => {
+                            slots.insert(slot.clone(), None);
+                            cleared = true;
+                        }
+                        None => {}
                     }
+                }
+                // `particle` is `#layer0` in vanilla; a pack's leaf may point
+                // it at a layer cleared above.
+                if cleared && textures.contains_key("particle") {
+                    slots.insert("particle".to_owned(), Some(sprite.clone()));
                 }
             }
             None => {}
         }
-        for (name, sprite) in &plan.textures {
-            for (slot, material) in &textures {
-                if matches(name.as_str(), slot.as_str(), material) {
-                    slots.insert(slot.clone(), Some(sprite.clone()));
-                }
-            }
-        }
+        slots.extend(
+            claimed
+                .into_iter()
+                .map(|(slot, sprite)| (slot, Some(sprite))),
+        );
         (base != leaf || !slots.is_empty()).then_some(CitBake { base, slots })
     }
 
@@ -283,7 +308,10 @@ impl ItemRenderer {
                         sprite: sprite.clone(),
                         force_translucent: false,
                     }),
-                    None => TextureSlot::Reference(CLEARED.to_owned()),
+                    // A slot referring to itself: whatever its name, it
+                    // resolves to nothing (`ModelLibrary::resolve_with_textures`
+                    // stops at the loop and leaves it unresolved).
+                    None => TextureSlot::Reference(slot.clone()),
                 };
                 (slot.clone(), texture)
             })
@@ -362,10 +390,19 @@ mod tests {
         flat("bow_pulling_0", &["bow_pulling_0"]);
         flat("bow_pulling_1", &["bow_pulling_1"]);
         flat("potion", &["potion_overlay", "potion"]);
-        flat(
-            "leather_helmet",
-            &["leather_helmet", "leather_helmet_overlay"],
+        // A block item: one cube whose faces all draw `#all`.
+        let faces: Vec<String> = ["down", "up", "north", "south", "west", "east"]
+            .iter()
+            .map(|f| format!(r##""{f}":{{"texture":"#all"}}"##))
+            .collect();
+        write(
+            "assets/minecraft/models/block/cube_fixture.json",
+            &format!(
+                r##"{{"textures":{{"particle":"#all","all":"block/cube_fixture"}},"elements":[{{"from":[0,0,0],"to":[16,16,16],"faces":{{{}}}}}]}}"##,
+                faces.join(",")
+            ),
         );
+        png(&root.join("assets/minecraft/textures/block/cube_fixture.png"));
         if cit {
             for t in ["a", "b", "blade", "hilt"] {
                 png(&root.join(format!("{CIT}/{t}.png")));
@@ -399,7 +436,11 @@ mod tests {
                 ("standby", "items=bow\ntexture.bow_standby=b"),
                 ("broken", "items=bow\nmodel=bad\nmodel.bow_pulling_0=sword"),
                 ("bad_sub", "items=bow\ntexture=a\nmodel.bow_pulling_1=bad"),
-                ("helmet", "items=leather_helmet\ntexture=a"),
+                (
+                    "overlay_and_generic",
+                    "items=potion\ntexture=a\ntexture.potion_overlay=b",
+                ),
+                ("block", "items=stone\ntexture=a"),
                 (
                     "overlay_and_bottle",
                     "items=potion\ntexture=a\ntexture.potion=b",
@@ -535,13 +576,30 @@ mod tests {
     }
 
     #[test]
-    fn a_plain_texture_drops_the_leafs_other_layers() {
-        let root = root("helmet", true);
+    fn the_generic_texture_takes_the_layers_no_named_texture_claims() {
+        let root = root("generic", true);
         let r = renderer(&root);
         let (baked, _) = r
-            .cit_layer(rule(&r, "helmet"), "minecraft:item/leather_helmet")
+            .cit_layer(rule(&r, "overlay_and_generic"), "minecraft:item/potion")
             .unwrap();
-        assert_eq!(layers(&baked), BTreeSet::from([(0, cit("a"))]));
+        // `texture.potion_overlay` claims `layer0`; `texture` is the bottle.
+        assert_eq!(
+            layers(&baked),
+            BTreeSet::from([(0, cit("b")), (1, cit("a"))])
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_plain_texture_covers_every_face_of_a_block_item() {
+        let root = root("block", true);
+        let r = renderer(&root);
+        let (baked, _) = r
+            .cit_layer(rule(&r, "block"), "minecraft:block/cube_fixture")
+            .unwrap();
+        assert_eq!(baked.quads.len(), 6);
+        assert_eq!(sprites(&baked), BTreeSet::from([cit("a")]));
+        assert_eq!(baked.particle.sprite, cit("a"));
         let _ = fs::remove_dir_all(&root);
     }
 
