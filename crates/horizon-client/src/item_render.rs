@@ -496,7 +496,8 @@ pub struct ItemRenderer {
     grass: Vec<i32>,
     /// `minecraft:item` registry ids (`Item.getId`).
     item_ids: HashMap<String, i32>,
-    /// The enabled packs' OptiFine CIT rules and their swapped bakes; `None` without rules.
+    /// The enabled packs' OptiFine CIT rules and their swapped bakes; `None`
+    /// without rules.
     pub cit: Option<cit::CitModels>,
 }
 
@@ -664,8 +665,9 @@ impl ItemRenderer {
     ) -> ItemRenderState {
         self.resolve_with_rule(stack, display, owner, level, seed, env, None)
     }
-    /// [`Self::resolve`] for a stack OptiFine CIT item rule `rule` (an index into
-    /// `cit.rules.rules`) matched: its model layers draw what the rule swaps them for.
+    /// [`Self::resolve`] for a stack OptiFine CIT item rule `rule` (an index
+    /// into `cit.rules.rules`) matched: its model layers draw what the rule
+    /// swaps them for.
     #[allow(clippy::too_many_arguments)]
     pub fn resolve_with_rule(
         &self,

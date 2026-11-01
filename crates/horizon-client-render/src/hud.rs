@@ -2670,6 +2670,25 @@ mod tests {
         assert_eq!(texel_at(&atlas, rect, 1, 1), [10, 200, 30, 255]);
     }
     #[test]
+    fn a_cit_models_relative_texture_is_packed() {
+        let root = cit_root(
+            "model",
+            &[
+                ("a.properties", "items=stick\nmodel=sword"),
+                (
+                    "sword.json",
+                    r#"{"parent":"item/generated","textures":{"layer0":"./blade"}}"#,
+                ),
+            ],
+        );
+        let cit = root.join("assets/minecraft/optifine/cit");
+        write_strip(&cit.join("blade.png"), 2, 2, &[[40, 50, 60, 255]], None);
+        let atlas = HudAtlas::build(&root).unwrap();
+        let _ = fs::remove_dir_all(&root);
+        let rect = atlas.sprites["horizon_cit:minecraft/optifine/cit/blade"];
+        assert_eq!(texel_at(&atlas, rect, 1, 1), [40, 50, 60, 255]);
+    }
+    #[test]
     fn a_still_cit_texture_is_packed_whole() {
         // Not cut to a square as an unmarked strip would be: armour layers are 2:1.
         let root = cit_root("still", &[("a.properties", "items=stick\ntexture=a")]);
