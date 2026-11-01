@@ -588,6 +588,24 @@ impl ServerEntity {
 #[derive(Default)]
 pub struct Tracker {
     seen: crate::fast_hash::FxHashSet<i32>,
+    /// What it started and stopped tracking since the game last asked, in
+    /// the order it happened (ChunkMap.TrackedEntity's addPairing and
+    /// removePairing, which NeoForge posts as `PlayerEvent.StartTracking`
+    /// and `StopTracking`).
+    changes: Vec<(bool, TrackingChange)>,
+    /// What it tracks, as the changes name it, so a stop that outlives the
+    /// tick's entity list (a removal, a respawn, a level change, a player
+    /// leaving) still says the entity's UUID and type.
+    known: crate::fast_hash::FxHashMap<i32, TrackingChange>,
+}
+
+/// An entity a client started or stopped tracking, as the mods hear it: its
+/// ID, its UUID and its type's name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackingChange {
+    pub entity: i32,
+    pub uuid: u128,
+    pub kind: String,
 }
 
 impl Tracker {
@@ -597,13 +615,44 @@ impl Tracker {
     pub fn ids(&self) -> Vec<i32> {
         self.seen.iter().copied().collect()
     }
+    /// Every pairing ends: a respawn, a level change or a player leaving.
+    /// Each is a stop for the mods.
     pub fn clear(&mut self) {
         self.seen.clear();
+        for change in self.known.values() {
+            self.changes.push((false, change.clone()));
+        }
+        self.known.clear();
     }
     /// Stop tracking `id` without a packet: the caller removes it from the
     /// client, and the next tick pairs it again if it is still in range.
     pub fn forget(&mut self, id: i32) -> bool {
-        self.seen.remove(&id)
+        let was = self.seen.remove(&id);
+        if was && let Some(change) = self.known.remove(&id) {
+            self.changes.push((false, change));
+        }
+        was
+    }
+    /// Start tracking entity `change` (addPairing).
+    pub fn track(&mut self, change: TrackingChange) {
+        self.seen.insert(change.entity);
+        self.known.insert(change.entity, change.clone());
+        self.changes.push((true, change));
+    }
+    /// Stop tracking entity `change` (removePairing).
+    pub fn untrack(&mut self, change: TrackingChange) {
+        self.seen.remove(&change.entity);
+        self.known.remove(&change.entity);
+        self.changes.push((false, change));
+    }
+    /// What it tracks of entity `id`, as a stop names it.
+    pub fn known_change(&self, id: i32) -> Option<TrackingChange> {
+        self.known.get(&id).cloned()
+    }
+    /// What it started and stopped tracking since the last call, oldest
+    /// first: whether it started, and the entity.
+    pub fn take_changes(&mut self) -> Vec<(bool, TrackingChange)> {
+        std::mem::take(&mut self.changes)
     }
     pub fn len(&self) -> usize {
         self.seen.len()
@@ -896,6 +945,14 @@ impl Entities {
                     }
                 });
             }
+            for id in &removed {
+                let change = v.tracker.known_change(*id).unwrap_or(TrackingChange {
+                    entity: *id,
+                    uuid: 0,
+                    kind: String::new(),
+                });
+                v.tracker.untrack(change);
+            }
             if !removed.is_empty() {
                 v.out.push(
                     play::Clientbound::RemoveEntities(play::RemoveEntities { ids: removed })
@@ -938,7 +995,11 @@ impl Entities {
                         packets.iter().map(play::Clientbound::encode).collect()
                     });
                     v.out.extend(bodies.iter().cloned());
-                    v.tracker.seen.insert(e.id);
+                    v.tracker.track(TrackingChange {
+                        entity: e.id,
+                        uuid: e.uuid,
+                        kind: e.kind.clone(),
+                    });
                 }
             }
         }
@@ -1290,6 +1351,33 @@ mod tests {
             vec![(16, serializer::BOOLEAN, Value::Bool(false))]
         );
         assert!(changes(&mut s, &e).is_empty());
+    }
+
+    /// Every pairing a client makes and drops is a change the mods hear, in
+    /// the order it happened, and a respawn or a level change ends the rest
+    /// as stops (NeoForge's `PlayerEvent.StartTracking`/`StopTracking`).
+    #[test]
+    fn a_tracker_keeps_every_start_and_stop_in_order() {
+        let change = |id: i32| TrackingChange {
+            entity: id,
+            uuid: id as u128,
+            kind: "minecraft:zombie".into(),
+        };
+        let mut tracker = Tracker::default();
+        tracker.track(change(1));
+        tracker.track(change(2));
+        assert!(tracker.forget(1));
+        assert!(!tracker.forget(1));
+        assert_eq!(
+            tracker.take_changes(),
+            [(true, change(1)), (true, change(2)), (false, change(1)),]
+        );
+        assert!(tracker.take_changes().is_empty());
+        // A respawn or a level change drops the rest, each as a stop.
+        tracker.clear();
+        assert_eq!(tracker.take_changes(), [(false, change(2))]);
+        assert!(tracker.is_empty());
+        assert!(tracker.ids().is_empty());
     }
 
     #[test]

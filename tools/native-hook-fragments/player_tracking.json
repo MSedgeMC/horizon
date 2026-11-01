@@ -1,0 +1,18 @@
+{
+  "hooks": [
+    {
+      "name": "player_start_tracking",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_player_start_tracking",
+      "neoforge": "PlayerEvent.StartTracking",
+      "side": "server"
+    },
+    {
+      "name": "player_stop_tracking",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_player_stop_tracking",
+      "neoforge": "PlayerEvent.StopTracking",
+      "side": "server"
+    }
+  ],
+  "rust_summary": "a player starting and stopping tracking an entity\n(`native_player_start_tracking`, `native_player_stop_tracking`).",
+  "doc_summary": "a player starting and stopping tracking an entity, as NeoForge's `PlayerEvent.StartTracking`/`StopTracking` report it. `native_player_start_tracking(player, name, entity, uuid, kind)` and `native_player_stop_tracking(...)` carry the player's UUID and name and the entity's ID, UUID and type; a start is told when the hub pairs a client with an entity (`ChunkMap.TrackedEntity.addPairing`) and a stop when it drops the pairing (`removePairing`: out of range, another level, removed, or the player left, in which case the UUID and kind are what Horizon last knew). The changes are collected from the hub's per-client tracker once a tick, in guest order, with no player's state swapped in, so a mod sends what the player needs with the net hooks. Each start has one stop. The window's own player sees every entity without being paired, so it is not told. Bundles need \"hooks\": @API:player_tracking@."
+}

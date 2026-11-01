@@ -2691,6 +2691,41 @@ impl Game<'_> {
     ) {
         let _ = (dimension, pos, viewers, previous);
     }
+    /// A player started tracking entity `entity` of `kind` (its UUID
+    /// `uuid`): `ChunkMap.TrackedEntity.addPairing`, which NeoForge posts as
+    /// `PlayerEvent.StartTracking`. `player` is the player's UUID and `name`
+    /// their name. Told once for each entity the player's client is paired
+    /// with, from the hub's per-client tracker; each start has one
+    /// `native_player_stop_tracking`. No player's state is swapped in: a mod
+    /// sends what the player needs with the net hooks. Server-side, for the
+    /// clients of a hosted world (the window's own player sees every entity
+    /// and is not paired with them). @API:player_tracking@.
+    pub(super) fn native_player_start_tracking(
+        &mut self,
+        player: u128,
+        name: &str,
+        entity: i32,
+        uuid: u128,
+        kind: &str,
+    ) {
+        let _ = (player, name, entity, uuid, kind);
+    }
+    /// A player stopped tracking entity `entity` of `kind` (`uuid`):
+    /// `ChunkMap.TrackedEntity.removePairing`, which NeoForge posts as
+    /// `PlayerEvent.StopTracking`. Told when the entity left the player's
+    /// range or level, was removed, or the player left the game, so its UUID
+    /// and kind are what Horizon last knew of it. Server-side.
+    /// @API:player_tracking@.
+    pub(super) fn native_player_stop_tracking(
+        &mut self,
+        player: u128,
+        name: &str,
+        entity: i32,
+        uuid: u128,
+        kind: &str,
+    ) {
+        let _ = (player, name, entity, uuid, kind);
+    }
     /// `player` died: where `ServerPlayer.die` starts, with the death
     /// message's key when the game knows it (`death.attack.lava`; none for a
     /// message it builds from the combat). It only hears. Server-side, for

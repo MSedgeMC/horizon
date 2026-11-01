@@ -8,7 +8,7 @@ use super::{
     Lan, NetEvent,
     chunks::ChunkEncoder,
     data::SyncData,
-    entity::{Entities, EntityState, Viewer},
+    entity::{Entities, EntityState, TrackingChange, Viewer},
     guest::{Guest, SentEffect, stack_to_network},
 };
 use crate::{
@@ -198,9 +198,24 @@ pub enum HostEvent {
     },
 }
 
+/// An entity a player of the hub started or stopped tracking, for
+/// `native_player_start_tracking`/`native_player_stop_tracking`: the player
+/// (UUID and name) and the entity (ID, UUID and type), with what Horizon
+/// last knew of them when the player left.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TrackingEvent {
+    pub start: bool,
+    pub player: u128,
+    pub name: String,
+    pub entity: TrackingChange,
+}
+
 pub struct Hub {
     /// Clicks on and closings of native mods' menus, for the game.
     pub native_menu_events: Vec<super::menu::NativeMenuEvent>,
+    /// The entities each player started and stopped tracking, for the game
+    /// (`native_player_start_tracking`/`native_player_stop_tracking`).
+    pub tracking_events: Vec<TrackingEvent>,
     pub lan: Lan,
     pub config: HubConfig,
     pub encoder: ChunkEncoder,
@@ -539,6 +554,7 @@ impl Hub {
             entity_gone: Vec::new(),
             mod_commands: (serde_json::Value::Null, None),
             native_menu_events: Vec::new(),
+            tracking_events: Vec::new(),
             teams: Vec::new(),
             nicknames: std::collections::HashMap::new(),
         }
@@ -1553,6 +1569,24 @@ impl Hub {
 
     fn remove_guest(&mut self, i: usize, reason: &str) -> Guest {
         let mut g = self.guests.remove(i);
+        // Leaving the game ends every pairing the player had: each is a stop.
+        for (start, entity) in g.tracker.take_changes() {
+            self.tracking_events.push(TrackingEvent {
+                start,
+                player: g.uuid,
+                name: g.name.clone(),
+                entity,
+            });
+        }
+        g.tracker.clear();
+        for (start, entity) in g.tracker.take_changes() {
+            self.tracking_events.push(TrackingEvent {
+                start,
+                player: g.uuid,
+                name: g.name.clone(),
+                entity,
+            });
+        }
         if let Some(m) = g
             .menu
             .as_ref()
@@ -2364,6 +2398,17 @@ impl Hub {
             entity_type(types, sync, kind)
         });
         drop(viewers);
+        // The pairing changes the tick made, told to the game in guest order.
+        for g in self.guests.iter_mut() {
+            for (start, entity) in g.tracker.take_changes() {
+                self.tracking_events.push(TrackingEvent {
+                    start,
+                    player: g.uuid,
+                    name: g.name.clone(),
+                    entity,
+                });
+            }
+        }
         for (g, out) in self.guests.iter().filter(|g| here(g)).zip(outs.iter_mut()) {
             g.sender.send_many(out.drain(..));
         }
