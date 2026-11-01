@@ -2538,6 +2538,36 @@ impl Goal for FleeSun {
         m.nav_move_to(cx.w, self.wanted, self.speed);
     }
 }
+/// The block change a sheep's bite makes, and whether it ate at all: both
+/// branches of `EatBlockGoal.tick` are gated on `mob_griefing`, while
+/// `Mob.ate` is not (`Sheep.ate` still shears the coat and ages a baby up
+/// with the rule off).
+fn eat_block_bite(
+    griefing: bool,
+    at: [i32; 3],
+    below: [i32; 3],
+    edible: bool,
+    grass_below: bool,
+) -> (bool, Option<MobEvent>) {
+    if edible {
+        let change = griefing.then_some(MobEvent::BreakBlock {
+            pos: at,
+            drop: false,
+        });
+        (true, change)
+    } else if grass_below {
+        let change = griefing.then_some(MobEvent::SetBlockName {
+            pos: below,
+            name: "minecraft:dirt",
+            effect: true,
+            flags: horizon_world::level::flags::UPDATE_CLIENTS,
+        });
+        (true, change)
+    } else {
+        (false, None)
+    }
+}
+
 /// EatBlockGoal (sheep): eat short grass or turn grass blocks to dirt.
 #[derive(Clone, Debug, Default)]
 pub struct EatBlock {
@@ -2590,19 +2620,19 @@ impl Goal for EatBlock {
                 m.position.z.floor() as i32,
             );
             let here = cx.w.block_name(x, y, z).to_owned();
-            if cx.w.has_tag("minecraft:edible_for_sheep", &here) {
-                cx.events.push(MobEvent::BreakBlock {
-                    pos: [x, y, z],
-                    drop: false,
-                });
-                super::ai::ate(m);
-            } else if cx.w.block_name(x, y - 1, z) == "minecraft:grass_block" {
-                cx.events.push(MobEvent::SetBlockName {
-                    pos: [x, y - 1, z],
-                    name: "minecraft:dirt",
-                    effect: true,
-                    flags: horizon_world::level::flags::UPDATE_CLIENTS,
-                });
+            let edible = cx.w.has_tag("minecraft:edible_for_sheep", &here);
+            let grass_below = !edible && cx.w.block_name(x, y - 1, z) == "minecraft:grass_block";
+            let (ate, change) = eat_block_bite(
+                cx.w.mob_griefing,
+                [x, y, z],
+                [x, y - 1, z],
+                edible,
+                grass_below,
+            );
+            if let Some(change) = change {
+                cx.events.push(change);
+            }
+            if ate {
                 super::ai::ate(m);
             }
         }
@@ -2844,5 +2874,59 @@ mod built_by_player_tests {
         let mut zombie = mob(Species::Zombie);
         zombie.extra.player_created = true;
         assert!(!zombie.built_by_player());
+    }
+}
+
+#[cfg(test)]
+mod eat_block_tests {
+    use super::*;
+
+    const AT: [i32; 3] = [4, 70, -3];
+    const BELOW: [i32; 3] = [4, 69, -3];
+
+    /// `EatBlockGoal.tick` with `mob_griefing` off: the mob still eats (a
+    /// sheared sheep keeps its coat, a baby ages up) but the level keeps its
+    /// block.
+    #[test]
+    fn a_grazing_sheep_changes_nothing_with_griefing_off() {
+        for (edible, grass_below) in [(true, false), (false, true), (true, true)] {
+            let (ate, change) = eat_block_bite(false, AT, BELOW, edible, grass_below);
+            assert!(ate, "edible={edible} grass_below={grass_below}");
+            assert!(
+                change.is_none(),
+                "edible={edible} grass_below={grass_below} changed the level"
+            );
+        }
+        let (ate, change) = eat_block_bite(false, AT, BELOW, false, false);
+        assert!(!ate, "no bite without grass to eat");
+        assert!(change.is_none());
+    }
+
+    /// With the rule on, short grass is destroyed (no drops) and the block
+    /// below grass is turned into dirt, with the block event the client shows.
+    #[test]
+    fn a_grazing_sheep_changes_the_block_with_griefing_on() {
+        let (ate, change) = eat_block_bite(true, AT, BELOW, true, true);
+        assert!(ate);
+        assert!(matches!(
+            change,
+            Some(MobEvent::BreakBlock { pos, drop: false }) if pos == AT
+        ));
+        let (ate, change) = eat_block_bite(true, AT, BELOW, false, true);
+        assert!(ate);
+        match change {
+            Some(MobEvent::SetBlockName {
+                pos,
+                name,
+                effect,
+                flags,
+            }) => {
+                assert_eq!(pos, BELOW);
+                assert_eq!(name, "minecraft:dirt");
+                assert!(effect, "the client needs the block event");
+                assert_eq!(flags, horizon_world::level::flags::UPDATE_CLIENTS);
+            }
+            other => panic!("expected the grass block turned to dirt, got {other:?}"),
+        }
     }
 }
