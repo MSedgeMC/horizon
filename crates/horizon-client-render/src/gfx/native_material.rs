@@ -145,7 +145,8 @@ fn horizon_material_color(in: HorizonMaterialOut, translucent: bool) -> vec4<f32
     return material(MaterialInput(albedo, in.tint, in.light, in.lightmap, in.position, in.uv,
         translucent, horizon_sprite_tags(in.layer & 0x7fffu),
         horizon_sprite_material(in.layer & 0x7fffu), in.clip.xy / frame.resolution,
-        in.face, fluid, in.emission, normal, tangent)).color;
+        in.face, fluid, in.emission, normal, tangent,
+        horizon_terrain_native_colored_light(in.position))).color;
 }
 var<private> horizon_material_face_normal: vec3<f32>;
 struct HorizonMaterialSolid {
