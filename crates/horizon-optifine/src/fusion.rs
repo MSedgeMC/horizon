@@ -43,16 +43,17 @@ fn str_field<'a>(json: &'a Json, key: &str) -> Result<Option<&'a str>, String> {
     }
 }
 
-/// An integer field in `range`, else `default`.
+/// An integer field, which must be in `range`.
 fn int_field(
     json: &Json,
     key: &str,
     range: std::ops::RangeInclusive<i64>,
-    default: i64,
-) -> Result<i64, String> {
+) -> Result<Option<i64>, String> {
     match json.get(key) {
-        None => Ok(default),
-        Some(Json::Num(n)) if n.fract() == 0.0 && range.contains(&(*n as i64)) => Ok(*n as i64),
+        None => Ok(None),
+        Some(Json::Num(n)) if n.fract() == 0.0 && range.contains(&(*n as i64)) => {
+            Ok(Some(*n as i64))
+        }
         Some(_) => Err(format!(
             "`{key}` is not an integer from {} to {}",
             range.start(),

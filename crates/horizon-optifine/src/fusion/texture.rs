@@ -103,15 +103,10 @@ pub enum LoopType {
     Reverse,
 }
 
-/// `key`'s value among `options`, else `default`.
-fn choice<T: Copy>(
-    json: &Json,
-    key: &str,
-    options: &[(&str, T)],
-    default: Option<T>,
-) -> Result<Option<T>, String> {
+/// `key`'s value, which must be one of `options`.
+fn choice<T: Copy>(json: &Json, key: &str, options: &[(&str, T)]) -> Result<Option<T>, String> {
     match str_field(json, key)? {
-        None => Ok(default),
+        None => Ok(None),
         Some(value) => options
             .iter()
             .find(|(name, _)| *name == value)
@@ -146,7 +141,6 @@ impl Meta {
                     ("cutout", RenderType::Cutout),
                     ("translucent", RenderType::Translucent),
                 ],
-                None,
             )?,
             tinting: choice(
                 json,
@@ -156,7 +150,6 @@ impl Meta {
                     ("biome_foliage", Tinting::Foliage),
                     ("biome_water", Tinting::Water),
                 ],
-                None,
             )?,
         };
         let sub_texture = || {
@@ -184,8 +177,8 @@ impl Meta {
                 per_tile_animation: per_tile_animation()?,
             },
             "random" => Kind::Random {
-                columns: int_field(json, "columns", 1..=100, 1)? as u32,
-                rows: int_field(json, "rows", 1..=100, 1)? as u32,
+                columns: int_field(json, "columns", 1..=100)?.unwrap_or(1) as u32,
+                rows: int_field(json, "rows", 1..=100)?.unwrap_or(1) as u32,
                 source: choice(
                     json,
                     "randomness_source",
@@ -194,31 +187,29 @@ impl Meta {
                         ("position_facing", RandomSource::PositionFacing),
                         ("position_axis", RandomSource::PositionAxis),
                     ],
-                    Some(RandomSource::PositionFacing),
                 )?
-                .expect("a default"),
-                seed: match json.get("seed") {
-                    None => None,
-                    // JSON numbers here are `f64`s: past 2^53 a seed isn't the one written.
-                    Some(_) => Some(int_field(json, "seed", -(1 << 53)..=1 << 53, 0)?),
-                },
+                .unwrap_or(RandomSource::PositionFacing),
+                // JSON numbers here are `f64`s: from 2^53 a seed may not be the one written.
+                seed: int_field(json, "seed", -(1 << 53) + 1..=(1 << 53) - 1)?,
                 sub_texture: sub_texture()?,
                 per_tile_animation: per_tile_animation()?,
             },
             "continuous" => Kind::Continuous {
-                columns: int_field(json, "columns", 1..=32, 1)? as u32,
-                rows: int_field(json, "rows", 1..=32, 1)? as u32,
+                columns: int_field(json, "columns", 1..=32)?.unwrap_or(1) as u32,
+                rows: int_field(json, "rows", 1..=32)?.unwrap_or(1) as u32,
             },
             "scrolling" => {
-                let positive =
-                    |key, default| int_field(json, key, 1..=i64::from(u32::MAX), default);
+                let positive = |key, default| {
+                    Ok::<_, String>(
+                        int_field(json, key, 1..=i64::from(u32::MAX))?.unwrap_or(default) as u32,
+                    )
+                };
                 Kind::Scrolling(Scrolling {
-                    from: choice(json, "from", &CORNERS, Some(Corner::TopLeft))?
-                        .expect("a default"),
-                    to: choice(json, "to", &CORNERS, Some(Corner::BottomLeft))?.expect("a default"),
-                    frame_width: positive("frame_width", 16)? as u32,
-                    frame_height: positive("frame_height", 16)? as u32,
-                    frame_time: positive("frame_time", 10)? as u32,
+                    from: choice(json, "from", &CORNERS)?.unwrap_or(Corner::TopLeft),
+                    to: choice(json, "to", &CORNERS)?.unwrap_or(Corner::BottomLeft),
+                    frame_width: positive("frame_width", 16)?,
+                    frame_height: positive("frame_height", 16)?,
+                    frame_time: positive("frame_time", 10)?,
                     loop_type: choice(
                         json,
                         "loop_type",
@@ -227,10 +218,10 @@ impl Meta {
                             ("reset", LoopType::Reset),
                             ("reverse", LoopType::Reverse),
                         ],
-                        Some(LoopType::Wrap),
                     )?
-                    .expect("a default"),
-                    loop_pause: int_field(json, "loop_pause", 0..=i64::from(u32::MAX), 0)? as u32,
+                    .unwrap_or(LoopType::Wrap),
+                    loop_pause: int_field(json, "loop_pause", 0..=i64::from(u32::MAX))?.unwrap_or(0)
+                        as u32,
                 })
             }
             other => return Err(format!("unknown texture type `{other}`")),
@@ -366,9 +357,40 @@ mod tests {
     }
 
     #[test]
+    fn defaults() {
+        assert_eq!(
+            meta(r#"{"fusion": {"type": "random", "randomness_source": "position_axis"}}"#).kind,
+            Kind::Random {
+                columns: 1,
+                rows: 1,
+                source: RandomSource::PositionAxis,
+                seed: None,
+                sub_texture: None,
+                per_tile_animation: false,
+            }
+        );
+        assert_eq!(
+            meta(r#"{"fusion": {"type": "scrolling"}}"#).kind,
+            Kind::Scrolling(Scrolling {
+                from: Corner::TopLeft,
+                to: Corner::BottomLeft,
+                frame_width: 16,
+                frame_height: 16,
+                frame_time: 10,
+                loop_type: LoopType::Wrap,
+                loop_pause: 0,
+            })
+        );
+    }
+
+    #[test]
     fn refuses_bad_values() {
         for bad in [
-            r#"{"fusion": {"type": "random", "seed": 1e19}}"#,
+            r#"{"fusion": {"type": "random", "seed": 9007199254740993}}"#,
+            r#"{"fusion": {"type": "random", "rows": 101}}"#,
+            r#"{"fusion": {"type": "scrolling", "frame_time": 0}}"#,
+            r#"{"fusion": {"type": "scrolling", "loop_pause": -1}}"#,
+            r#"{"fusion": {"type": "connecting", "sub_texture": {"type": "random", "rows": 0}}}"#,
             r#"{"fusion": {"type": "glowing"}}"#,
             r#"{"fusion": {"type": "connecting", "layout": "diagonal"}}"#,
             r#"{"fusion": {"type": "base", "emissive": "yes"}}"#,
