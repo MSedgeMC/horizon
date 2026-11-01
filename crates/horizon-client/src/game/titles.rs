@@ -58,7 +58,7 @@ impl Game<'_> {
             hover_name: item_tooltip::styled_name(stack, || {
                 item_tooltip::name_line(stack, &|key| self.pack.names.display_get(key))
             }),
-            rarity_color: match rarity {
+            rarity_color: match rarity.as_str() {
                 "uncommon" => text::YELLOW,
                 "rare" => text::AQUA,
                 "epic" => text::LIGHT_PURPLE,

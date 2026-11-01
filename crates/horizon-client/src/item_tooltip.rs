@@ -286,19 +286,28 @@ pub fn name_line(stack: &ItemStack, translate: &dyn Fn(&str) -> Option<String>) 
 }
 
 /// ItemStack.getRarity: the ominous banner override, then the enchantment upgrade.
-pub fn rarity<'a>(stack: &ItemStack, default: &'a str) -> &'a str {
-    let rarity = if stack.data().is_some_and(|d| d.ominous_banner) {
-        "uncommon"
+pub fn rarity(stack: &ItemStack, default: &str) -> String {
+    // `ItemStack.getRarity`: `getOrDefault(RARITY, item default)`, then the
+    // enchantment bump. The stack's own component wins over the item's.
+    let component = stack
+        .data()
+        .and_then(|d| d.other("minecraft:rarity"))
+        .and_then(|tag| match tag {
+            Tag::String(s) => Some(s.to_string_lossy()),
+            _ => None,
+        });
+    let base = if stack.data().is_some_and(|d| d.ominous_banner) {
+        "uncommon".to_owned()
     } else {
-        default
+        component.unwrap_or_else(|| default.to_owned())
     };
     if stack.enchantments().is_empty() {
-        rarity
+        base
     } else {
-        match rarity {
-            "common" | "uncommon" => "rare",
-            "rare" => "epic",
-            r => r,
+        match base.as_str() {
+            "common" | "uncommon" => "rare".to_owned(),
+            "rare" => "epic".to_owned(),
+            _ => base,
         }
     }
 }
@@ -1081,6 +1090,53 @@ mod tests {
     use super::*;
     use horizon_world::loot::PackOverlay;
     use std::sync::Arc;
+
+    /// `ItemStack.getRarity`: the stack's `minecraft:rarity` component decides
+    /// the name colour, over the item's own; enchantments then raise common and
+    /// uncommon to rare and rare to epic, and leave epic alone.
+    #[test]
+    fn a_stack_rarity_component_sets_the_name_rarity() {
+        let with = |components: &'static str| {
+            let tag = crate::item_data::command_components(components).unwrap();
+            let (damage, extra) = crate::item_data::decode_components(Some(&tag));
+            crate::items::ItemStack {
+                item: "minecraft:stick".into(),
+                count: 1,
+                damage,
+                extra,
+            }
+        };
+        assert_eq!(rarity(&with("[rarity=\"epic\"]"), "common"), "epic");
+        assert_eq!(
+            rarity(
+                &with("[rarity=\"epic\",enchantments={aqua_affinity:1}]"),
+                "common"
+            ),
+            "epic",
+            "an epic stays epic when enchanted"
+        );
+        assert_eq!(
+            rarity(
+                &with("[rarity=\"common\",enchantments={aqua_affinity:1}]"),
+                "common"
+            ),
+            "rare",
+            "common is raised by enchantments"
+        );
+        assert_eq!(
+            rarity(
+                &with("[rarity=\"uncommon\",enchantments={aqua_affinity:1}]"),
+                "epic"
+            ),
+            "rare",
+            "the component wins over the item default"
+        );
+        assert_eq!(
+            rarity(&with("[custom_name=[{text:\"n\"}]]"), "uncommon"),
+            "uncommon",
+            "no component: the item's own rarity"
+        );
+    }
 
     #[test]
     fn styled_name_keeps_gradient_spans_and_explicit_italic() {

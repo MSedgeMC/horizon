@@ -2076,7 +2076,7 @@ impl Game<'_> {
             stack,
             props.map_or("common", |p| p.rarity.as_str()),
         );
-        match rarity {
+        match rarity.as_str() {
             "uncommon" => rgba(255, 255, 85, 255),
             "rare" => rgba(85, 255, 255, 255),
             "epic" => rgba(255, 85, 255, 255),
