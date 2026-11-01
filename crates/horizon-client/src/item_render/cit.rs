@@ -266,7 +266,7 @@ impl ItemRenderer {
                 let top = if claimed.contains_key("layer0") {
                     u32::MAX
                 } else {
-                    claimed.keys().filter_map(layer).max().unwrap_or(0)
+                    claimed.keys().filter_map(|s| layer(s)).max().unwrap_or(0)
                 };
                 slots.insert("layer0".to_owned(), Some(sprite.clone()));
                 let mut cleared = false;
