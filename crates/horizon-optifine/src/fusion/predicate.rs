@@ -57,17 +57,21 @@ fn direction(name: &str) -> Option<u8> {
     })
 }
 
+/// A value, or each value of an array.
+fn one_or_many(value: &Json) -> &[Json] {
+    match value {
+        Json::Arr(items) => items,
+        single => std::slice::from_ref(single),
+    }
+}
+
 /// `one` or `many` of a field: a string or an array of them.
 fn names<'a>(json: &'a Json, one: &str, many: &str) -> Result<Vec<&'a str>, String> {
     let value = json
         .get(one)
         .or_else(|| json.get(many))
         .ok_or_else(|| format!("no `{one}` or `{many}`"))?;
-    let items = match value {
-        Json::Arr(items) => &items[..],
-        single => std::slice::from_ref(single),
-    };
-    items
+    one_or_many(value)
         .iter()
         .map(|v| {
             v.as_str()
@@ -82,11 +86,7 @@ fn blocks(json: &Json, states: bool) -> Result<Vec<BlockMatch>, String> {
     let mut properties = Vec::new();
     if states && let Some(map) = json.get("properties") {
         for (key, values) in map.as_object().ok_or("`properties` is not an object")? {
-            let values = match values {
-                Json::Arr(items) => &items[..],
-                single => std::slice::from_ref(single),
-            };
-            let values = values
+            let values = one_or_many(values)
                 .iter()
                 .map(|v| match v {
                     Json::Str(s) => Ok(s.clone()),
@@ -260,6 +260,38 @@ mod tests {
     }
 
     #[test]
+    fn directions_and_property_values() {
+        for (name, bit) in [
+            ("top", U),
+            ("top_right", UR),
+            ("right", R),
+            ("bottom_right", DR),
+            ("bottom", D),
+            ("bottom_left", DL),
+            ("left", L),
+            ("top_left", UL),
+        ] {
+            let p = parse(&format!(
+                r#"{{"type": "is_direction", "direction": "{name}"}}"#
+            ));
+            assert_eq!(p, Connection::Direction(bit), "{name}");
+        }
+        // Booleans and numbers as block states write them.
+        assert_eq!(
+            parse(
+                r#"{"type": "match_state", "block": "light", "properties": {"waterlogged": false, "level": 15}}"#
+            ),
+            Connection::Neighbour(vec![BlockMatch {
+                id: "minecraft:light".into(),
+                states: vec![
+                    ("waterlogged".into(), vec!["false".into()]),
+                    ("level".into(), vec!["15".into()]),
+                ],
+            }])
+        );
+    }
+
+    #[test]
     fn refuses_what_it_cannot_read() {
         for bad in [
             r#"{"type": "is_same_thing"}"#,
@@ -268,6 +300,7 @@ mod tests {
             r#"{"type": "is_direction", "direction": "up"}"#,
             r#"{"type": "and", "predicates": {"type": "true"}}"#,
             r#"{"type": "not"}"#,
+            r#"{"type": "match_state", "block": "stone", "properties": ["lit"]}"#,
         ] {
             assert!(
                 Connection::parse(&Json::parse(bad).unwrap()).is_err(),
