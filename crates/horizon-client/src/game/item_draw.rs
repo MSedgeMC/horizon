@@ -309,7 +309,7 @@ impl Game<'_> {
     ) -> ItemRenderState {
         let level = self.item_level();
         let renderer = &self.pack.item_renderer;
-        let rule = renderer.cit.as_ref().and_then(|cit| {
+        let (rule, glint) = renderer.cit.as_ref().map_or((None, None), |cit| {
             // The stack's own `max_damage` component, else its item's.
             let max_damage = stack
                 .data()
@@ -319,9 +319,12 @@ impl Game<'_> {
                 })
                 .or_else(|| self.res.items().get(&stack.item).map(|i| i.max_damage))
                 .unwrap_or(0);
-            cit.rules.select(CitKind::Item, stack, hand, max_damage)
+            (
+                cit.rules.select(CitKind::Item, stack, hand, max_damage),
+                cit.rules.glint(stack, max_damage),
+            )
         });
-        renderer.resolve_with_rule(
+        let mut state = renderer.resolve_with_rule(
             &item_render::stack_view(stack),
             display,
             owner,
@@ -329,7 +332,20 @@ impl Game<'_> {
             seed,
             &self.item_env(),
             rule,
-        )
+        );
+        if let Some(glint) = glint {
+            // The pack's enchantment rules replace vanilla's glint unless one keeps it.
+            if !glint.vanilla {
+                for layer in &mut state.layers {
+                    layer.foil = horizon_assets::item_model::FoilType::None;
+                }
+            }
+            // Their own layers draw in the GUI only so far.
+            if display == DisplayContext::Gui && !glint.is_empty() {
+                state.cit_glint = Some(glint);
+            }
+        }
+        state
     }
     /// `GuiGraphics.renderItem(player, level, stack, x, y, 0)`.
     pub(super) fn draw_item_model(&self, batch: &mut HudBatch, stack: &ItemStack, x: f32, y: f32) {

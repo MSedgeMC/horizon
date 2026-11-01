@@ -10,6 +10,7 @@ use std::{
 };
 use wgpu::util::DeviceExt;
 
+pub mod cit_glint;
 mod pack_text;
 
 /// A sprite's atlas region, and its size in GUI pixels: the size of the
@@ -977,6 +978,9 @@ pub enum Blend {
     /// `RenderPipelines.END_PORTAL` as a GUI fill: the End portal's layers
     /// projected from the screen (`HudBatch::end_portal` sets the textures).
     EndPortal,
+    /// An OptiFine CIT glint layer (`cit_glint`), blended as entry `n` of
+    /// `GlintTextures::blends` says.
+    CitGlint(u8),
 }
 /// What a `Blend::EndPortal` fill samples: the atlas rects (u0, v0, width,
 /// height) of `end_sky.png` and `end_portal.png`, and the `GameTime` uniform.
@@ -1706,7 +1710,11 @@ pub struct HudRenderer {
     depth_pipeline: wgpu::RenderPipeline,
     vignette_pipeline: wgpu::RenderPipeline,
     end_portal_pipeline: wgpu::RenderPipeline,
+    /// The layout of `group`, which the CIT glint pipelines share.
+    layout: wgpu::BindGroupLayout,
     group: wgpu::BindGroup,
+    /// The pack's CIT enchantment glints, when it has any.
+    cit_glint: Option<cit_glint::CitGlintPass>,
     uniform: wgpu::Buffer,
     buffer: wgpu::Buffer,
     capacity: u64,
@@ -1939,7 +1947,9 @@ impl HudRenderer {
             depth_pipeline,
             vignette_pipeline,
             end_portal_pipeline,
+            layout,
             group,
+            cit_glint: None,
             uniform,
             buffer,
             capacity,
@@ -1948,6 +1958,18 @@ impl HudRenderer {
             pack_text: None,
             zoom: 1.0,
         })
+    }
+    /// Draw the CIT glint layers of `textures` (the pack's enchantment rules); `None` or no
+    /// textures draws none.
+    pub fn set_cit_glints(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        textures: Option<&cit_glint::GlintTextures>,
+    ) {
+        self.cit_glint = textures.and_then(|t| {
+            cit_glint::CitGlintPass::new(device, queue, self.format, &self.layout, t)
+        });
     }
     /// Draw the GUI's text with `shader` (`HudAtlas::text_shader`), or natively.
     pub fn set_text_shader(
@@ -2184,6 +2206,12 @@ impl HudRenderer {
                     Blend::Depth(_) => &self.depth_pipeline,
                     Blend::Vignette => &self.vignette_pipeline,
                     Blend::EndPortal => &self.end_portal_pipeline,
+                    Blend::CitGlint(blend) => {
+                        if let Some(cit) = &self.cit_glint {
+                            cit.draw(&mut pass, *blend, range.clone());
+                        }
+                        continue;
+                    }
                 };
                 match &self.pack_text {
                     Some(pack_text) if *blend == Blend::Alpha => {

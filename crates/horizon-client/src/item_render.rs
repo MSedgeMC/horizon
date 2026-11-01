@@ -202,6 +202,8 @@ pub struct ItemRenderState {
     pub layers: Vec<LayerRender>,
     pub oversized_in_gui: bool,
     pub animated: bool,
+    /// The OptiFine CIT glint layers the stack draws in the GUI (`cit_glint`).
+    pub cit_glint: Option<Arc<crate::cit_glint::StackGlint>>,
 }
 impl ItemRenderState {
     pub fn is_empty(&self) -> bool {
@@ -732,6 +734,7 @@ impl ItemRenderer {
             layers,
             oversized_in_gui: resolved.oversized_in_gui,
             animated,
+            cit_glint: None,
         }
     }
     /// `GrassColor.get` over the loaded colormap.

@@ -5,6 +5,7 @@
 use super::{ItemRenderer, corners};
 use crate::cit::{CitRules, Kind};
 use crate::cit_assets::{self, model_id, sprite_id};
+use crate::hud::cit_glint::GlintTextures;
 use glam::Vec3;
 use horizon_assets::{
     item_bake::{BakedItemModel, bake_resolved},
@@ -42,6 +43,8 @@ struct CitBake {
 #[derive(Debug)]
 pub struct CitModels {
     pub rules: CitRules,
+    /// The enchantment rules' glint textures.
+    pub glint_textures: GlintTextures,
     /// Per rule (an index into `rules.rules`); `None` for rules of other kinds.
     plans: Vec<Option<Plan>>,
     /// Per (rule, leaf model): its bake, `None` where the rule leaves the leaf alone.
@@ -65,7 +68,8 @@ pub(super) fn load(
     library: Arc<ModelLibrary>,
 ) -> (Arc<ModelLibrary>, Option<CitModels>) {
     let rules = CitRules::load(root);
-    if rules.is_empty() {
+    // A `cit.properties` alone can still turn vanilla's glint off.
+    if rules.is_empty() && rules.global.use_glint {
         return (library, None);
     }
     let extra = cit_assets::load_models(root, &rules.rules);
@@ -80,7 +84,9 @@ pub(super) fn load(
             }
         }
     };
-    (library, Some(CitModels::new(rules)))
+    let mut models = CitModels::new(rules);
+    models.glint_textures = GlintTextures::load(root, &models.rules.rules);
+    (library, Some(models))
 }
 
 impl CitModels {
@@ -104,6 +110,7 @@ impl CitModels {
             .collect();
         Self {
             rules,
+            glint_textures: GlintTextures::default(),
             plans,
             memo: Mutex::default(),
             baked: Mutex::default(),

@@ -6,6 +6,9 @@
 //! is oversized in the GUI (`GuiItemAtlas` draws each item into a scissored
 //! 16x16 slot; oversized items get a picture-in-picture of their bounds).
 use super::{Foil, Glint, ItemQuad, ItemRenderState, ItemRenderer, SpecialHost};
+use crate::cit::Rule;
+use crate::cit_glint::StackGlint;
+use crate::hud::cit_glint::{GlintTextures, layer_uv, vertex_color};
 use crate::hud::{HudBatch, Rect};
 use glam::{EulerRot, Mat4, Vec2, Vec3};
 use std::{collections::HashMap, f32::consts::PI, sync::Arc};
@@ -125,6 +128,43 @@ fn emit(batch: &mut HudBatch, fan: &[Point], color: impl Fn(Vec2) -> u32, glint:
     }
 }
 
+/// A stack's OptiFine CIT glint layers this frame.
+#[derive(Clone, Copy)]
+struct CitDraw<'a> {
+    glint: &'a StackGlint,
+    textures: &'a GlintTextures,
+    rules: &'a [Rule],
+    millis: f32,
+}
+
+/// The CIT glint layers over one clipped face, bottom first, each blended as its rule says.
+fn emit_cit(batch: &mut HudBatch, fan: &[Point], cit: CitDraw) {
+    for (i, layer) in cit.glint.layers.iter().enumerate() {
+        let Some(slot) = cit.textures.slot_of.get(layer.rule).copied().flatten() else {
+            continue;
+        };
+        let intensity = cit.glint.intensity(i, f64::from(cit.millis) / 1000.0);
+        if intensity <= 0.0 {
+            continue;
+        }
+        let glint = &cit.rules[layer.rule].glint;
+        let color = vertex_color(slot, intensity);
+        let blend = crate::hud::Blend::CitGlint(cit.textures.slots[usize::from(slot)].blend);
+        let uv = |v: Point| layer_uv(v.glint_uv, cit.millis, glint.speed, glint.rotation, 8.0);
+        for k in 1..fan.len().saturating_sub(1) {
+            let corners = [fan[0], fan[k], fan[k + 1], fan[k + 1]];
+            let start = batch.vertices.len();
+            batch.quad_glint(
+                corners.map(|v| v.p.to_array()),
+                corners.map(|v| v.uv),
+                corners.map(uv),
+                color,
+            );
+            batch.blend_since(start, blend);
+        }
+    }
+}
+
 /// Submit, light, cull, sort and clip one item's quads into `batch` at GUI
 /// position `(x, y)`.
 #[allow(clippy::too_many_arguments)]
@@ -236,7 +276,7 @@ impl DrawnKey {
         x: f32,
         y: f32,
     ) -> Option<Self> {
-        if state.animated {
+        if state.animated || state.cit_glint.is_some() {
             return None;
         }
         let layers = state
@@ -316,7 +356,14 @@ fn draw_now(
             scale: 8.0,
         });
     batch.glint_alpha = glint_alpha;
-    draw_quads(&quads, lights, batch, rect, glint.as_ref());
+    let cit = state.cit_glint.as_deref().zip(renderer.cit.as_ref());
+    let cit = cit.map(|(glint, models)| CitDraw {
+        glint,
+        textures: &models.glint_textures,
+        rules: &models.rules.rules,
+        millis: time * 1000.0,
+    });
+    draw_quads_with(&quads, lights, batch, rect, glint.as_ref(), cit);
 }
 
 /// Lights, culls, sorts far to near and clips `quads` (GUI positions) to
@@ -327,6 +374,18 @@ fn draw_quads(
     batch: &mut HudBatch,
     rect: [f32; 4],
     glint: Option<&Glint>,
+) {
+    draw_quads_with(quads, lights, batch, rect, glint, None);
+}
+
+/// [`draw_quads`] with a stack's CIT glint layers over every face.
+fn draw_quads_with(
+    quads: &[ItemQuad],
+    lights: (Vec3, Vec3),
+    batch: &mut HudBatch,
+    rect: [f32; 4],
+    glint: Option<&Glint>,
+    cit: Option<CitDraw>,
 ) {
     for face in depth::sort(quads) {
         let q = &quads[face.quad];
@@ -349,6 +408,9 @@ fn draw_quads(
             emit(batch, &fan, |_| color, None);
             if q.foil != Foil::None {
                 emit(batch, &fan, |_| color, glint);
+            }
+            if let Some(cit) = cit {
+                emit_cit(batch, &fan, cit);
             }
         }
     }
