@@ -618,6 +618,8 @@ struct ServerState {
     /// View and simulation distance, and the player limit, for the report.
     view: (u32, u32),
     max_players: usize,
+    /// The mutable `gamemode` server property (`DedicatedServer.gameMode`).
+    game_mode: i32,
 }
 
 /// The dedicated-only commands' replies vanilla sends with `broadcast`
@@ -985,6 +987,7 @@ impl Game<'_> {
             broadcast_console: props.broadcast_console_to_ops,
             broadcast_rcon: props.broadcast_rcon_to_ops,
             op_level: props.op_permission_level,
+            game_mode: props.game_mode,
             report: None,
             view: (
                 props.view_distance.clamp(2, 32) as u32,
