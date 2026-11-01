@@ -1,7 +1,7 @@
 //! Fusion's resource pack format (the Fusion Connected Textures mod): a `fusion` section in a
 //! texture's `.mcmeta` (`texture`: connecting, random, continuous and scrolling textures, and
 //! the emissive, render type and tinting options every type takes), the connection predicates
-//! that say when a connecting texture joins a neighbour (`predicate`), the `connections` of a
+//! that say when a connecting texture joins a neighbour ([`predicate`]), the `connections` of a
 //! `fusion:connecting` block model (`model`), and which tiles of a connecting texture's image a
 //! face draws ([`layout`]).
 //!
@@ -13,5 +13,22 @@
 //! Fusion itself is all rights reserved: none of its code was read.
 
 pub mod layout;
+pub mod predicate;
 
 pub use layout::{Layout, Tiles};
+pub use predicate::Connection;
+
+use crate::cem::json::Json;
+
+/// A type name without the `fusion:` namespace packs may give it (`fusion:connecting`).
+fn kind(name: &str) -> &str {
+    name.strip_prefix("fusion:").unwrap_or(name)
+}
+
+fn str_field<'a>(json: &'a Json, key: &str) -> Result<Option<&'a str>, String> {
+    match json.get(key) {
+        None => Ok(None),
+        Some(Json::Str(s)) => Ok(Some(s)),
+        Some(_) => Err(format!("`{key}` is not a string")),
+    }
+}
