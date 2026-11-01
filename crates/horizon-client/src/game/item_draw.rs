@@ -15,7 +15,6 @@ use horizon_client::{
     items::ItemStack,
     mesher::Vertex,
 };
-use horizon_world::nbt::Tag;
 use serde_json::Value;
 use std::{cell::RefCell, collections::HashMap};
 
@@ -310,15 +309,12 @@ impl Game<'_> {
         let level = self.item_level();
         let renderer = &self.pack.item_renderer;
         let rule = renderer.cit.as_ref().and_then(|cit| {
-            // The stack's own `max_damage` component, else its item's.
-            let max_damage = stack
-                .data()
-                .and_then(|d| match d.other("minecraft:max_damage") {
-                    Some(Tag::Int(v)) => u32::try_from(*v).ok(),
-                    _ => None,
-                })
-                .or_else(|| self.res.items().get(&stack.item).map(|i| i.max_damage))
-                .unwrap_or(0);
+            let item_max = self
+                .res
+                .items()
+                .get(&stack.item)
+                .map_or(0, |i| i.max_damage);
+            let max_damage = item_render::cit::stack_max_damage(stack, item_max);
             cit.rules.select(CitKind::Item, stack, hand, max_damage)
         });
         renderer.resolve_with_rule(

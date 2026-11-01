@@ -83,7 +83,7 @@ pub fn item_sprites(rules: &[Rule]) -> BTreeSet<String> {
 /// The resource path a model value `./x` (or `./../x`, `../x`) names beside the file at `file`,
 /// ending in `.<ext>` (added unless the value has it). `None` for other values and for paths
 /// that would leave the root.
-pub fn relative(file: &str, value: &str, ext: &str) -> Option<String> {
+fn relative(file: &str, value: &str, ext: &str) -> Option<String> {
     let mut rest = value
         .strip_prefix("./")
         .or_else(|| value.starts_with("../").then_some(value))?;
@@ -118,8 +118,8 @@ const MAX_PARENTS: usize = 16;
 /// The CIT JSON models the item rules name (`model`, `model.<name>`) under their [`model_id`]s,
 /// with the parents they reach by relative path. Their `./x` texture and parent values become
 /// the ids of the files beside them. Only `horizon_cit` models: the others are in the model
-/// library already. A file that does not read or parse is left out, so its id bakes as the
-/// missing model.
+/// library already. A file that does not read or parse is left out, and a rule's layer that
+/// names it (or a model whose parents reach it) keeps its vanilla model.
 pub fn load_models(root: &Path, rules: &[Rule]) -> BTreeMap<String, CuboidModel> {
     let mut out = BTreeMap::new();
     let mut seen = BTreeSet::new();

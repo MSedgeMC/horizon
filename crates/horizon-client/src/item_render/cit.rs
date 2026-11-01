@@ -5,12 +5,14 @@
 use super::{ItemRenderer, corners};
 use crate::cit::{CitRules, Kind};
 use crate::cit_assets::{self, model_id, sprite_id};
+use crate::items::ItemStack;
 use glam::Vec3;
 use horizon_assets::{
     item_bake::{BakedItemModel, bake_resolved},
     model::{Material, TextureSlot},
     resolve::{MISSING_MODEL, ModelLibrary},
 };
+use horizon_world::nbt::Tag;
 use std::{
     collections::{BTreeMap, HashMap},
     path::Path,
@@ -59,6 +61,31 @@ fn short(id: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
+/// The 26.x name of an OptiFine sub-texture or sub-model name: the bow's
+/// `bow_standby` frame is model `item/bow`, and the potions' bottle layers are
+/// the files `potion`, `splash_potion` and `lingering_potion`.
+fn legacy(name: &str) -> &str {
+    match name {
+        "bow_standby" => "bow",
+        "potion_bottle_drinkable" => "potion",
+        "potion_bottle_splash" => "splash_potion",
+        "potion_bottle_lingering" => "lingering_potion",
+        other => other,
+    }
+}
+
+/// The `max_damage` a CIT rule's `damage` test reads: the stack's own
+/// component when it holds a non-negative int, else `item_max`, its item's.
+pub fn stack_max_damage(stack: &ItemStack, item_max: u32) -> u32 {
+    stack
+        .data()
+        .and_then(|d| match d.other("minecraft:max_damage") {
+            Some(Tag::Int(v)) => u32::try_from(*v).ok(),
+            _ => None,
+        })
+        .unwrap_or(item_max)
+}
+
 /// The rules at `root` and `library` with their models, or `library` alone without rules.
 pub(super) fn load(
     root: &Path,
@@ -84,10 +111,10 @@ pub(super) fn load(
 }
 
 impl CitModels {
-    pub fn new(rules: CitRules) -> Self {
+    fn new(rules: CitRules) -> Self {
         let pairs = |list: &[(String, String)], id: fn(&str) -> Option<String>| {
             list.iter()
-                .filter_map(|(name, path)| Some((short(name).to_owned(), id(path)?)))
+                .filter_map(|(name, path)| Some((legacy(short(name)).to_owned(), id(path)?)))
                 .collect::<Vec<_>>()
         };
         let plans = rules
@@ -133,15 +160,19 @@ impl ItemRenderer {
         Some(baked)
     }
 
-    /// CIT Resewn's `CITItem` model choice for one leaf: `model.<leaf>` draws that model;
-    /// `texture.<leaf>` the leaf with it as `layer0`; else `model` (or the leaf) with `texture`
-    /// in every slot of a model, or as the leaf's `layer0`. Then each `texture.<name>` goes to
-    /// the slot `name` and to every slot whose sprite's file is `name` (`potion_overlay`).
+    /// The model choice for one leaf, as CIT Resewn's wiki (CIT Item) gives it:
+    /// `model.<leaf>` draws that model; `texture.<leaf>` the leaf with it in
+    /// the slots whose sprite's file is `<leaf>` (the 26.x potion's bottle is
+    /// `layer1`), or as `layer0` when none is; else `model` (or the leaf) with
+    /// `texture` in every slot of a model, or as the leaf's `layer0`. Then each
+    /// `texture.<name>` goes to the slot `name` and to every slot whose
+    /// sprite's file is `name` (`potion_overlay`). A model that did not load,
+    /// or whose parents do not, leaves the leaf as it is.
     fn cit_plan(&self, cit: &CitModels, rule: usize, leaf: &str) -> Option<CitBake> {
         let plan = cit.plans.get(rule)?.as_ref()?;
         let sub = short(leaf);
         if let Some(model) = plan.models.get(sub) {
-            return Some(CitBake {
+            return self.library.resolves(model).then(|| CitBake {
                 base: model.clone(),
                 slots: BTreeMap::new(),
             });
@@ -151,13 +182,26 @@ impl ItemRenderer {
             (None, Some(model)) => model.clone(),
             _ => leaf.to_owned(),
         };
+        if base != leaf && !self.library.resolves(&base) {
+            return None;
+        }
         let textures = self
             .library
             .resolve(&base)
             .map(|r| r.textures)
             .unwrap_or_default();
+        let matches = |name: &str, slot: &str, material: &Material| {
+            slot == name || short(&material.sprite) == name
+        };
+        // The leaf's own slots that `texture.<leaf>` names take it below.
+        let in_slots = |name: &str| {
+            textures
+                .iter()
+                .any(|(slot, m)| matches(name, slot.as_str(), m))
+        };
         let mut slots = BTreeMap::new();
         match (named, &plan.texture) {
+            (Some(_), _) if in_slots(sub) => {}
             (Some(sprite), _) => {
                 slots.insert("layer0".to_owned(), sprite.clone());
             }
@@ -173,7 +217,7 @@ impl ItemRenderer {
         }
         for (name, sprite) in &plan.textures {
             for (slot, material) in &textures {
-                if slot == name || short(&material.sprite) == name {
+                if matches(name.as_str(), slot.as_str(), material) {
                     slots.insert(slot.clone(), sprite.clone());
                 }
             }
@@ -279,6 +323,7 @@ mod tests {
                 &format!("{CIT}/other.json"),
                 r#"{"parent":"item/generated","textures":{"layer0":"./hilt"}}"#,
             );
+            write(&format!("{CIT}/bad.json"), "{not json");
             let rules = [
                 ("plain", "items=bow\ntexture.bow_pulling_1=a"),
                 (
@@ -290,6 +335,14 @@ mod tests {
                     "items=potion\ntexture.potion_overlay=a\ntexture.layer1=b",
                 ),
                 ("stick", "items=stick\nmodel=sword"),
+                ("bottle", "items=potion\ntexture.potion=a"),
+                (
+                    "drinkable",
+                    "items=potion\ntexture.potion_bottle_drinkable=b",
+                ),
+                ("whole", "items=potion\ntexture=a"),
+                ("standby", "items=bow\ntexture.bow_standby=b"),
+                ("broken", "items=bow\nmodel=bad\nmodel.bow_pulling_0=sword"),
             ];
             for (name, text) in rules {
                 write(&format!("{CIT}/{name}.properties"), text);
@@ -314,6 +367,15 @@ mod tests {
             .quads
             .iter()
             .map(|q| q.material.sprite.clone())
+            .collect()
+    }
+
+    /// Each quad's layer (its tint index) with the sprite it draws.
+    fn layers(baked: &BakedItemModel) -> BTreeSet<(i32, String)> {
+        baked
+            .quads
+            .iter()
+            .map(|q| (q.tint_index, q.material.sprite.clone()))
             .collect()
     }
 
@@ -342,9 +404,89 @@ mod tests {
             layer("stick", "stick"),
             Some(vec![cit("blade"), cit("hilt")])
         );
-        // By sprite file name and by slot name.
-        assert_eq!(layer("potion", "potion"), Some(vec![cit("a"), cit("b")]));
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn potion_textures_go_to_the_layer_they_name() {
+        let root = root("potion", true);
+        let r = renderer(&root);
+        let layer = |rule: &str| {
+            let (baked, _) = r.cit_layer(self::rule(&r, rule), "minecraft:item/potion")?;
+            Some(layers(&baked))
+        };
+        let vanilla = |i: i32, name: &str| (i, format!("minecraft:item/{name}"));
+        // By sprite file name (the overlay) and by slot name (the bottle).
+        assert_eq!(
+            layer("potion"),
+            Some(BTreeSet::from([(0, cit("a")), (1, cit("b"))]))
+        );
+        // `texture.potion` names the bottle's file, not the leaf's `layer0`.
+        assert_eq!(
+            layer("bottle"),
+            Some(BTreeSet::from([
+                vanilla(0, "potion_overlay"),
+                (1, cit("a"))
+            ]))
+        );
+        // OptiFine's name for the same bottle.
+        assert_eq!(
+            layer("drinkable"),
+            Some(BTreeSet::from([
+                vanilla(0, "potion_overlay"),
+                (1, cit("b"))
+            ]))
+        );
+        // A plain `texture` is the leaf's `layer0`, the overlay.
+        assert_eq!(
+            layer("whole"),
+            Some(BTreeSet::from([(0, cit("a")), vanilla(1, "potion")]))
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn bow_standby_is_the_resting_bow() {
+        let root = root("standby", true);
+        let r = renderer(&root);
+        let standby = rule(&r, "standby");
+        let (baked, _) = r.cit_layer(standby, "minecraft:item/bow").unwrap();
+        assert_eq!(layers(&baked), BTreeSet::from([(0, cit("b"))]));
+        assert!(
+            r.cit_layer(standby, "minecraft:item/bow_pulling_0")
+                .is_none()
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_model_that_did_not_load_leaves_the_leaf_vanilla() {
+        let root = root("broken", true);
+        let r = renderer(&root);
+        let broken = rule(&r, "broken");
+        assert!(r.cit_layer(broken, "minecraft:item/bow").is_none());
+        // The rule's other model still loads and draws.
+        let (baked, _) = r.cit_layer(broken, "minecraft:item/bow_pulling_0").unwrap();
+        assert_eq!(sprites(&baked), BTreeSet::from([cit("blade"), cit("hilt")]));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn max_damage_is_the_stacks_component_else_the_items() {
+        let with = |tag: Option<Tag>| {
+            let mut stack = ItemStack::new("minecraft:bow", 1);
+            if let Some(tag) = tag {
+                stack
+                    .data_mut()
+                    .set_other("minecraft:max_damage", Some(tag));
+            }
+            stack_max_damage(&stack, 384)
+        };
+        assert_eq!(with(Some(Tag::Int(20))), 20);
+        assert_eq!(with(Some(Tag::Int(0))), 0);
+        assert_eq!(with(None), 384);
+        assert_eq!(with(Some(Tag::Int(-1))), 384);
+        assert_eq!(with(Some(Tag::String("20".into()))), 384);
     }
 
     #[test]
