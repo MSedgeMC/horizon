@@ -891,6 +891,8 @@ API 152 adds a player opening and closing any menu on a server, on the single pl
 
 API 153 adds a player starting or stopping flight: `native_player_toggle_flight(player, name, flying, cancel)` is heard once for each change a player's client makes to its flying (vanilla honours it only for a player who may fly), on a server, with the player's state swapped in. A mod sets `cancel` to refuse it: the player keeps the state they had and the server sends their abilities back, so the client lands or flies again. Only what a client asks for is heard, not the flight a game-mode change starts or ends, and not a LAN host's own player. Bundles that use it need `"hooks": 153`.
 
+API @API:physical_window_size@ adds `native_physical_window_size()`, the window's width and height in physical pixels, independent of GUI scale. It returns no size on a server or when no window exists. Bundles that use it need `"hooks": @API:physical_window_size@`.
+
 ## What the launcher does
 
 In the window: install a native mod from the Mods page, into the instance picked on the left ("Installs into
