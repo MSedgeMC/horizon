@@ -1,0 +1,13 @@
+{
+  "hooks": [
+    {
+      "name": "interaction_key",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_interaction_key",
+      "neoforge": "InputEvent.InteractionKeyMappingTriggered",
+      "side": "client",
+      "cancellable": true
+    }
+  ],
+  "rust_summary": "the three crosshair key mappings' presses (`native_interaction_key`).",
+  "doc_summary": "`native_interaction_key(button, key_mapping, hand, swing_hand, canceled)` runs after the game decided a press of one of the three key mappings that act on the crosshair does something and before it does it: `button` 0 attack (a click, and every tick the key is then held), 1 use, 2 pick; `key_mapping` `key.attack`, `key.use` or `key.pickItem`; `hand` `mainhand` or `offhand` (the use key once per hand). Setting `canceled` skips the action, and the canceled press still swings the hand unless a mod clears `swing_hand`. A canceled attack still lets go of a block being dug, as `continueAttack` does. Client side of a server only (the in-frame path is unchanged). Bundles need \"hooks\": @API:interaction_key@."
+}

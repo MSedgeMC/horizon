@@ -6895,6 +6895,10 @@ impl Game<'_> {
         if self.hands_busy() {
             return;
         }
+        // The main hand's use is heard before its target or item acts.
+        if self.interaction_key_canceled(1, "key.use", "mainhand") {
+            return;
+        }
         // An item a mod claims: its use is the mod's, and the server never hears of it.
         if self.mod_use_start() {
             return;
@@ -7855,6 +7859,10 @@ impl Game<'_> {
             self.heights.item_used(Hand::Main);
             return;
         }
+        // The off hand's turn hears the press too, as vanilla's per-hand loop.
+        if self.interaction_key_canceled(1, "key.use", "offhand") {
+            return;
+        }
         // The off hand's turn: the entity again, or the block.
         let off_target = if self.entity_targeted() {
             self.remote_use_entity(Hand::Off)
@@ -8124,6 +8132,18 @@ impl Game<'_> {
         }
     }
 
+    /// `native_interaction_key` for a crosshair key press: whether a mod
+    /// canceled it. A canceled press still swings the hand unless a mod
+    /// cleared `swing_hand`, as NeoForge's `setSwingHand(true)` default does.
+    fn interaction_key_canceled(&mut self, button: i32, key_mapping: &str, hand: &str) -> bool {
+        let (mut swing, mut canceled) = (true, false);
+        self.native_interaction_key(button, key_mapping, hand, &mut swing, &mut canceled);
+        if canceled && swing {
+            self.swing_arm();
+        }
+        canceled
+    }
+
     fn remote_start_attack(&mut self) -> bool {
         if self.clicks.miss_time > 0 {
             return false;
@@ -8135,6 +8155,11 @@ impl Game<'_> {
             let target = self.spectator_click_target();
             self.send(S::SpectatorAction(play::SpectatorAction { target }));
             return true;
+        }
+        // The mods hear the press before it acts, after the checks that stop
+        // an attack (`native_interaction_key`).
+        if self.interaction_key_canceled(0, "key.attack", "mainhand") {
+            return false;
         }
         // A spear jabs (`MultiPlayerGameMode.piercingAttack`): the server
         // stabs, this client swings, plays the sound and starts its charge
@@ -8282,6 +8307,10 @@ impl Game<'_> {
             && !entity
             && let Some(hit) = self.pick()
         {
+            // NeoForge posts the attack event before `continueDestroyBlock`.
+            if self.interaction_key_canceled(0, "key.attack", "mainhand") {
+                return;
+            }
             let state = self.world.block(hit.pos[0], hit.pos[1], hit.pos[2]);
             if self.remote_break_restricted() {
                 // continueDestroyBlock returned false: no swing.
@@ -9682,14 +9711,31 @@ impl horizon_client::interaction_input::InteractionWorld for RemoteInputWorld<'_
     fn pick(&mut self) {
         // Minecraft.pickBlockOrEntity: an entity before the block is asked
         // for (`handlePickItemFromEntity`), else the block.
-        if let Some(entity) = self.0.pick_entity_hit() {
-            if let Some(id) = entity {
-                self.0.send(S::PickItemFromEntity(play::PickItemFromEntity {
-                    id,
-                    include_data: self.0.has_control_down(),
-                }));
-            }
-        } else if let Some(hit) = self.0.pick() {
+        let entity = self.0.pick_entity_hit();
+        let block = if entity.is_none() {
+            self.0.pick()
+        } else {
+            None
+        };
+        // An entity with nothing to pick ends the click; anything else is a
+        // target, and the press is heard once there is one.
+        let target = match entity {
+            Some(id) => id.is_some(),
+            None => block.is_some(),
+        };
+        if target
+            && self
+                .0
+                .interaction_key_canceled(2, "key.pickItem", "mainhand")
+        {
+            return;
+        }
+        if let Some(id) = entity.flatten() {
+            self.0.send(S::PickItemFromEntity(play::PickItemFromEntity {
+                id,
+                include_data: self.0.has_control_down(),
+            }));
+        } else if let Some(hit) = block {
             self.0.send(S::PickItemFromBlock(play::PickItemFromBlock {
                 pos: hit.pos,
                 include_data: self.0.has_control_down(),

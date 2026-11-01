@@ -1394,6 +1394,23 @@ impl Game<'_> {
     ) {
         let _ = (scroll, accumulated, buttons, cursor, modifiers, canceled);
     }
+    /// A press of one of the three key mappings that act on the crosshair,
+    /// after the game decided it acts and before it does anything:
+    /// `button` 0 attack, 1 use, 2 pick; `key_mapping` `key.attack`,
+    /// `key.use` or `key.pickItem`; `hand` `mainhand` or `offhand`. Set
+    /// `canceled` to skip the action, and clear `swing_hand` to skip the
+    /// swing a cancel still makes. The attack is told again every tick the
+    /// key is held, before the block in front is dug further.
+    pub(super) fn native_interaction_key(
+        &mut self,
+        button: i32,
+        key_mapping: &str,
+        hand: &str,
+        swing_hand: &mut bool,
+        canceled: &mut bool,
+    ) {
+        let _ = (button, key_mapping, hand, swing_hand, canceled);
+    }
     /// A command typed or clicked in chat, without its slash, before the
     /// server and Horizon's commands see it: set `ran` when the mod ran it.
     pub(super) fn native_command(&mut self, command: &str, ran: &mut bool) {
