@@ -910,6 +910,9 @@ struct GameLevel<'w> {
     /// not a rocket boosting a player or a hook on an entity, whose ticks
     /// skip that step, nor a trident, which `tick_blocks` sweeps itself.
     trigger_projectiles: Vec<(Aabb, bool)>,
+    /// The lightning bolts here: none ignores block triggers
+    /// (`Entity.isIgnoringBlockTriggers`).
+    trigger_extras: Vec<Aabb>,
     biomes: &'w Biomes,
     seed: i64,
     behaviours: &'w Behaviours,
@@ -989,6 +992,18 @@ impl EntityObstructionWorld for BuildingObstruction {
             .collect())
     }
 }
+/// An entity's box (`EntityDimensions.makeBoundingBox`): `width` wide and
+/// `height` tall, standing on `feet`.
+fn point_box(feet: [f64; 3], width: f64, height: f64) -> Aabb {
+    Aabb::new(
+        Vec3::new(feet[0] - width / 2.0, feet[1], feet[2] - width / 2.0),
+        Vec3::new(
+            feet[0] + width / 2.0,
+            feet[1] + height,
+            feet[2] + width / 2.0,
+        ),
+    )
+}
 impl GameLevel<'_> {
     /// The living entities that trigger plates and tripwires and don't ignore
     /// block triggers (`Entity.isIgnoringBlockTriggers`: bats and marker armor
@@ -1048,6 +1063,7 @@ impl GameLevel<'_> {
                     .iter()
                     .map(move |p| square(p.position, p.kind.size())),
             )
+            .chain(self.trigger_extras.iter().copied())
     }
     /// `DetectorRailBlock.getAnalogOutputSignal`: a powered rail reads the
     /// minecart on it, a command block cart first (its success count), else the first container cart's fullness.
@@ -4128,6 +4144,12 @@ impl Game<'_> {
             )
             .collect();
         self.lan_hook_triggers(&mut trigger_projectiles);
+        // EntityType.LIGHTNING_BOLT: 0 x 0.
+        let trigger_extras: Vec<Aabb> = self
+            .bolts
+            .iter()
+            .map(|b| point_box(b.at, 0.0, 0.0))
+            .collect();
         let blockers = Blockers {
             mobs: &self.mobs,
             armor_stands: &self.armor_stands,
@@ -4146,6 +4168,7 @@ impl Game<'_> {
             orbs: &self.orbs,
             projectiles: &self.creatures.projectiles,
             trigger_projectiles,
+            trigger_extras,
             world: &mut self.world,
             facts: self.res.facts(),
             collision: self.collision,
