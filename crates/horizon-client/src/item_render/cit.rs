@@ -325,7 +325,6 @@ mod tests {
     fn rules_pick_a_model_or_textures_per_leaf() {
         let root = root("plans", true);
         let r = renderer(&root);
-        let _ = fs::remove_dir_all(&root);
         let layer = |rule: &str, leaf: &str| {
             r.cit_layer(self::rule(&r, rule), &format!("minecraft:item/{leaf}"))
                 .map(|(baked, _)| sprites(&baked).into_iter().collect::<Vec<_>>())
@@ -345,13 +344,13 @@ mod tests {
         );
         // By sprite file name and by slot name.
         assert_eq!(layer("potion", "potion"), Some(vec![cit("a"), cit("b")]));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_bake_is_shared_by_its_rule_and_leaf_only() {
         let root = root("cache", true);
         let r = renderer(&root);
-        let _ = fs::remove_dir_all(&root);
         let leaf = "minecraft:item/bow_pulling_1";
         let (plain, mix) = (rule(&r, "plain"), rule(&r, "mix"));
         let first = r.cit_layer(plain, leaf).unwrap();
@@ -360,13 +359,13 @@ mod tests {
         assert!(Arc::ptr_eq(&first.1, &again.1));
         assert!(!Arc::ptr_eq(&first.0, &r.cit_layer(mix, leaf).unwrap().0));
         assert!(!Arc::ptr_eq(&first.0, &r.bake(leaf)));
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn a_matched_stack_resolves_to_the_rule_model() {
         let root = root("resolve", true);
         let r = renderer(&root);
-        let _ = fs::remove_dir_all(&root);
         let view = StackView::new("minecraft:stick", 1);
         let resolve = |rule| {
             let state =
@@ -385,13 +384,13 @@ mod tests {
             resolve(None),
             BTreeSet::from(["minecraft:item/stick".to_owned()])
         );
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]
     fn without_rules_nothing_changes() {
         let root = root("none", false);
         let r = renderer(&root);
-        let _ = fs::remove_dir_all(&root);
         assert!(r.cit.is_none());
         let view = StackView::new("minecraft:stick", 1);
         let state = |rule| {
@@ -405,5 +404,6 @@ mod tests {
         assert_eq!(state(Some(0)), plain);
         assert_eq!(state(None), plain);
         assert!(plain.contains("minecraft:item/stick"));
+        let _ = fs::remove_dir_all(&root);
     }
 }
