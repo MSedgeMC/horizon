@@ -4,7 +4,7 @@
 use super::{Connection, kind};
 use crate::cem::json::Json;
 
-/// A model's Fusion type: `None` for a model Fusion doesn't load.
+/// A model's Fusion type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModelType {
     Base,
@@ -13,6 +13,7 @@ pub enum ModelType {
 }
 
 impl ModelType {
+    /// `None` for a model Fusion leaves to vanilla.
     pub fn of(model: &Json) -> Option<Self> {
         if model.get("loader").and_then(Json::as_str) != Some("fusion:model") {
             return None;
@@ -198,6 +199,30 @@ mod tests {
         let looped =
             Connections::of(&json(r##"{"connections": {"a": "#b", "b": "#a"}}"##)).unwrap();
         assert_eq!(looped.for_face(None, "#a"), None);
+        // A reference to a key nobody defines takes `default`'s.
+        let dangling = Connections::of(&json(
+            r##"{"connections": {"a": "#missing", "default": {"type": "true"}}}"##,
+        ))
+        .unwrap();
+        assert_eq!(
+            dangling.for_face(None, "#a"),
+            Some(&Connection::Const(true))
+        );
+        // A parent's predicates for every face fill the keys a child leaves out, unless the
+        // child has its own `default`.
+        let all = Connections::All(Connection::SameBlock);
+        let child = Connections::of(&json(r#"{"connections": {"top": {"type": "true"}}}"#))
+            .unwrap()
+            .inherit(&all);
+        assert_eq!(child.for_face(None, "#top"), Some(&Connection::Const(true)));
+        assert_eq!(child.for_face(None, "#side"), Some(&Connection::SameBlock));
+        let child = Connections::of(&json(r#"{"connections": {"default": {"type": "false"}}}"#))
+            .unwrap()
+            .inherit(&all);
+        assert_eq!(
+            child.for_face(None, "#side"),
+            Some(&Connection::Const(false))
+        );
         let parent = Connections::of(&json(
             r#"{"connections": {"top": {"type": "true"}, "side": {"type": "false"}}}"#,
         ))
