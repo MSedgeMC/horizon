@@ -110,13 +110,12 @@ impl Connections {
             Self::Keys(keys) => keys,
         };
         let get = |key: &str| keys.iter().rev().find(|(k, _)| k == key).map(|(_, e)| e);
-        let start = connections.unwrap_or(texture);
-        let start = start.strip_prefix('#').unwrap_or(start);
-        let mut entry = get(start).or_else(|| get("default"))?;
+        let key = connections.unwrap_or(texture);
+        let mut key = key.strip_prefix('#').unwrap_or(key);
         for _ in 0..DEPTH {
-            match entry {
+            match get(key).or_else(|| get("default"))? {
                 Entry::Predicate(c) => return Some(c),
-                Entry::Ref(key) => entry = get(key).or_else(|| get("default"))?,
+                Entry::Ref(next) => key = next,
             }
         }
         None
