@@ -1210,7 +1210,8 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
 - Helpers: `native_server_players()` (uuid, name, level, dimension, position and game mode of each player on);
   `native_tell(uuid, text)`, a system line to one player, also the acting player inside their hook;
   `native_broadcast(text)`, to every player and the server's
-  log; `native_feedback(text)`, the command's answer to the player whose command it is; `native_world_dir()`, the
+  log; `native_server_event(name, uuid, message)`, an `announce` event on a dedicated server's event stream, which the Discord
+  bridge relays when `[discord] events` lists `announce`; `native_feedback(text)`, the command's answer to the player whose command it is; `native_world_dir()`, the
   open world's folder, where a server mod keeps its data in a folder of its own so the world's backups carry it.
 - Items (API 9), of the acting player (inside `native_perform_command`, whose player is swapped in): `native_held()`
   (the main hand's item, count, and whether it is plain), `native_count_items(item)`, `native_carried_items()`,
