@@ -581,6 +581,11 @@ impl Rule {
         if texture.is_none() && model.is_none() && textures.is_empty() && models.is_empty() {
             return None;
         }
+        // A glint is a texture: CIT Resewn drops an enchantment rule without one ("No texture
+        // specified"), whatever models it names.
+        if kind == Kind::Enchantment && texture.is_none() {
+            return None;
+        }
         // Only an enchantment rule reads the glint keys: an item rule's `blend=` is no reason to
         // drop it.
         let glint = if kind == Kind::Enchantment {
@@ -1015,6 +1020,25 @@ mod tests {
         )
         .unwrap();
         assert_eq!(elytra.items, ["minecraft:elytra"]);
+    }
+
+    #[test]
+    fn an_enchantment_rule_needs_a_texture() {
+        let dir = "assets/minecraft/optifine/cit/glint";
+        let files = [
+            format!("{dir}/shine.json"),
+            format!("{dir}/shine.png"),
+            format!("{dir}/other.png"),
+        ];
+        let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+        let path = format!("{dir}/shine.properties");
+        // The model is there: an item rule takes it.
+        assert!(rule(&path, "items=stick\nmodel=shine", &refs).is_some());
+        assert!(rule(&path, "type=enchantment\nmodel=shine", &refs).is_none());
+        assert!(rule(&path, "type=enchantment\ntexture.a=other", &refs).is_none());
+        // The texture beside the file still counts.
+        let beside = rule(&path, "type=enchantment", &refs).unwrap();
+        assert_eq!(beside.texture.as_deref(), Some(&*files[1]));
     }
 
     #[test]

@@ -65,7 +65,8 @@ impl StackGlint {
         layers.sort_by_key(|&i| rules[i].glint.layer);
         let cycle = global.method == Method::Cycle;
         // OptiFine's doc: `cap` is for `average` and `layered`, and keeps the topmost layers.
-        // (CIT Resewn keeps the bottom ones, and caps cycles too.)
+        // `none`, which OptiFine lacks, is capped too, as CIT Resewn caps every method (it keeps
+        // the bottom layers, though, and caps cycles as well).
         if let Some(cap) = global.cap.filter(|_| !cycle) {
             let cap = usize::try_from(cap).unwrap_or(usize::MAX);
             layers = layers.split_off(layers.len().saturating_sub(cap));
@@ -157,7 +158,8 @@ fn cycle_intensity(layers: &[GlintLayer], fade: f32, index: usize, seconds: f64)
             return if i == index { 1.0 } else { 0.0 };
         }
         t -= duration;
-        // The last fade takes whatever rounding left of the period.
+        // Defensive: the last fade also takes anything rounding might leave of the period
+        // (none seen), ending fully on the first layer.
         if t < fade || i + 1 == n {
             let into = if fade > 0.0 {
                 (t / fade).min(1.0) as f32
@@ -174,7 +176,8 @@ fn cycle_intensity(layers: &[GlintLayer], fade: f32, index: usize, seconds: f64)
         }
         t -= fade;
     }
-    unreachable!("the last layer's fade ends the period")
+    // Not reached, as the last layer returns above; no layer rather than a panic.
+    0.0
 }
 
 #[cfg(test)]
@@ -234,10 +237,6 @@ mod tests {
         assert_eq!(weights("method=layered"), [1.0, 1.0 / 3.0, 1.0, 0.0]);
         assert_eq!(weights("method=cycle"), [1.0; 4]);
         assert_eq!(weights("method=none"), [1.0; 4]);
-        // An unenchanted stack: nothing to share.
-        let g = StackGlint::new(&rules, &[0, 2], &[] as &[(&str, u32)], &Global::default());
-        assert_eq!(g.layers[0].weight, 0.0);
-        assert_eq!(g.layers[1].weight, 1.0);
     }
 
     #[test]
@@ -263,6 +262,8 @@ mod tests {
         assert_eq!(rules_of(&g), [1, 2]);
         let g = StackGlint::new(&rules, &[0, 1, 2], &SWORD, &global("cap=0"));
         assert!(g.is_empty());
+        let g = StackGlint::new(&rules, &[0, 1, 2], &SWORD, &global("cap=1\nmethod=none"));
+        assert_eq!(rules_of(&g), [2]);
         // Cycles show every layer in turn.
         let g = StackGlint::new(&rules, &[0, 1, 2], &SWORD, &global("cap=1\nmethod=cycle"));
         assert_eq!(rules_of(&g), [0, 1, 2]);
@@ -331,7 +332,9 @@ mod tests {
             &SWORD,
             &global("method=cycle\nfade=0.3"),
         );
-        // Just under a period, where rounding could leave no layer.
+        // Every millisecond of the first two seconds, and just under a period, the last fade's
+        // end. (Rounding has not been seen to leave time past it; the last fade's clamp is
+        // defensive.)
         let period: f64 = [0.1f32, 0.7, 0.2]
             .map(|d| f64::from(d) + f64::from(0.3f32))
             .iter()

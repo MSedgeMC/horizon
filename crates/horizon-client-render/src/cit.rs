@@ -169,11 +169,19 @@ impl CitRules {
 
     /// The glint layers this stack draws in `hand` (`Hand::Main` in a GUI) and whether
     /// vanilla's still does (`StackGlint`), worked out once per stack and hand; `None` when the
-    /// pack changes no glint.
-    pub fn glint(&self, stack: &ItemStack, hand: Hand, max_damage: u32) -> Option<Arc<StackGlint>> {
+    /// pack changes no glint. `foil` is whether the stack draws a glint at all
+    /// (`ItemStack::has_foil`): one that doesn't gets no layers.
+    pub fn glint(
+        &self,
+        stack: &ItemStack,
+        hand: Hand,
+        max_damage: u32,
+        foil: bool,
+    ) -> Option<Arc<StackGlint>> {
         let no_rules =
             self.any_item.is_empty() && self.by_item[Kind::Enchantment as usize].is_empty();
-        if no_rules && self.global.use_glint {
+        // Before the cache, which `foil` is not part of.
+        if !foil || (no_rules && self.global.use_glint) {
             return None;
         }
         let comps = encode_components(stack);
@@ -703,6 +711,21 @@ mod tests {
         assert_eq!(item(&cit, enchanted("diamond_sword", &sharp)), None);
     }
 
+    /// `CitRules::glint` in the main hand, with the stack's own `has_foil` as callers pass it.
+    fn glint(cit: &CitRules, stack: &ItemStack, item_glint: bool) -> Option<Arc<StackGlint>> {
+        cit.glint(stack, Hand::Main, 0, stack.has_foil(item_glint))
+    }
+
+    /// `stack` with its `enchantment_glint_override` set to `on`.
+    fn overridden(mut stack: ItemStack, on: bool) -> ItemStack {
+        let flag = (
+            "minecraft:enchantment_glint_override".to_owned(),
+            Tag::Byte(on.into()),
+        );
+        stack.data_mut().other.push(flag);
+        stack
+    }
+
     #[test]
     fn a_stack_glint_reads_the_book_and_the_pack_file() {
         let mut cit = rules(&[
@@ -718,22 +741,49 @@ mod tests {
             (Arc::from("minecraft:sharpness"), 3),
             (Arc::from("minecraft:mending"), 1),
         ];
-        let glint = cit.glint(&book, Hand::Main, 0).unwrap();
-        let weights: Vec<_> = glint.layers.iter().map(|l| l.weight).collect();
+        let book = glint(&cit, &book, true).unwrap();
+        let weights: Vec<_> = book.layers.iter().map(|l| l.weight).collect();
         assert_eq!(weights, [0.75, 0.25]);
-        assert!(glint.vanilla);
-        let plain = cit
-            .glint(&enchanted("stick", &[("sharpness", 1)]), Hand::Main, 0)
-            .unwrap();
+        assert!(book.vanilla);
+        let plain = glint(&cit, &enchanted("stick", &[("sharpness", 1)]), false).unwrap();
         assert_eq!(plain.layers.len(), 1);
         assert!(!plain.vanilla);
         // No enchantment rules: nothing changes, unless the pack turns vanilla's glint off.
         let mut bare = rules(&[("stick", "items=stick")]);
-        assert!(bare.glint(&new("stick"), Hand::Main, 0).is_none());
+        assert!(glint(&bare, &overridden(new("stick"), true), false).is_none());
         bare.global.use_glint = false;
-        assert!(!bare.glint(&new("stick"), Hand::Main, 0).unwrap().vanilla);
+        assert!(
+            !glint(&bare, &overridden(new("stick"), true), false)
+                .unwrap()
+                .vanilla
+        );
         cit.global.use_glint = false;
-        assert!(cit.glint(&new("stick"), Hand::Main, 0).unwrap().is_empty());
+        assert!(
+            glint(&cit, &overridden(new("stick"), true), false)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn only_a_stack_with_a_glint_gets_layers() {
+        let cit = rules(&[("any", "type=enchantment")]);
+        assert!(glint(&cit, &new("stick"), false).is_none());
+        // The override turns an enchanted stack's glint off, and an unenchanted one's on.
+        let off = overridden(enchanted("stick", &[("sharpness", 1)]), false);
+        assert!(glint(&cit, &off, false).is_none());
+        let on = glint(&cit, &overridden(new("stick"), true), false).unwrap();
+        let weights: Vec<_> = on.layers.iter().map(|l| l.weight).collect();
+        assert_eq!(
+            weights,
+            [1.0],
+            "nothing to share: the rule at full strength"
+        );
+        // The same stack, asked again without its glint, is not answered from the cache.
+        assert!(
+            cit.glint(&overridden(new("stick"), true), Hand::Main, 0, false)
+                .is_none()
+        );
     }
 
     #[test]
@@ -744,7 +794,7 @@ mod tests {
         ]);
         let sword = enchanted("diamond_sword", &[("sharpness", 1)]);
         let layers = |hand| -> Vec<&str> {
-            let glint = cit.glint(&sword, hand, 0).unwrap();
+            let glint = cit.glint(&sword, hand, 0, true).unwrap();
             glint
                 .layers
                 .iter()
