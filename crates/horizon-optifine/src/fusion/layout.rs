@@ -1,0 +1,315 @@
+//! A connecting texture's image is a grid of tiles; its layout says which tiles a face draws
+//! for the neighbours that join it (a [`crate::ctm::connect`] mask). Tiles are numbered row by
+//! row from the top left of the grid.
+//!
+//! The tables are FusionExamples' `templates/template <layout>.png`: each tile marks its joined
+//! sides (and, where both sides beside a corner join, that corner) in green.
+
+use crate::ctm::connect::{D, DL, DR, L, R, U, UL, UR, overlay_tiles, reduce};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Layout {
+    /// 5 tiles, a quarter of the face from each.
+    Pieced,
+    /// 16 tiles: the four sides only.
+    Simple,
+    /// 47 tiles: the sides and the corners.
+    Full,
+    Vertical,
+    Horizontal,
+    /// 5 tiles, a whole one per face.
+    Compact,
+    /// Edge pieces drawn over the face toward the neighbours that join it.
+    Overlay,
+}
+
+/// What a face draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Tiles {
+    One(u8),
+    /// A tile per quarter of the face: top left, top right, bottom left, bottom right.
+    Quarters([u8; 4]),
+    /// [`Layout::overlay_tiles`] of this mask, layered; none when nothing joins.
+    Overlay(u8),
+}
+
+/// Every side.
+const SIDES: u8 = U | R | D | L;
+const CORNERS: u8 = UR | DR | DL | UL;
+
+/// The full template's tiles as the neighbours each joins. Its one empty cell is never drawn: a
+/// lone corner, which [`reduce`] never leaves.
+const EMPTY: u8 = UR;
+const FULL: [u8; 48] = [
+    0,
+    R,
+    R | L,
+    L,
+    R | D,
+    D | L,
+    U | R | D,
+    R | D | L,
+    D,
+    R | DR | D,
+    R | DR | D | DL | L,
+    D | DL | L,
+    U | R,
+    U | L,
+    U | R | L,
+    U | D | L,
+    U | D,
+    U | UR | R | DR | D,
+    SIDES | CORNERS,
+    U | D | DL | L | UL,
+    U | UR | R | D,
+    R | DR | D | L,
+    U | R | DR | D,
+    R | D | DL | L,
+    U,
+    U | UR | R,
+    U | UR | R | L | UL,
+    U | L | UL,
+    U | R | L | UL,
+    U | D | DL | L,
+    U | UR | R | L,
+    U | D | L | UL,
+    SIDES | UR | DL,
+    SIDES,
+    SIDES | UR | DR,
+    SIDES | DR | DL,
+    SIDES | DR,
+    SIDES | DL,
+    SIDES | UL | UR | DL,
+    SIDES | UL | UR | DR,
+    SIDES | UL | DR,
+    EMPTY,
+    SIDES | UL | UR,
+    SIDES | UL | DL,
+    SIDES | UR,
+    SIDES | UL,
+    SIDES | UL | DL | DR,
+    SIDES | UR | DL | DR,
+];
+
+/// The simple template's 16 tiles as the sides each joins.
+const SIMPLE: [u8; 16] = [
+    0,
+    SIDES,
+    D,
+    L,
+    R | L,
+    U | D,
+    R,
+    U,
+    U | R | D,
+    R | D | L,
+    R | D,
+    D | L,
+    U | R | L,
+    U | D | L,
+    U | R,
+    U | L,
+];
+
+/// `table`'s tile for each mask its entries can be: the inverse of the template.
+const fn invert<const N: usize>(table: [u8; N]) -> [u8; 256] {
+    let mut out = [0; 256];
+    let mut i = 0;
+    while i < N {
+        if table[i] != EMPTY {
+            out[table[i] as usize] = i as u8;
+        }
+        i += 1;
+    }
+    out
+}
+
+const FULL_INDEX: [u8; 256] = invert(FULL);
+const SIMPLE_INDEX: [u8; 256] = invert(SIMPLE);
+
+/// OptiFine's overlay tiles ([`overlay_tiles`]) as cells of Fusion's 6 x 3 overlay grid: edge
+/// and corner pieces on the left half, the tiles for two or more sides on the right.
+const OVERLAY_CELLS: [u8; 17] = [0, 1, 2, 3, 5, 4, 11, 6, 10, 8, 15, 17, 9, 16, 12, 13, 14];
+
+impl Layout {
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "pieced" => Self::Pieced,
+            "simple" => Self::Simple,
+            "full" => Self::Full,
+            "vertical" => Self::Vertical,
+            "horizontal" => Self::Horizontal,
+            "compact" => Self::Compact,
+            "overlay" => Self::Overlay,
+            _ => return None,
+        })
+    }
+
+    /// The image's grid: columns, rows.
+    pub fn grid(self) -> (u32, u32) {
+        match self {
+            Self::Pieced | Self::Compact => (5, 1),
+            Self::Simple => (4, 4),
+            Self::Full => (8, 6),
+            Self::Vertical => (1, 4),
+            Self::Horizontal => (4, 1),
+            Self::Overlay => (6, 3),
+        }
+    }
+
+    /// The tiles a face draws when the neighbours in `mask` join it.
+    pub fn tiles(self, mask: u8) -> Tiles {
+        let sides = mask & SIDES;
+        let joined = |bits: u8| mask & bits == bits;
+        match self {
+            // The 5 tiles are `ctm_compact`'s: alone, joined all round, up and down, left and
+            // right, all but the corner.
+            Self::Pieced => Tiles::Quarters(crate::ctm::connect::compact_quarters(mask)),
+            Self::Simple => Tiles::One(SIMPLE_INDEX[sides as usize]),
+            Self::Full => Tiles::One(FULL_INDEX[reduce(mask) as usize]),
+            Self::Vertical => Tiles::One(match (joined(U), joined(D)) {
+                (false, false) => 0,
+                (false, true) => 1,
+                (true, true) => 2,
+                (true, false) => 3,
+            }),
+            Self::Horizontal => Tiles::One(match (joined(L), joined(R)) {
+                (false, false) => 0,
+                (false, true) => 1,
+                (true, true) => 2,
+                (true, false) => 3,
+            }),
+            // An end, the centre, a vertical and a horizontal section and a cross: joined
+            // both ways, the centre only with every corner too.
+            Self::Compact => Tiles::One(match (joined(L | R), joined(U | D)) {
+                (true, true) if joined(CORNERS) => 1,
+                (true, true) => 4,
+                (false, true) => 2,
+                (true, false) => 3,
+                (false, false) => 0,
+            }),
+            Self::Overlay => Tiles::Overlay(mask),
+        }
+    }
+
+    /// The overlay grid's tiles for `mask`, bottom first: one for the sides that join (two
+    /// when they face each other), then one per joined corner with neither side beside it.
+    pub fn overlay_tiles(mask: u8) -> impl Iterator<Item = u8> {
+        overlay_tiles(mask).map(|i| OVERLAY_CELLS[i])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn one(layout: Layout, mask: u8) -> u8 {
+        match layout.tiles(mask) {
+            Tiles::One(t) => t,
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn every_mask_has_a_drawn_tile() {
+        for layout in [
+            Layout::Simple,
+            Layout::Full,
+            Layout::Vertical,
+            Layout::Horizontal,
+            Layout::Compact,
+        ] {
+            let (w, h) = layout.grid();
+            for mask in 0..=255u8 {
+                let t = one(layout, mask);
+                assert!(u32::from(t) < w * h, "{layout:?} {mask:#x}: {t}");
+                // The full template's empty cell, (1, 5).
+                assert!(layout != Layout::Full || t != 41, "{mask:#x}");
+            }
+        }
+    }
+
+    #[test]
+    fn full_layout_reads_the_template() {
+        // Alone: the top-left tile. A row's middle: the third.
+        assert_eq!(one(Layout::Full, 0), 0);
+        assert_eq!(one(Layout::Full, L | R), 2);
+        // Joined all round: (2, 2); with no corners: (1, 4).
+        assert_eq!(one(Layout::Full, 0xff), 18);
+        assert_eq!(one(Layout::Full, SIDES), 33);
+        // A corner whose sides don't both join changes nothing: up and the up-right corner is
+        // the tile for up alone, (0, 3).
+        assert_eq!(one(Layout::Full, U | UR), 24);
+        assert_eq!(one(Layout::Full, U | UR | R), 25);
+        // Every side and only the top-left corner: (5, 5).
+        assert_eq!(one(Layout::Full, SIDES | UL), 45);
+        // 47 masks after the corners are reduced, each its own tile.
+        let mut seen = std::collections::HashSet::new();
+        for mask in 0..=255u8 {
+            seen.insert(one(Layout::Full, mask));
+        }
+        assert_eq!(seen.len(), 47);
+    }
+
+    #[test]
+    fn simple_and_straight_layouts() {
+        assert_eq!(one(Layout::Simple, D), 2);
+        assert_eq!(one(Layout::Simple, U | L | UL), 15);
+        // Corners don't count.
+        assert_eq!(one(Layout::Simple, R | D | DR), 10);
+        // A column: bottom (joined up), middle, top.
+        assert_eq!(one(Layout::Vertical, U), 3);
+        assert_eq!(one(Layout::Vertical, U | D), 2);
+        assert_eq!(one(Layout::Vertical, D), 1);
+        assert_eq!(one(Layout::Vertical, L | R), 0);
+        // A row: the left end joins right.
+        assert_eq!(one(Layout::Horizontal, R), 1);
+        assert_eq!(one(Layout::Horizontal, L | R | U), 2);
+        assert_eq!(one(Layout::Horizontal, L), 3);
+    }
+
+    #[test]
+    fn compact_picks_one_whole_tile() {
+        // A row's end draws the end tile; its middle the horizontal section.
+        assert_eq!(one(Layout::Compact, R), 0);
+        assert_eq!(one(Layout::Compact, L | R), 3);
+        // The top middle of a 3 x 3 square joins left, right and down: horizontal.
+        assert_eq!(one(Layout::Compact, L | R | D | DL | DR), 3);
+        assert_eq!(one(Layout::Compact, U | D | R), 2);
+        // The square's middle, and a plus sign's.
+        assert_eq!(one(Layout::Compact, 0xff), 1);
+        assert_eq!(one(Layout::Compact, SIDES), 4);
+        // A square's corner joins two sides: an end.
+        assert_eq!(one(Layout::Compact, R | D | DR), 0);
+    }
+
+    #[test]
+    fn pieced_quarters() {
+        // Joined right only: the left quarters are the lone tile, the right ones horizontal.
+        assert_eq!(Layout::Pieced.tiles(R), Tiles::Quarters([0, 3, 0, 3]));
+        // Joined up and right without the corner: the top-right quarter is the cross piece.
+        assert_eq!(Layout::Pieced.tiles(U | R), Tiles::Quarters([2, 4, 0, 3]));
+        assert_eq!(
+            Layout::Pieced.tiles(U | R | UR),
+            Tiles::Quarters([2, 1, 0, 3])
+        );
+    }
+
+    #[test]
+    fn overlay_layers_edges_and_corners() {
+        let cells = |mask| Layout::overlay_tiles(mask).collect::<Vec<_>>();
+        assert_eq!(cells(0), [0u8; 0]);
+        // Sand below: the bottom edge piece, (1, 0); to the right: (0, 1).
+        assert_eq!(cells(D), [1]);
+        assert_eq!(cells(R), [6]);
+        // Sand all round: the ring, (4, 1).
+        assert_eq!(cells(0xff), [10]);
+        // Left and down with their corner: one L-shaped tile, (5, 0).
+        assert_eq!(cells(L | D | DL), [5]);
+        // Above and below: two edge pieces.
+        assert_eq!(cells(U | D), [13, 1]);
+        // A column of sand to the left, and sand at the right corners only: the left edge,
+        // then the top-right and bottom-right corner pieces.
+        assert_eq!(cells(UL | L | DL | UR | DR), [8, 12, 0]);
+    }
+}

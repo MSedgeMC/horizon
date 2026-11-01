@@ -219,7 +219,7 @@ const TEMPLATE: [u8; 47] = [
 ];
 
 /// A mask without the corners whose sides don't both join.
-const fn reduce(mask: u8) -> u8 {
+pub(crate) const fn reduce(mask: u8) -> u8 {
     let mut out = mask & (U | R | D | L);
     let corners = [(UR, U | R), (DR, D | R), (DL, D | L), (UL, U | L)];
     let mut i = 0;
