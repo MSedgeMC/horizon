@@ -326,7 +326,8 @@ impl ConnectedTextures {
 
     /// What the `face` of the block `state` at `pos` draws, for a quad with sprite `layer`.
     /// `neighbour` answers the state at an offset from the block; `biome` its biome, asked only
-    /// by rules that test one.
+    /// by rules that test one; `texture` the quad's own texture directions, asked only by rules
+    /// with `orient=texture`.
     pub fn pick<'b>(
         &self,
         state: u32,
@@ -335,6 +336,7 @@ impl ConnectedTextures {
         pos: [i32; 3],
         neighbour: impl Fn([i32; 3]) -> u32,
         biome: impl Fn() -> Option<&'b str>,
+        texture: impl Fn() -> Option<Axes>,
         mut overlay: impl FnMut(Overlay),
     ) -> Pick {
         let (mut by_state, mut by_layer) = (
@@ -366,8 +368,17 @@ impl ConnectedTextures {
             let r = &self.rules[usize::from(i)];
             if (block || r.rule.match_blocks.is_empty())
                 && (tile || r.rule.match_tiles.is_empty())
-                && let Some(pick) =
-                    self.apply(r, state, layer, face, pos, &neighbour, &biome, &mut overlay)
+                && let Some(pick) = self.apply(
+                    r,
+                    state,
+                    layer,
+                    face,
+                    pos,
+                    &neighbour,
+                    &biome,
+                    &texture,
+                    &mut overlay,
+                )
             {
                 // "Tiles output by CTM rules can also be matched by another rule": once, by the
                 // tile rules naming the picked tile (and this block, if they name blocks).
@@ -393,7 +404,17 @@ impl ConnectedTextures {
                     });
                 for (_, r) in again {
                     // Joins by tile still compare the face's own sprite with its neighbours'.
-                    match self.apply(r, state, layer, face, pos, &neighbour, &biome, &mut overlay) {
+                    match self.apply(
+                        r,
+                        state,
+                        layer,
+                        face,
+                        pos,
+                        &neighbour,
+                        &biome,
+                        &texture,
+                        &mut overlay,
+                    ) {
                         Some(Pick::Keep) => return pick,
                         Some(chained) => return chained,
                         None => {}
@@ -416,6 +437,7 @@ impl ConnectedTextures {
         pos: [i32; 3],
         neighbour: &impl Fn([i32; 3]) -> u32,
         biome: &impl Fn() -> Option<&'b str>,
+        texture: &impl Fn() -> Option<Axes>,
         overlay: &mut impl FnMut(Overlay),
     ) -> Option<Pick> {
         let rule = &r.rule;
@@ -456,7 +478,8 @@ impl ConnectedTextures {
         };
         let axes = |face| match (rule.orient, info.axis) {
             (Orient::StateAxis, Some(axis)) => Axes::column(face, axis),
-            // `orient=texture` follows the quad's own UVs; vanilla cubes are what it is used on.
+            // The quad's own texture directions, whatever face `symmetry` stands it for.
+            (Orient::Texture, _) => texture().unwrap_or(Axes::cube(face)),
             _ => Axes::cube(face),
         };
         let mask = || geometry::neighbours(axes(face), face.normal(), rule.inner_seams, joins);
@@ -644,7 +667,7 @@ mod tests {
         blocks: &[([i32; 3], u32)],
     ) -> Pick {
         let at = |o: [i32; 3]| blocks.iter().find(|(p, _)| *p == o).map_or(0, |b| b.1);
-        ctm.pick(state, layer, face, [0, 64, 0], at, || None, |_| {})
+        ctm.pick(state, layer, face, [0, 64, 0], at, || None, || None, |_| {})
     }
 
     const GLASS: &str = "matchBlocks=glass\nmethod=ctm\ntiles=0-46";
@@ -767,8 +790,26 @@ mod tests {
         )]);
         let mut tiles = std::collections::HashSet::new();
         for x in 0..20 {
-            let lower = ctm.pick(5, 3, Face::North, [x, 64, 0], |_| 0, || None, |_| {});
-            let upper = ctm.pick(6, 3, Face::North, [x, 65, 0], |_| 0, || None, |_| {});
+            let lower = ctm.pick(
+                5,
+                3,
+                Face::North,
+                [x, 64, 0],
+                |_| 0,
+                || None,
+                || None,
+                |_| {},
+            );
+            let upper = ctm.pick(
+                6,
+                3,
+                Face::North,
+                [x, 65, 0],
+                |_| 0,
+                || None,
+                || None,
+                |_| {},
+            );
             assert_eq!(lower, upper, "{x}");
             tiles.insert(format!("{lower:?}"));
         }
@@ -782,7 +823,16 @@ mod tests {
             "matchBlocks=glass\nmethod=fixed\ntiles=0\nheights=0-63\nbiomes=desert",
         )]);
         let at = |y, biome: &'static str| {
-            ctm.pick(1, 3, Face::Up, [0, y, 0], |_| 0, || Some(biome), |_| {})
+            ctm.pick(
+                1,
+                3,
+                Face::Up,
+                [0, y, 0],
+                |_| 0,
+                || Some(biome),
+                || None,
+                |_| {},
+            )
         };
         assert_eq!(at(10, "minecraft:desert"), tile(1000));
         assert_eq!(at(64, "minecraft:desert"), Pick::Keep);
@@ -817,7 +867,7 @@ mod tests {
             "glass.properties",
             "matchBlocks=glass\nmethod=repeat\nwidth=2\nheight=2\ntiles=0-3",
         )]);
-        let at = |pos| ctm.pick(1, 3, Face::North, pos, |_| 0, || None, |_| {});
+        let at = |pos| ctm.pick(1, 3, Face::North, pos, |_| 0, || None, || None, |_| {});
         assert_eq!(at([0, 64, 0]), tile(1000));
         // The north face's right is west; rows run down.
         assert_eq!(at([-1, 64, 0]), tile(1001));
@@ -898,6 +948,7 @@ mod tests {
             [0, 64, 0],
             at,
             || None,
+            || None,
             |o| out.push(o.layer),
         );
         (out, pick)
@@ -935,6 +986,7 @@ mod tests {
             [0, 64, 0],
             |o| if o == [0, 0, -1] { 1 } else { 0 },
             || None,
+            || None,
             |o| {
                 tint = Some((o.tint, o.translucent));
             },
@@ -971,6 +1023,7 @@ mod tests {
             Face::Up,
             [0, 64, 0],
             door_north,
+            || None,
             || None,
             |o| got.push(o),
         );
@@ -1044,6 +1097,40 @@ mod tests {
             ),
         ]);
         assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
+    }
+
+    #[test]
+    fn orient_texture_follows_the_quads_uvs() {
+        let rule = |orient: &str| {
+            world(&[(
+                "glass.properties",
+                &*format!("matchBlocks=glass\nmethod=horizontal\ntiles=0-3\norient={orient}"),
+            )])
+        };
+        // A mirrored north face (a vanilla pane's): its texture's right is east.
+        let mirrored = || {
+            Some(Axes {
+                right: [1, 0, 0],
+                up: [0, 1, 0],
+            })
+        };
+        let east = |o: [i32; 3]| if o == [1, 0, 0] { 1 } else { 0 };
+        let at = |ctm: &ConnectedTextures| {
+            ctm.pick(
+                1,
+                3,
+                Face::North,
+                [0, 64, 0],
+                east,
+                || None,
+                mirrored,
+                |_| {},
+            )
+        };
+        // Glass to the east is to the texture's right: the row's left end.
+        assert_eq!(at(&rule("texture")), tile(1000));
+        // By the cube's directions it is to the left: the row's right end.
+        assert_eq!(at(&rule("none")), tile(1002));
     }
 
     #[test]
