@@ -2677,7 +2677,7 @@ mod tests {
         assert_eq!(animations[0].1.frame_count(), 3);
     }
     #[test]
-    fn a_texture_only_an_armor_rule_names_is_not_packed() {
+    fn an_armor_rules_texture_is_packed_too() {
         let root = cit_root(
             "armor",
             &[(
@@ -2687,11 +2687,12 @@ mod tests {
         );
         let cit = root.join("assets/minecraft/optifine/cit");
         write_strip(&cit.join("a.png"), 64, 32, &[[1, 2, 3, 255]], None);
-        // The rule loads; only its kind keeps the texture out.
         assert_eq!(crate::cit::load_rules(&root).len(), 1);
         let atlas = HudAtlas::build(&root).unwrap();
         let _ = fs::remove_dir_all(&root);
-        assert!(!atlas.sprites.keys().any(|k| k.starts_with("horizon_cit:")));
+        // Worn armour draws from the same atlas.
+        let rect = atlas.sprites["horizon_cit:minecraft/optifine/cit/a"];
+        assert_eq!(rect.texels((atlas.width, atlas.height)), (64, 32));
     }
     #[test]
     fn named_cit_textures_pack_once_and_bad_ones_are_skipped() {
