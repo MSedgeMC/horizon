@@ -2044,6 +2044,20 @@ mod tests {
         .unwrap_or_else(|e| panic!("{e:?}"));
     }
 
+    /// A local hides a sampler only to the end of its block (GLSL 4.60, 4.2): after it, the
+    /// name is the sampler again.
+    #[test]
+    fn a_local_hides_a_sampler_to_the_end_of_its_block() {
+        let fsh = "#version 120\nuniform sampler2D colortex0;\nvarying vec2 texcoord;\n\
+                   void main() {\n    { float colortex0 = 1.0; gl_FragColor = vec4(colortex0); }\n    \
+                   gl_FragColor += texture2D(colortex0, texcoord);\n}\n";
+        let p = program(
+            &[("composite.vsh", VSH_120), ("composite.fsh", fsh)],
+            Target::Buffers,
+        );
+        assert!(p.is_ok(), "{:?}", p.err());
+    }
+
     #[test]
     fn errors_point_at_the_pack_file_and_line() {
         let fsh =
@@ -2200,5 +2214,37 @@ mod tests {
             Target::Buffers,
         );
         assert!(p.is_ok(), "{:?}", p.err());
+    }
+
+    /// A parameter, a local or a prototype's parameter named like a `bool` uniform hides it
+    /// (GLSL 4.60, 4.2): in `f`, `g` and `h`, and after the local's declaration in `k`, the name
+    /// is theirs; in a local's own initializer and after its block ends, it is the uniform.
+    #[test]
+    fn bool_uniforms_hidden_by_parameters_and_locals() {
+        let fsh = "#version 330\nuniform bool hideGUI;\nout vec4 c;\n\
+                   float f(in bool hideGUI) { return hideGUI ? 1.0 : 0.0; }\n\
+                   float g() { bool hideGUI = gl_FragCoord.x > 0.5; return hideGUI ? 2.0 : 0.0; }\n\
+                   float h(bool hideGUI);\n\
+                   float h(bool hideGUI) { return hideGUI ? 3.0 : 0.0; }\n\
+                   float k() { bool hideGUI = hideGUI == false; return hideGUI ? 4.0 : 0.0; }\n\
+                   void main() {\n    float a = 0.0;\n    \
+                   { bool hideGUI = true; a += hideGUI ? 0.5 : 0.25; }\n    \
+                   c = vec4(f(true), g() + h(false) + k(), a, float(hideGUI) + (hideGUI ? 1.0 : 0.0));\n}\n";
+        let p = program(
+            &[("composite.vsh", VSH_120), ("composite.fsh", fsh)],
+            Target::Buffers,
+        );
+        assert!(p.is_ok(), "{:?}", p.err());
+        // The uniform is read only by `k`'s initializer and by `main`, after the block, where
+        // `float(hideGUI)` is a conversion of it, not a declaration.
+        let pack =
+            Pack::from_zip_bytes("scope.zip", zip(&[("shaders/composite.fsh", fsh)])).unwrap();
+        let pp = preprocess(&pack, "composite.fsh", &Macros::standard());
+        let stage = crate::translate::scan::Stage::scan(&pp, ShaderStage::Fragment);
+        let uniforms: BTreeMap<String, String> = (stage.uniforms.iter())
+            .map(|(name, ty, _)| (name.clone(), ty.clone()))
+            .collect();
+        let code = stage.rewrite(&[], &uniforms);
+        assert_eq!(code.matches("hz_bool_hideGUI").count(), 3, "{code}");
     }
 }

@@ -106,8 +106,9 @@ impl Stage<'_> {
         let mut calls: Vec<(&str, &str, usize)> = Vec::new();
         // Sampler parameters of the function being written: name → type.
         let mut params: HashMap<String, String> = HashMap::new();
-        // Names of samplers a local variable or parameter of the function hides.
-        let mut hidden: Vec<(&str, usize)> = Vec::new();
+        // Names a local variable or parameter hides (a sampler or a `bool` uniform), with the
+        // token the name starts at and the token its scope ends at.
+        let mut hidden: Vec<(&str, usize, usize)> = Vec::new();
         let mut depth = 0;
         let mut skip_until = 0;
         // The `;` that closes a statement we rewrite, and what is written in its place.
@@ -286,21 +287,29 @@ impl Stage<'_> {
                     continue;
                 }
             }
-            // `float specular`: a variable of the same name as a sampler or a sampler parameter,
-            // from the end of its initializer to the function's end; `.specular` a member.
-            if sampler_ty.contains_key(t) || params.contains_key(t) {
+            // A variable of the same name as a sampler, a sampler parameter or a `bool`
+            // uniform, which GLSL's scoping (4.60, 4.2) lets hide it from the end of the
+            // variable's own declaration to the end of its block; `.specular` a member.
+            let boolean = uniforms.get(t).is_some_and(|ty| ty == "bool");
+            if sampler_ty.contains_key(t) || params.contains_key(t) || boolean {
                 let before = prev(i).map(|j| self.tokens[j]);
                 if before == Some(".") {
                     out.push_str(t);
                     continue;
                 }
-                if before.is_some_and(|b| is_ident(b) && !matches!(b, "return" | "case" | "else")) {
-                    hidden.push((t, self.scope_start(i)));
+                if !called
+                    && before
+                        .is_some_and(|b| is_ident(b) && !matches!(b, "return" | "case" | "else"))
+                {
+                    hidden.push((t, self.scope_start(i), self.scope_end(i)));
                     out.push_str(t);
                     continue;
                 }
             }
-            if hidden.iter().any(|&(h, from)| h == t && i >= from) {
+            if hidden
+                .iter()
+                .any(|&(h, from, to)| h == t && i >= from && i <= to)
+            {
                 out.push_str(t);
                 continue;
             }
@@ -324,7 +333,7 @@ impl Stage<'_> {
                 }
                 continue;
             }
-            if uniforms.get(t).is_some_and(|ty| ty == "bool") {
+            if boolean {
                 write!(out, "(hz_bool_{t} != 0)").unwrap();
                 continue;
             }
@@ -541,6 +550,60 @@ impl Stage<'_> {
         self.tokens.len()
     }
 
+    /// Where the scope of the name declared at token `i` ends (GLSL 4.60, 4.2): the `}` of the
+    /// block it is declared in, or, for a parameter, the end of the function it belongs to (a
+    /// prototype's `)`, a definition's `}`, a `for` header's loop).
+    fn scope_end(&self, i: usize) -> usize {
+        // The innermost bracket still open at `i`.
+        let mut level = 0usize;
+        let open = (0..i).rev().find(|&j| match self.tokens[j] {
+            ")" | "]" | "}" => {
+                level += 1;
+                false
+            }
+            "(" | "[" | "{" if level > 0 => {
+                level -= 1;
+                false
+            }
+            "(" | "[" | "{" => true,
+            _ => false,
+        });
+        let Some(open) = open else {
+            return self.tokens.len().saturating_sub(1);
+        };
+        let close = self.closing(open);
+        if self.tokens[open] != "(" {
+            return close;
+        }
+        // A parameter list: to the `}` of the body it declares the parameters of, or, for a
+        // prototype, to the `)` itself.
+        match next_significant(&self.tokens, close) {
+            Some(j) if self.tokens[j] == "{" => self.closing(j),
+            Some(j) if self.tokens[j] == ";" => close,
+            _ => (close + 1..self.tokens.len())
+                .find(|&j| self.tokens[j] == ";")
+                .unwrap_or(self.tokens.len().saturating_sub(1)),
+        }
+    }
+
+    /// The bracket that closes the one at token `open`.
+    fn closing(&self, open: usize) -> usize {
+        let mut level = 0usize;
+        for (j, t) in self.tokens.iter().enumerate().skip(open) {
+            match *t {
+                "(" | "[" | "{" => level += 1,
+                ")" | "]" | "}" => {
+                    level -= 1;
+                    if level == 0 {
+                        return j;
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.tokens.len().saturating_sub(1)
+    }
+
     /// The element count of an unsized array whose `[]` ends at `close`: the arguments of the
     /// constructor that follows (`[] = T[](...)` or `[](...)`).
     pub(super) fn array_length(&self, close: usize) -> Option<usize> {
@@ -578,6 +641,11 @@ const TYPE_NAMES: [&str; 35] = [
     "mat3", "mat4", "mat2x2", "mat2x3", "mat2x4", "mat3x2", "mat3x3", "mat3x4", "mat4x2", "mat4x3",
     "mat4x4", "dmat2", "dmat3", "dmat4",
 ];
+
+/// The first token after `i` that is not whitespace or a comment.
+fn next_significant(tokens: &[&str], i: usize) -> Option<usize> {
+    (i + 1..tokens.len()).find(|&j| significant(tokens[j]))
+}
 
 /// `0.0`, `0.`, `.0`, `0.0f`: a floating-point literal zero.
 /// `textureGatherOffsets` (GLSL 4.60, 8.9.4), which naga's frontend lacks: texel `i` of the
