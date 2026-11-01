@@ -280,6 +280,15 @@ impl Game<'_> {
     fn raw_mut(&mut self, t: Target) -> Option<&mut Tag> {
         match t {
             Target::Player => Some(self.level.player_extra.get_or_insert_with(empty)),
+            // `ServerPlayer` data lives in the compound its file is saved from.
+            Target::Guest(conn) => Some(
+                self.lan
+                    .as_mut()?
+                    .hub
+                    .guest_mut(conn)?
+                    .saved
+                    .get_or_insert_with(empty),
+            ),
             Target::Mob(id)
             | Target::Item(id)
             | Target::Stand(id)

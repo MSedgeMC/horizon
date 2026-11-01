@@ -221,11 +221,10 @@ impl Game<'_> {
                 .iter()
                 .find(|f| f.id == id)
                 .and_then(|f| f.saved.as_ref().map(|s| &s.1)),
-            Target::Guest(_)
-            | Target::Orb(_)
-            | Target::Projectile(_)
-            | Target::Crystal(_)
-            | Target::Dragon(_) => None,
+            // A guest's tags are in the player compound its file holds, the
+            // same place the host's are (`level.player_extra`).
+            Target::Guest(conn) => self.command_guest(conn).and_then(|g| g.saved.as_ref()),
+            Target::Orb(_) | Target::Projectile(_) | Target::Crystal(_) | Target::Dragon(_) => None,
         };
         match raw.and_then(|r| r.get("Tags")) {
             Some(Tag::List(l)) => l
