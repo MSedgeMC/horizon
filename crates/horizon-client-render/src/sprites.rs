@@ -467,8 +467,8 @@ impl Sprites {
         let count = frames.len() as u32;
         let layer = u32::try_from(self.native.len())?;
         let pbr = match name.split_once(':') {
-            Some((namespace, path)) if labpbr_maps() => {
-                let path = root.join(format!("assets/{namespace}/textures/{path}.png"));
+            Some(_) if labpbr_maps() => {
+                let path = crate::atlas_sources::texture_path(root, name, "textures");
                 ["_n", "_s"].map(|suffix| pbr_map(&path, suffix, count))
             }
             _ => [None, None],
@@ -478,9 +478,11 @@ impl Sprites {
             strategy,
             alpha_cutoff_bias,
             has_transparent,
-            item: name
-                .split_once(':')
-                .is_some_and(|(_, p)| p.starts_with("item/")),
+            // Custom Item Textures' ids are all item textures.
+            item: name.starts_with("horizon_cit:")
+                || name
+                    .split_once(':')
+                    .is_some_and(|(_, p)| p.starts_with("item/")),
             dither_cutouts: crate::mipmap::dither_cutouts(),
         };
         let still = (animation.is_none() && frames.len() == 1).then(|| {
@@ -738,7 +740,7 @@ mod tests {
     fn custom_item_textures_skip_the_disk_cache() {
         let root =
             std::env::temp_dir().join(format!("horizon-sprite-cit-disk-{}", std::process::id()));
-        // The cache's fingerprint needs a `textures` tree.
+        // A realistic root: the cache's fingerprint walks the `textures` trees.
         let vanilla = root.join("assets/minecraft/textures/item/stick.png");
         let file = root.join("assets/minecraft/optifine/cit/a.png");
         let write = |path: &Path, red: u8| {
@@ -767,6 +769,41 @@ mod tests {
         let layer = second.insert(&root, id).unwrap();
         fs::remove_dir_all(&root).unwrap();
         assert_eq!(red(&second, layer), 20);
+    }
+    #[test]
+    fn custom_item_textures_mip_as_items() {
+        let root =
+            std::env::temp_dir().join(format!("horizon-sprite-cit-mip-{}", std::process::id()));
+        let write = |rel: &str| {
+            let path = root.join(rel);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            let mut encoder = png::Encoder::new(File::create(path).unwrap(), 16, 16);
+            encoder.set_color(png::ColorType::Rgba);
+            encoder.set_depth(png::BitDepth::Eight);
+            // Half transparent: item and block mipmaps treat its edges differently.
+            let pixels: Vec<u8> = (0..256)
+                .flat_map(|i| [9, 9, 9, if i % 2 == 0 { 255 } else { 0 }])
+                .collect();
+            encoder
+                .write_header()
+                .unwrap()
+                .write_image_data(&pixels)
+                .unwrap();
+        };
+        write("assets/a/textures/block/x.png");
+        write("assets/a/textures/item/x.png");
+        write("assets/minecraft/optifine/cit/x.png");
+        let mut sprites = Sprites::default();
+        let block = sprites.insert(&root, "a:block/x").unwrap();
+        let item = sprites.insert(&root, "a:item/x").unwrap();
+        let cit = sprites
+            .insert(&root, "horizon_cit:minecraft/optifine/cit/x")
+            .unwrap();
+        fs::remove_dir_all(&root).unwrap();
+        // The same pixels share a layer only with the same mipmap settings: the CIT texture's
+        // are the item's.
+        assert_ne!(block, item);
+        assert_eq!(cit, item);
     }
     #[test]
     fn identical_still_textures_share_a_layer() {
