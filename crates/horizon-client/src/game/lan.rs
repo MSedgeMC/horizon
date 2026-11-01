@@ -2148,6 +2148,14 @@ impl Game<'_> {
                 .take()
                 .expect("the hub is back after the menu events");
         }
+        if !host.hub.player_container_events.is_empty() {
+            self.lan = Some(host);
+            self.run_player_container_events();
+            host = self
+                .lan
+                .take()
+                .expect("the hub is back after the container events");
+        }
         host.states = entities;
         self.level_pass.packets_drained = true;
         drop(holding);
@@ -2333,6 +2341,14 @@ impl Game<'_> {
                 .lan
                 .take()
                 .expect("the hub is back after the menu events");
+        }
+        if !host.hub.player_container_events.is_empty() {
+            self.lan = Some(host);
+            self.run_player_container_events();
+            host = self
+                .lan
+                .take()
+                .expect("the hub is back after the container events");
         }
         if !paused {
             self.tick_guests(&mut host);

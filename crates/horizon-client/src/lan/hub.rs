@@ -10,6 +10,7 @@ use super::{
     data::SyncData,
     entity::{Entities, EntityState, Viewer},
     guest::{Guest, SentEffect, stack_to_network},
+    menu::PlayerContainerEvent,
 };
 use crate::{
     chunk::Chunk,
@@ -201,6 +202,9 @@ pub enum HostEvent {
 pub struct Hub {
     /// Clicks on and closings of native mods' menus, for the game.
     pub native_menu_events: Vec<super::menu::NativeMenuEvent>,
+    /// The menus players opened and closed, for the game
+    /// (`native_player_container_open`/`native_player_container_close`).
+    pub player_container_events: Vec<PlayerContainerEvent>,
     pub lan: Lan,
     pub config: HubConfig,
     pub encoder: ChunkEncoder,
@@ -539,6 +543,7 @@ impl Hub {
             entity_gone: Vec::new(),
             mod_commands: (serde_json::Value::Null, None),
             native_menu_events: Vec::new(),
+            player_container_events: Vec::new(),
             teams: Vec::new(),
             nicknames: std::collections::HashMap::new(),
         }
@@ -1553,6 +1558,17 @@ impl Hub {
 
     fn remove_guest(&mut self, i: usize, reason: &str) -> Guest {
         let mut g = self.guests.remove(i);
+        // A leaving player's menu closes with them (`ServerPlayer.doCloseContainer`).
+        if let Some(menu) = g.menu.take() {
+            self.player_container_events.push(PlayerContainerEvent {
+                open: false,
+                player: g.uuid,
+                name: g.name.clone(),
+                dimension: g.dimension.clone(),
+                menu: menu.name,
+                pos: menu.pos.map(|p| [p.0, p.1, p.2]),
+            });
+        }
         if let Some(m) = g
             .menu
             .as_ref()

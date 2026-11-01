@@ -1,0 +1,18 @@
+{
+  "hooks": [
+    {
+      "name": "player_container_open",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_player_container_open",
+      "neoforge": "PlayerContainerEvent.Open",
+      "side": "server"
+    },
+    {
+      "name": "player_container_close",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_player_container_close",
+      "neoforge": "PlayerContainerEvent.Close",
+      "side": "server"
+    }
+  ],
+  "rust_summary": "a player opening and closing a menu\n(`native_player_container_open`, `native_player_container_close`).",
+  "doc_summary": "a player opening and closing a menu, as NeoForge's `PlayerContainerEvent.Open`/`Close` report it. `native_player_container_open(player, name, dimension, menu, pos)` is told right after the hub made the menu the player's (`ServerPlayer.openMenu`), and `native_player_container_close(...)` when it is dropped: the player closed it, another menu replaced it, or they left the game. `menu` is the menu type's name (`minecraft:chest`, `minecraft:furnace`, `minecraft:generic_9x3`, a mod's own) and `pos` the block for a block's menu, none otherwise. Each open has one close. The guests of a hosted world are told, with no player's state swapped in; the window's own player's menus are not. Bundles need \"hooks\": @API:player_container@."
+}

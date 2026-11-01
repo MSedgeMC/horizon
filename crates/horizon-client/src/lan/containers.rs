@@ -2,7 +2,7 @@
 //! level events, animations and block containers with their clicks.
 use super::{
     hub::Hub,
-    menu::{self, Menu, NativeMenuEvent, Rules, Slots, View},
+    menu::{self, Menu, NativeMenuEvent, PlayerContainerEvent, Rules, Slots, View},
 };
 use crate::{containers::BlockEntity, items::ItemStack, world::World};
 use horizon_core::random::RandomSource;
@@ -256,6 +256,7 @@ impl Hub {
         g.menu = Some(Menu {
             window,
             kind,
+            name: menu_kind.to_owned(),
             pos: Some(pos),
             slots,
             size: items.len(),
@@ -265,6 +266,15 @@ impl Hub {
             sent_data: Vec::new(),
             hidden: Vec::new(),
             mod_type,
+        });
+        let (player, name, dimension) = (g.uuid, g.name.clone(), g.dimension.clone());
+        self.player_container_events.push(PlayerContainerEvent {
+            open: true,
+            player,
+            name,
+            dimension,
+            menu: menu_kind.to_owned(),
+            pos: Some([pos.0, pos.1, pos.2]),
         });
         self.send_menu_content(i, items);
     }
@@ -315,6 +325,7 @@ impl Hub {
         g.menu = Some(Menu {
             window,
             kind,
+            name: format!("minecraft:generic_9x{rows}"),
             pos: None,
             slots: Slots::Native,
             size,
@@ -324,6 +335,15 @@ impl Hub {
             sent_data: Vec::new(),
             hidden: Vec::new(),
             mod_type: None,
+        });
+        let (player, name, dimension) = (g.uuid, g.name.clone(), g.dimension.clone());
+        self.player_container_events.push(PlayerContainerEvent {
+            open: true,
+            player,
+            name,
+            dimension,
+            menu: format!("minecraft:generic_9x{rows}"),
+            pos: None,
         });
         self.send_menu_content(i, items);
         Some(window)
@@ -431,6 +451,15 @@ impl Hub {
             g.send(&C::ContainerClose(play::ContainerClose {
                 container: menu.window,
             }));
+            let (player, name, dimension) = (g.uuid, g.name.clone(), g.dimension.clone());
+            self.player_container_events.push(PlayerContainerEvent {
+                open: false,
+                player,
+                name,
+                dimension,
+                menu: menu.name.clone(),
+                pos: menu.pos.map(|p| [p.0, p.1, p.2]),
+            });
             if menu.slots == Slots::Native {
                 g.native_menu.clear();
                 let (uuid, window) = (g.uuid, menu.window);
@@ -452,16 +481,32 @@ impl Hub {
 
     /// The client closed its window.
     pub fn container_closed(&mut self, conn: u32, window: i32) {
-        if let Some(g) = self.guest_mut(conn)
-            && g.menu.as_ref().is_some_and(|m| m.window == window)
+        let Some(i) = self.guests.iter().position(|g| g.conn == conn) else {
+            return;
+        };
+        if !self.guests[i]
+            .menu
+            .as_ref()
+            .is_some_and(|m| m.window == window)
         {
-            let native = g.menu.take().is_some_and(|m| m.slots == Slots::Native);
-            if native {
-                g.native_menu.clear();
-                let uuid = g.uuid;
-                self.native_menu_events
-                    .push(NativeMenuEvent::Closed { uuid, window });
-            }
+            return;
+        }
+        let g = &mut self.guests[i];
+        let menu = g.menu.take().expect("the menu was just found");
+        let (player, name, dimension) = (g.uuid, g.name.clone(), g.dimension.clone());
+        self.player_container_events.push(PlayerContainerEvent {
+            open: false,
+            player,
+            name,
+            dimension,
+            menu: menu.name.clone(),
+            pos: menu.pos.map(|p| [p.0, p.1, p.2]),
+        });
+        if menu.slots == Slots::Native {
+            g.native_menu.clear();
+            let uuid = g.uuid;
+            self.native_menu_events
+                .push(NativeMenuEvent::Closed { uuid, window });
         }
     }
 

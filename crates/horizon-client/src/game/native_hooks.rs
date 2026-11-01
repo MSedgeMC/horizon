@@ -2691,6 +2691,39 @@ impl Game<'_> {
     ) {
         let _ = (dimension, pos, viewers, previous);
     }
+    /// A player opened `menu` (`minecraft:chest`, `minecraft:furnace`,
+    /// `minecraft:generic_9x3` ...), right after the game made it theirs:
+    /// `ServerPlayer.openMenu`, which NeoForge posts as
+    /// `PlayerContainerEvent.Open`. `player` is the player's UUID, `name`
+    /// their name, `dimension` the level they opened it in, and `pos` the
+    /// block for a block's menu (none for a menu that is not a block's).
+    /// Server-side, for the guests of a hosted world: the window's own
+    /// player's menus are not paired with a guest and are not told.
+    pub(super) fn native_player_container_open(
+        &mut self,
+        player: u128,
+        name: &str,
+        dimension: &str,
+        menu: &str,
+        pos: Option<[i32; 3]>,
+    ) {
+        let _ = (player, name, dimension, menu, pos);
+    }
+    /// A player closed `menu`: `ServerPlayer.doCloseContainer` after the
+    /// menu's `removed`, which NeoForge posts as
+    /// `PlayerContainerEvent.Close`. Told when the player closed it, when
+    /// another menu replaced it, and when they left the game. Server-side;
+    /// each open has one close. @API:player_container@.
+    pub(super) fn native_player_container_close(
+        &mut self,
+        player: u128,
+        name: &str,
+        dimension: &str,
+        menu: &str,
+        pos: Option<[i32; 3]>,
+    ) {
+        let _ = (player, name, dimension, menu, pos);
+    }
     /// `player` died: where `ServerPlayer.die` starts, with the death
     /// message's key when the game knows it (`death.attack.lava`; none for a
     /// message it builds from the combat). It only hears. Server-side, for

@@ -195,6 +195,7 @@ mod native_biome_colors;
 mod native_block_entity_draw;
 mod native_claimed_items;
 mod native_components;
+mod native_container_events;
 mod native_criteria;
 mod native_entities;
 mod native_explosions;

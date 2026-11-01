@@ -24,6 +24,9 @@ pub struct Menu {
     pub window: i32,
     /// The `minecraft:menu` registry id.
     pub kind: i32,
+    /// Its name (`minecraft:furnace`), as the menu the player opened
+    /// (`PlayerContainerEvent`).
+    pub name: String,
     pub pos: Option<(i32, i32, i32)>,
     /// Where the container's slots live.
     pub slots: Slots,
@@ -43,6 +46,20 @@ pub struct Menu {
     /// A content mod's menu type: its data slot count. Its clicks run on the
     /// vanilla menu engine (`menu::Kind::Mod`), not here.
     pub mod_type: Option<&'static crate::containers::ModMenuType>,
+}
+
+/// A menu a player of the hub opened or closed (NeoForge's
+/// `PlayerContainerEvent.Open`/`Close`), for the game to tell the mods once
+/// the hub is back in its hands: the player, their dimension, the menu's
+/// name and the block it belongs to (none when it is not a block's).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayerContainerEvent {
+    pub open: bool,
+    pub player: u128,
+    pub name: String,
+    pub dimension: String,
+    pub menu: String,
+    pub pos: Option<[i32; 3]>,
 }
 
 /// What a guest did with a native mod's menu (`Slots::Native`), for the game
