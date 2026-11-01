@@ -5,6 +5,7 @@ perf_bench.py measures throughput on short flights; this measures smoothness (1%
 p99/p99.9, the worst frame, frames over 33 ms) in the situations where players see hitches:
 
     fly16      the village flight of perf_bench, 16 blocks/s, 12 s
+    ocean      perf_bench's ocean flight (16 blocks/s, 12 s): Horizon's worst lows on Windows at RD 32
     fly64      a 1,920-block straight line at 64 blocks/s (30 s), new terrain all the way
     teleport   8 teleports of 1,500-3,000 blocks, 5 s recorded after each
     nether     the overworld -> Nether -> overworld (/execute in ... run tp), 8 s recorded after each
@@ -34,7 +35,7 @@ import lab  # noqa: E402
 import perf_bench as pb  # noqa: E402
 
 WORK = lab.ROOT / ".local/pacing-bench"
-SCENARIOS = ["fly16", "fly64", "teleport", "nether", "inventory"]
+SCENARIOS = ["fly16", "ocean", "fly64", "teleport", "nether", "inventory"]
 SPIKE_RE = re.compile(r"slow frame ([\d.]+) ms")
 
 
@@ -79,8 +80,8 @@ def scenario(name, control, distance):
         frames.extend(result[0])
         cpu.extend(result[1])
 
-    if name == "fly16":
-        _, start, end, pitch = pb.SCENES[0]
+    if name in ("fly16", "ocean"):
+        _, start, end, pitch = next(s for s in pb.SCENES if s[0] == {"fly16": "village"}.get(name, name))
         control("tp {} {} {}".format(*start))
         control("fly {0} {1} {2} {0} {1} {2} 0.1 {3}".format(*start, pitch))
         pb.wait_loaded(control, lambda p: True, 300, pb.view_chunks(distance))
