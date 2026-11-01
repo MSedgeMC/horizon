@@ -317,7 +317,7 @@ impl Game<'_> {
             let max_damage = item_render::cit::stack_max_damage(stack, item_max);
             cit.rules.select(CitKind::Item, stack, hand, max_damage)
         });
-        renderer.resolve_with_rule(
+        let mut state = renderer.resolve_with_rule(
             &item_render::stack_view(stack),
             display,
             owner,
@@ -325,7 +325,12 @@ impl Game<'_> {
             seed,
             &self.item_env(),
             rule,
-        )
+        );
+        state.hdr_tier = self.luminance().hdr_tier(&stack.item);
+        if state.hdr_tier > 0 && self.renderer.as_ref().is_some_and(|r| r.hdr_on()) {
+            state.hdr_light = self.luminance().of(&stack.item);
+        }
+        state
     }
     /// `GuiGraphics.renderItem(player, level, stack, x, y, 0)`.
     pub(super) fn draw_item_model(&self, batch: &mut HudBatch, stack: &ItemStack, x: f32, y: f32) {
@@ -386,9 +391,10 @@ impl Game<'_> {
     ) {
         let mut sink = WorldSink {
             out,
-            light,
-            lights: Some(lights),
+            light: item_hdr_light(state, light),
+            lights: (state.hdr_light == 0).then_some(lights),
             glint: self.glint(),
+            tier: state.hdr_tier,
         };
         state.submit(
             &self.pack.item_renderer,
@@ -408,9 +414,10 @@ impl Game<'_> {
     ) {
         let mut sink = WorldSink {
             out,
-            light,
+            light: item_hdr_light(state, light),
             lights: None,
             glint: self.glint(),
+            tier: state.hdr_tier,
         };
         state.submit(
             &self.pack.item_renderer,
@@ -504,6 +511,13 @@ impl Game<'_> {
             }
         }
     }
+}
+
+/// The packed light of an item (sky low, block above it: `vertex_light`, entity.wgsl), its block
+/// light raised to what it glows with in HDR output.
+fn item_hdr_light(state: &ItemRenderState, light: u32) -> u32 {
+    let block = ((light >> 8) & 0xff).max(u32::from(state.hdr_light) * 16);
+    (light & !0xff00) | block << 8
 }
 
 #[cfg(test)]
