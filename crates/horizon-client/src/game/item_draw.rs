@@ -298,6 +298,17 @@ impl Game<'_> {
     }
     /// [`Self::resolve_item`] of a stack held in `hand`, which OptiFine CIT rules can test
     /// (GUI items count as the main hand).
+    /// `ItemStack.hasFoil`, with the item's default glint.
+    fn has_foil(&self, stack: &ItemStack) -> bool {
+        let item_glint = self
+            .res
+            .items()
+            .enchantments
+            .props
+            .get(&*stack.item)
+            .is_some_and(|p| p.glint);
+        stack.has_foil(item_glint)
+    }
     pub(super) fn resolve_item_in_hand(
         &self,
         stack: &ItemStack,
@@ -317,7 +328,8 @@ impl Game<'_> {
             let max_damage = item_render::cit::stack_max_damage(stack, item_max);
             (
                 cit.rules.select(CitKind::Item, stack, hand, max_damage),
-                cit.rules.glint(stack, hand, max_damage),
+                cit.rules
+                    .glint(stack, hand, max_damage, self.has_foil(stack)),
             )
         });
         let mut state = renderer.resolve_with_rule(
