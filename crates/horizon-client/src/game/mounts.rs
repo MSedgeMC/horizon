@@ -884,7 +884,7 @@ mod tests {
         if !root.join("mob-data.json").exists() {
             return;
         }
-        let tags = crate::items::load_tags(
+        let tags = horizon_client::items::load_tags(
             &root,
             "entity_type",
             &horizon_world::loot::PackOverlay::NONE,
