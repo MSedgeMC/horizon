@@ -282,6 +282,12 @@ mod tests {
         );
     }
 
+    /// An atlas lookup that knows `names`.
+    fn atlas(names: &[&str]) -> impl Fn(&str) -> Option<String> {
+        let names: Vec<String> = names.iter().map(|n| (*n).to_owned()).collect();
+        move |s| names.iter().any(|n| n == s).then(|| s.to_owned())
+    }
+
     #[test]
     fn the_atlas_lookup_falls_back_to_vanilla_and_the_cape() {
         let iron = rule(
@@ -290,37 +296,24 @@ mod tests {
         );
         let plate = "horizon_cit:minecraft/optifine/cit/plate";
         let vanilla = "entity/equipment/humanoid/iron";
-        let with = |names: &'static [&'static str]| {
-            move |s: &str| names.contains(&s).then(|| s.to_owned())
+        let layer = |rule: Option<&Rule>, names: &[&str]| {
+            worn_layer(rule, "minecraft:iron", "humanoid", vanilla, atlas(names))
         };
-        let layer = |rule, get| worn_layer(rule, "minecraft:iron", "humanoid", vanilla, get);
         assert_eq!(
-            layer(Some(&iron), with(&[plate, vanilla])).as_deref(),
+            layer(Some(&iron), &[plate, vanilla]).as_deref(),
             Some(plate)
         );
         // The rule's texture didn't reach the atlas, or there's no rule: vanilla's layer.
-        assert_eq!(
-            layer(Some(&iron), with(&[vanilla])).as_deref(),
-            Some(vanilla)
-        );
-        assert_eq!(
-            layer(None, with(&[plate, vanilla])).as_deref(),
-            Some(vanilla)
-        );
-        let wings_rule = rule(
+        assert_eq!(layer(Some(&iron), &[vanilla]).as_deref(), Some(vanilla));
+        assert_eq!(layer(None, &[plate, vanilla]).as_deref(), Some(vanilla));
+        let elytra = rule(
             "assets/minecraft/optifine/cit/w.properties",
             "type=elytra\ntexture=wings",
         );
         let w = "horizon_cit:minecraft/optifine/cit/wings";
-        let wing = |rule, get| wings(rule, Some("cape/x"), get);
-        assert_eq!(
-            wing(Some(&wings_rule), with(&[w, "cape/x"])).as_deref(),
-            Some(w)
-        );
-        assert_eq!(
-            wing(Some(&wings_rule), with(&["cape/x"])).as_deref(),
-            Some("cape/x")
-        );
-        assert_eq!(wings(None, None, with(&[w])), None);
+        let wing = |rule: Option<&Rule>, names: &[&str]| wings(rule, Some("cape/x"), atlas(names));
+        assert_eq!(wing(Some(&elytra), &[w, "cape/x"]).as_deref(), Some(w));
+        assert_eq!(wing(Some(&elytra), &["cape/x"]).as_deref(), Some("cape/x"));
+        assert_eq!(wings(None, None, atlas(&[w])), None);
     }
 }
