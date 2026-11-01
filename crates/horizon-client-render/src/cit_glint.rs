@@ -8,7 +8,7 @@
 
 pub use horizon_optifine::cit::{Global, Method};
 
-use horizon_optifine::Properties;
+use crate::cit::read_properties;
 use horizon_optifine::cit::Rule;
 use std::path::Path;
 
@@ -17,13 +17,8 @@ use std::path::Path;
 pub fn load_global(root: &Path) -> Global {
     Global::PATHS
         .iter()
-        .find_map(|path| std::fs::read(root.join(path)).ok())
-        .map(|bytes| {
-            // Java reads `.properties` as Latin-1.
-            let text = String::from_utf8(bytes)
-                .unwrap_or_else(|e| e.into_bytes().iter().map(|&b| char::from(b)).collect());
-            Global::parse(&Properties::parse_equals_first(&text))
-        })
+        .find_map(|path| read_properties(&root.join(path)))
+        .map(|props| Global::parse(&props))
         .unwrap_or_default()
 }
 
@@ -32,7 +27,7 @@ pub fn load_global(root: &Path) -> Global {
 pub struct GlintLayer {
     /// The rule, an index into `CitRules::rules`.
     pub rule: usize,
-    /// Its `average` or `layered` share, 1 under `cycle`.
+    /// Its `average` or `layered` share, 1 under `none` and `cycle`.
     pub weight: f32,
     /// Its `duration`, for `cycle`.
     duration: f32,
@@ -68,10 +63,6 @@ impl StackGlint {
             }
         }
         layers.sort_by_key(|&i| rules[i].glint.layer);
-        // CIT Resewn: any matched layer asking for vanilla's glint keeps it, and the global
-        // `useGlint=false` removes it everywhere, as OptiFine's doc says too.
-        let vanilla = global.use_glint
-            && (layers.is_empty() || layers.iter().any(|&i| rules[i].glint.use_glint));
         let cycle = global.method == Method::Cycle;
         // OptiFine's doc: `cap` is for `average` and `layered`, and keeps the topmost layers.
         // (CIT Resewn keeps the bottom ones, and caps cycles too.)
@@ -79,29 +70,42 @@ impl StackGlint {
             let cap = usize::try_from(cap).unwrap_or(usize::MAX);
             layers = layers.split_off(layers.len().saturating_sub(cap));
         }
+        // CIT Resewn: any layer left asking for vanilla's glint keeps it, and the global
+        // `useGlint=false` removes it everywhere, as OptiFine's doc says too. `cap=0` leaves no
+        // custom layer, and vanilla's glint only if the pack's `useGlint` allows it.
+        let vanilla = global.use_glint
+            && (layers.is_empty() || layers.iter().any(|&i| rules[i].glint.use_glint));
         // CIT Resewn: shares are against every enchantment of the stack, not only those the
         // layers name.
         let levels = enchantments.iter().map(|(_, level)| *level as f32);
         let total = match global.method {
             Method::Average => levels.sum::<f32>(),
             Method::Layered => levels.fold(0.0, f32::max),
-            Method::Cycle => 0.0,
+            Method::None | Method::Cycle => 0.0,
         };
+        let shared = matches!(global.method, Method::Average | Method::Layered);
         let layers = layers
             .into_iter()
             .map(|i| {
-                let glint = &rules[i].glint;
-                let named = &rules[i].enchantments;
-                let weight = if cycle || named.is_empty() {
+                let rule = &rules[i];
+                let named = &rule.enchantments;
+                let weight = if !shared || named.is_empty() {
                     1.0
                 } else {
-                    // The highest level of the enchantments the rule names (CIT Resewn takes
-                    // the first it finds; a rule rarely names two the stack has).
+                    // The highest level among the enchantments the rule names whose level also
+                    // passes its `enchantmentLevels` (CIT Resewn takes the first named one the
+                    // stack has, whatever its level).
+                    let in_range = |level: u32| {
+                        let level = i32::try_from(level).unwrap_or(i32::MAX);
+                        rule.enchantment_levels
+                            .as_ref()
+                            .is_none_or(|r| r.contains(level))
+                    };
                     let level = enchantments
                         .iter()
-                        .filter(|(id, _)| {
+                        .filter(|(id, level)| {
                             let id: &str = id.as_ref();
-                            named.iter().any(|n| n == id)
+                            named.iter().any(|n| n == id) && in_range(*level)
                         })
                         .map(|(_, level)| *level as f32)
                         .fold(0.0, f32::max);
@@ -110,7 +114,7 @@ impl StackGlint {
                 GlintLayer {
                     rule: i,
                     weight,
-                    duration: glint.duration,
+                    duration: rule.glint.duration,
                 }
             })
             .collect();
@@ -137,7 +141,8 @@ impl StackGlint {
 }
 
 /// CIT Resewn's `Loops.statelessFadingLoop`: each layer shows alone for its `duration`, then
-/// fades into the next over `fade` seconds, the last into the first.
+/// fades into the next over `fade` seconds, the last into the first. With no time at all
+/// (every `duration` and `fade` 0) the bottom layer shows alone.
 fn cycle_intensity(layers: &[GlintLayer], fade: f32, index: usize, seconds: f64) -> f32 {
     let n = layers.len();
     let fade = f64::from(fade);
@@ -152,8 +157,13 @@ fn cycle_intensity(layers: &[GlintLayer], fade: f32, index: usize, seconds: f64)
             return if i == index { 1.0 } else { 0.0 };
         }
         t -= duration;
-        if t < fade {
-            let into = (t / fade) as f32;
+        // The last fade takes whatever rounding left of the period.
+        if t < fade || i + 1 == n {
+            let into = if fade > 0.0 {
+                (t / fade).min(1.0) as f32
+            } else {
+                1.0
+            };
             return if i == index {
                 1.0 - into
             } else if (i + 1) % n == index {
@@ -164,7 +174,7 @@ fn cycle_intensity(layers: &[GlintLayer], fade: f32, index: usize, seconds: f64)
         }
         t -= fade;
     }
-    0.0
+    unreachable!("the last layer's fade ends the period")
 }
 
 #[cfg(test)]
@@ -222,10 +232,23 @@ mod tests {
         assert_eq!(weights("method=average"), [0.75, 0.25, 1.0, 0.0]);
         assert_eq!(weights("method=layered"), [1.0, 1.0 / 3.0, 1.0, 0.0]);
         assert_eq!(weights("method=cycle"), [1.0; 4]);
+        assert_eq!(weights("method=none"), [1.0; 4]);
         // An unenchanted stack: nothing to share.
         let g = StackGlint::new(&rules, &[0, 2], &[] as &[(&str, u32)], &Global::default());
         assert_eq!(g.layers[0].weight, 0.0);
         assert_eq!(g.layers[1].weight, 1.0);
+    }
+
+    #[test]
+    fn the_level_is_one_the_rules_levels_allow() {
+        let rules = [rule(
+            "holy",
+            "enchantments=sharpness smite\nenchantmentLevels=1-2",
+        )];
+        // Sharpness V is out of range, so Smite I sets the share: 1 / 5 of the highest level.
+        let stack = [("minecraft:sharpness", 5), ("minecraft:smite", 1)];
+        let g = StackGlint::new(&rules, &[0], &stack, &global("method=layered"));
+        assert_eq!(g.layers[0].weight, 1.0 / 5.0);
     }
 
     #[test]
@@ -257,6 +280,14 @@ mod tests {
         assert!(vanilla(&[0, 1], ""), "unless one keeps it");
         assert!(!vanilla(&[], "useGlint=false"));
         assert!(!vanilla(&[1], "useGlint=false"), "the pack's word is final");
+        // Only the layers `cap` keeps count.
+        let rules = [rule("keep", "useGlint=true"), rule("top", "layer=1")];
+        let g = StackGlint::new(&rules, &[0, 1], &SWORD, &global("cap=1"));
+        assert!(!g.vanilla);
+        let g = StackGlint::new(&rules, &[0, 1], &SWORD, &global("cap=0"));
+        assert!(g.is_empty() && g.vanilla);
+        let g = StackGlint::new(&rules, &[0, 1], &SWORD, &global("cap=0\nuseGlint=false"));
+        assert!(!g.vanilla);
     }
 
     #[test]
@@ -287,19 +318,63 @@ mod tests {
     }
 
     #[test]
+    fn a_cycle_always_shows_a_whole_layer() {
+        let rules = [
+            rule("a", "duration=0.1"),
+            rule("b", "layer=1\nduration=0.7"),
+            rule("c", "layer=2\nduration=0.2"),
+        ];
+        let g = StackGlint::new(
+            &rules,
+            &[0, 1, 2],
+            &SWORD,
+            &global("method=cycle\nfade=0.3"),
+        );
+        // Just under a period, where rounding could leave no layer.
+        let period: f64 = [0.1f32, 0.7, 0.2]
+            .map(|d| f64::from(d) + f64::from(0.3f32))
+            .iter()
+            .sum();
+        let last = f64::from_bits(period.to_bits() - 1);
+        for t in (0..2000_i32)
+            .map(|i| f64::from(i) * 0.001)
+            .chain([last, period + last])
+        {
+            let sum: f32 = (0..3).map(|i| g.intensity(i, t)).sum();
+            assert!((sum - 1.0).abs() < 1e-5, "{sum} at {t}");
+        }
+        // No time at all: the bottom layer alone, never NaN.
+        let still = [rule("a", "duration=0"), rule("b", "layer=1\nduration=0")];
+        let g = StackGlint::new(&still, &[0, 1], &SWORD, &global("method=cycle\nfade=0"));
+        for t in [0.0, 0.5, 7.25] {
+            assert_eq!([0, 1].map(|i| g.intensity(i, t)), [1.0, 0.0]);
+        }
+    }
+
+    #[test]
     fn the_first_global_file_wins() {
         let root = std::env::temp_dir().join(format!("horizon-cit-glint-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!(load_global(&root), Global::default());
-        let write = |path: &str, text: &str| {
+        let write = |path: &str, text: &[u8]| {
             let file = root.join(path);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();
             std::fs::write(file, text).unwrap();
         };
-        write("assets/minecraft/optifine/cit.properties", "method=layered");
-        write("assets/minecraft/mcpatcher/cit.properties", "method=cycle");
+        // Saved as Latin-1 (`é` is not UTF-8 alone), in the OptiFine doc's `cit/` folder.
+        write(
+            "assets/minecraft/optifine/cit/cit.properties",
+            b"# caf\xE9\nmethod=cycle",
+        );
+        assert_eq!(load_global(&root).method, Method::Cycle);
+        write("assets/minecraft/mcpatcher/cit.properties", b"method=none");
+        assert_eq!(load_global(&root).method, Method::Cycle);
+        write(
+            "assets/minecraft/optifine/cit.properties",
+            b"method=layered",
+        );
         assert_eq!(load_global(&root).method, Method::Layered);
-        write("assets/minecraft/citresewn/cit.properties", "cap=1");
+        write("assets/minecraft/citresewn/cit.properties", b"cap=1");
         let g = load_global(&root);
         let _ = std::fs::remove_dir_all(&root);
         assert_eq!((g.method, g.cap), (Method::Average, Some(1)));
