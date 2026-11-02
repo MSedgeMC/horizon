@@ -10562,6 +10562,29 @@ impl Game<'_> {
             }
         }
         laps.lap("eg_fire_stands");
+        // Projectiles are entities too: an arrow or a mob's trident that flew
+        // through a fire block carries fire ticks
+        // (`AbstractArrow.applyEffectsFromBlocks`), and vanilla draws the same
+        // flame over it (EntityRenderDispatcher's `displayFireAnimation`).
+        for (at, width, height) in
+            horizon_client::fire_render::burning_projectiles(&self.creatures.projectiles, alpha)
+        {
+            horizon_client::fire_render::flames(
+                at,
+                width,
+                height,
+                camera,
+                fire_yaw,
+                &self.gui.atlas.sprites,
+                self.world.light(
+                    at[0].floor() as i32,
+                    at[1].floor() as i32,
+                    at[2].floor() as i32,
+                ),
+                &mut out,
+            );
+        }
+        laps.lap("eg_fire_projectiles");
         // `ItemEntityRenderer`.
         self.mark_entity(out.len(), "minecraft:item");
         self.dropped_item_geometry(camera, alpha, &mut out);

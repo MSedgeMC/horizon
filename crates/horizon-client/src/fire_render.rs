@@ -1,6 +1,42 @@
 //! Animated burning-entity flames; the first-person overlay uses screen_effects.
-use crate::{hud::Rect, mesher::Vertex};
+use crate::{
+    hud::Rect,
+    mesher::Vertex,
+    projectiles::{Projectile, ProjectileKind},
+};
 use std::collections::HashMap;
+
+/// `Entity.displayFireAnimation` (`isOnFire() && !isSpectator()`) for the
+/// projectiles a frame draws: a burning arrow, or a mob's thrown trident, at
+/// the position its previous and current one interpolate to, with the box
+/// (`getBbWidth`, `getBbHeight`) `EntityRenderDispatcher` scales the flame by.
+pub fn burning_projectiles<'a>(
+    projectiles: &'a [Projectile],
+    alpha: f64,
+) -> impl Iterator<Item = ([f64; 3], f32, f32)> + 'a {
+    projectiles.iter().filter_map(move |p| {
+        // Only the arrow kinds carry `Entity.remainingFireTicks`, and the
+        // flame's size is their entity type's own `sized(...)` box.
+        let burning = p.arrow.as_ref().is_some_and(|a| a.on_fire());
+        let size = match p.kind {
+            ProjectileKind::Arrow { .. } | ProjectileKind::Trident => p.kind.size() as f32,
+            _ => return None,
+        };
+        if !burning {
+            return None;
+        }
+        let (from, to) = (p.previous, p.position);
+        Some((
+            [
+                from.x + (to.x - from.x) * alpha,
+                from.y + (to.y - from.y) * alpha,
+                from.z + (to.z - from.z) * alpha,
+            ],
+            size,
+            size,
+        ))
+    })
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn flames(
