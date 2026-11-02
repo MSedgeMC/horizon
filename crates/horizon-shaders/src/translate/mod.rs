@@ -29,6 +29,7 @@ use crate::Preprocessed;
 
 mod atomic_vectors;
 mod geometry;
+mod image_parameters;
 mod ordering;
 mod rewrite;
 mod scan;
@@ -980,7 +981,14 @@ pub(super) fn split_sampler(ty: &str) -> (String, &'static str) {
 
 /// Parses and validates one stage; errors at the pack's files and lines.
 fn compile(stage: &Stage, text: &str, header_lines: usize) -> Result<naga::Module, Vec<Error>> {
-    // `text` is the source the span is in: the rewrites below keep its lines.
+    let specialized = image_parameters::rewrite(text).map_err(|message| {
+        vec![Error {
+            file: stage.pp.files.first().cloned().unwrap_or_default(),
+            line: 1,
+            message,
+        }]
+    })?;
+    let text = specialized.as_str();
     let at = |text: &str, span: naga::Span, message: String| {
         let start = span.to_range().map_or(0, |r| r.start);
         let line = text[..start.min(text.len())].matches('\n').count();
@@ -2361,5 +2369,21 @@ mod tests {
             reads_bool_uniform(&p),
             "the uniform is back after the block"
         );
+    }
+}
+
+#[cfg(test)]
+mod image_parameter_tests {
+    use crate::{Macros, Pack, preprocess, translate_compute};
+    #[test]
+    fn nested_image_helpers_specialize_multiple_storage_formats() {
+        let src = "#version 430\nlayout(local_size_x=1)in;layout(rgba16f) uniform image3D imageA;layout(r32f) uniform image3D imageB;void write_value(writeonly image3D img,ivec3 p){imageStore(img,p,vec4(0.5));}\nvoid nested(image3D img,ivec3 p){write_value(img,p);}\nvoid main(){nested(imageA,ivec3(0));nested(imageB,ivec3(0));}";
+        let pack = Pack::from_zip_bytes(
+            "formats.zip",
+            crate::pack::tests::zip(&[("shaders/setup.csh", src)]),
+        )
+        .unwrap();
+        let result = translate_compute(&preprocess(&pack, "setup.csh", &Macros::standard()));
+        assert!(result.is_ok(), "{:?}", result.err());
     }
 }
