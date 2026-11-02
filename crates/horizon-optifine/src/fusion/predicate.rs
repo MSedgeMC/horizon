@@ -67,15 +67,15 @@ fn one_or_many(value: &Json) -> &[Json] {
 
 /// `one` or `many` of a field: a string or an array of them.
 fn names<'a>(json: &'a Json, one: &str, many: &str) -> Result<Vec<&'a str>, String> {
-    let value = json
-        .get(one)
-        .or_else(|| json.get(many))
+    let (key, value) = [one, many]
+        .into_iter()
+        .find_map(|key| Some((key, json.get(key)?)))
         .ok_or_else(|| format!("no `{one}` or `{many}`"))?;
     one_or_many(value)
         .iter()
         .map(|v| {
             v.as_str()
-                .ok_or_else(|| format!("`{many}` holds a non-string"))
+                .ok_or_else(|| format!("`{key}` holds a non-string"))
         })
         .collect()
 }
