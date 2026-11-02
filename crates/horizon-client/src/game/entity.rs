@@ -119,6 +119,8 @@ macro_rules! match_entity {
      $($kind:ident: $($list:ident).+,)*) => {
         match $handle {
             $($crate::game::entity::EntityHandle::$kind(i) => {
+                // `ref` or `ref mut`, chosen by the caller.
+                #[allow(clippy::toplevel_ref_arg)]
                 let $binding = $game$(.$list)+[i];
                 $body
             })*
