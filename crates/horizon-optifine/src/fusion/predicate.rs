@@ -335,7 +335,7 @@ mod tests {
         );
         assert_eq!(
             p.mask(|_, q| q == Query::SameState),
-            0xff & !L,
+            !L,
             "joins everywhere but left"
         );
     }
