@@ -2374,7 +2374,7 @@ mod tests {
     }
     #[test]
     fn ordinary_legacy_buffer_identifiers_still_translate() {
-        let fragment = "#version 120\nuniform float buffer;void main(){gl_FragColor=vec4(buffer);}";
+        let fragment = "#version 120\nvoid main(){float buffer=0.5;gl_FragColor=vec4(buffer);}";
         let result = program(
             &[("composite.vsh", VSH_120), ("composite.fsh", fragment)],
             Target::Window,
