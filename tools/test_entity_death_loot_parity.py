@@ -8,8 +8,9 @@ Every living entity type with a loot table is killed by a player with and
 without looting, by nothing, on fire, with a smelting weapon, as a baby, with
 luck and with worn equipment, plus each table's special conditions (sheep
 colours, cube sizes, frog kills, skeleton and charged creeper kills, fireballs,
-lightning, raid captains, vehicles and an enderman's carried block). Loot draws come from the world's random
-sequences; several victims are killed in turn per case.
+lightning, raid captains, vehicles and an enderman's carried block), and worn gear that carries
+Curse of Vanishing (its slot stays on the corpse) or Binding Curse (which does not stop a drop).
+Loot draws come from the world's random sequences; several victims are killed in turn per case.
 """
 import argparse
 import json
@@ -115,6 +116,23 @@ def corpus(types):
         add(f'enderman-carried-{block}-none', type='minecraft:enderman', carried='minecraft:' + block, source='generic', kills=2)
     for weapon in WEAPONS:
         add('wither-' + weapon.split(';')[-1].replace(':', ''), type='minecraft:wither', killer='player', weapon=weapon, kills=2)
+    # EnchantmentEffectComponents.PREVENT_EQUIPMENT_DROP (Curse of Vanishing): the slot keeps its
+    # item on the corpse whatever the drop chance says and whatever the killer holds; Binding Curse
+    # has no such effect, so that item is dropped.
+    for slot, item in (('head', 'minecraft:iron_helmet'), ('chest', 'minecraft:chainmail_chestplate'),
+                       ('feet', 'minecraft:diamond_boots'), ('mainhand', 'minecraft:diamond_sword')):
+        add(f'curse-vanishing-{slot}', type='minecraft:zombie', killer='player', kills=3,
+            weapon='minecraft:iron_sword;looting:3', **{slot: item + ';vanishing_curse:1', 'chance_' + slot: 2.0})
+        add(f'curse-vanishing-{slot}-none', type='minecraft:zombie', source='generic', kills=2,
+            **{slot: item + ';vanishing_curse:1', 'chance_' + slot: 2.0})
+        add(f'curse-vanishing-{slot}-plain', type='minecraft:zombie', killer='player', kills=3,
+            weapon='minecraft:iron_sword;looting:3', **{slot: item, 'chance_' + slot: 2.0})
+    add('curse-binding', type='minecraft:zombie', killer='player', kills=3,
+        head='minecraft:iron_helmet;binding_curse:1', chance_head=2.0)
+    for mob in ['skeleton', 'piglin', 'husk', 'drowned', 'zombie_villager']:
+        add(f'curse-vanishing-{mob}', type='minecraft:' + mob, killer='player', kills=3,
+            weapon='minecraft:netherite_sword;looting:3', head='minecraft:golden_helmet;vanishing_curse:1', chance_head=2.0,
+            mainhand='minecraft:iron_sword;vanishing_curse:1', chance_mainhand=2.0)
     return cases
 
 
