@@ -430,6 +430,36 @@ impl ConnectedTextures {
                 && let Some(pick) =
                     self.apply(r, state, layer, face, pos, &neighbour, &biome, &mut overlay)
             {
+                // "Tiles output by CTM rules can also be matched by another rule": once, by the
+                // tile rules naming the picked tile (and this block, if they name blocks).
+                // A tile on the face's own sprite (`tiles=stone`) is no new tile.
+                let Pick::Tile(TileLayer::Layer { layer: picked, .. }) = pick else {
+                    return pick;
+                };
+                if picked == layer {
+                    return pick;
+                }
+                let own = self.list(&self.by_state, state as usize);
+                // Rules tried on the face's sprite already (those before this one) are not tried
+                // again: an overlay would draw twice.
+                let first = self.list(&self.by_layer, layer as usize);
+                let again = self
+                    .list(&self.by_layer, picked as usize)
+                    .iter()
+                    .map(|&j| (j, &self.rules[usize::from(j)]))
+                    .filter(|&(j, r)| {
+                        j != i
+                            && !(j < i && first.contains(&j))
+                            && (r.rule.match_blocks.is_empty() || own.contains(&j))
+                    });
+                for (_, r) in again {
+                    // Joins by tile still compare the face's own sprite with its neighbours'.
+                    match self.apply(r, state, layer, face, pos, &neighbour, &biome, &mut overlay) {
+                        Some(Pick::Keep) => return pick,
+                        Some(chained) => return chained,
+                        None => {}
+                    }
+                }
                 return pick;
             }
         }
@@ -649,6 +679,10 @@ mod tests {
             |name| match name {
                 "minecraft:block/stone" => Some(7),
                 "minecraft:block/glass" => Some(3),
+                // The tile `b0` of a rule second in order (`a_picked_tile_can_be_picked_again`).
+                "assets/minecraft/optifine/ctm/b0.png" => Some(2000),
+                // And `a0` of the first rule.
+                "assets/minecraft/optifine/ctm/a0.png" => Some(1000),
                 _ => None,
             },
         )
@@ -1037,6 +1071,40 @@ mod tests {
         // draws nothing; c draws; the face keeps its own sprite.
         let (layers, pick) = overlays_in(&ctm, 1, Face::North, &[([-1, 0, 0], 1)]);
         assert_eq!((layers, pick), (vec![1001, 3000], Pick::Keep));
+    }
+
+    #[test]
+    fn a_picked_tile_can_be_picked_again() {
+        // b (rule 1) gives glass its tile b0, layer 2000; t (rule 0, a tile rule, tried first)
+        // names that tile, so it draws in b0's place.
+        let chain = |t: &str| {
+            world(&[
+                ("b.properties", "matchBlocks=glass\nmethod=fixed\ntiles=b0"),
+                ("t.properties", t),
+            ])
+        };
+        let ctm = chain("matchTiles=optifine/ctm/b0.png\nmethod=fixed\ntiles=0");
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(1000));
+        // A chained rule keeping the tile (<default>) leaves b's.
+        let ctm = chain("matchTiles=optifine/ctm/b0.png\nmethod=fixed\ntiles=<default>");
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
+        // One that names another block doesn't chain on glass.
+        let ctm = chain("matchTiles=optifine/ctm/b0.png\nmatchBlocks=stone\nmethod=fixed\ntiles=0");
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
+        // An overlay tried on the face's own sprite and on the picked tile draws once.
+        let ctm = chain("matchTiles=glass optifine/ctm/b0.png\nmethod=overlay_fixed\ntiles=0");
+        let (overlays, pick) = overlays_in(&ctm, 1, Face::Up, &[]);
+        assert_eq!((overlays, pick), (vec![1000], tile(2000)));
+        // A rule after the one that picked, naming both the face's sprite and the tile, wasn't
+        // tried: it chains.
+        let ctm = world(&[
+            ("a.properties", "matchTiles=glass\nmethod=fixed\ntiles=a0"),
+            (
+                "c.properties",
+                "matchTiles=glass optifine/ctm/a0.png\nmethod=fixed\ntiles=0",
+            ),
+        ]);
+        assert_eq!(pick_in(&ctm, 1, 3, Face::Up, &[]), tile(2000));
     }
 
     #[test]
