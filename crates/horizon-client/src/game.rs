@@ -3741,13 +3741,16 @@ impl Game<'_> {
     /// Where a loot roll at `origin` happens, for a mod's own loot kinds:
     /// the block entity it may copy from, and this level as
     /// `LootContext.getLevel` gives it (`Level.isRaining`: rain above 0.2;
-    /// `isThundering`: thunder above 0.9).
+    /// `isThundering`: thunder above 0.9; neither where `canHaveWeather` is
+    /// false: a level with a ceiling or no sky light, or the End).
     fn loot_place_at(
         &self,
         origin: [f64; 3],
         block_entity: Option<horizon_world::nbt::Tag>,
     ) -> horizon_world::loot::NativeLootPlace {
         let (rain, thunder) = self.world.weather.levels(1.0);
+        // Level.canHaveWeather: the Nether has a ceiling, the End is the End.
+        let weather = self.dim == Dim::Overworld;
         horizon_world::loot::NativeLootPlace {
             origin: Some(origin),
             block_entity,
@@ -3755,8 +3758,8 @@ impl Game<'_> {
                 dimension: self.dim.id().to_owned(),
                 game_time: self.world.game_time,
                 day_time: self.world.day_time,
-                raining: rain > 0.2,
-                thundering: thunder > 0.9,
+                raining: weather && rain > 0.2,
+                thundering: weather && thunder > 0.9,
             }),
         }
     }
