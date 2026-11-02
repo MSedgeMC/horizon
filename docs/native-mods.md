@@ -426,10 +426,14 @@ tool, the block, the luck, the biome and a seed from the roll's random. An uncla
 stack, an unclaimed condition fails, as unknown kinds do; a bare type name is minecraft's own.
 
 The tables the items engine rolls (block drops, entity drops, `loot_table`, `interact_loot` and the
-built-in tables) answer the condition hook, with the tool and the block in the context; the function hook
-there follows when the stack types converge. In the items engine's context the `entity`, `damage`, `player`
-and `biome` fields are `None` and `luck` is 0; in the main loot engine's context the `tool` and `block`
-fields are `None`.
+built-in tables) answer both hooks, with the tool and the block in the context. The function hook there
+gets the stack as the main engine's (`LootStack`): its item, count, damage, enchantments (a book's stored
+ones), potion, ominous bottle amplifier, stew effects and the components the engine keeps as saved, as
+their JSON; what it changes comes back to the engine's stack, and a component it adds arrives with the
+drop. A function that asks for a map's structure search (`map`/`exploration`) changes nothing there: the
+items engine has no level to search. In the items engine's context the `entity`, `damage`, `player` and
+`biome` fields are `None` and `luck` is 0; in the main loot engine's context the `tool` and `block` fields
+are `None`.
 
 Both engines' contexts carry `place`, where the roll happens: `origin` (a broken block's centre, a dead mob's
 position), `block_entity` (the broken block's entity as it was before the break, saved with its id, position and
@@ -860,7 +864,7 @@ API 131 adds an item's use tick and release, as vanilla's `Item.onUseTick` and `
 
 API 132 adds `native_inventory(uuid, kind)`: a player's inventory (`Player`: 41 slots, main, armour, off hand; `Ender`: 27), live when they are on the server, else from their file, never while they log in or are dead; `native_move_stack((from, kind, slot), expected, (to, kind))`: one stack moved, checked against `expected`, where it fits whole, or nothing moves (at most one side a file, written first); `native_send_map(uuid, map_id, colors)`: a 128 x 128 map picture sent to a player, for a filled map with that `map_id`. What an operator's `/invsee` and a price chart on a map need. Bundles need "hooks": 132.
 
-API 133 adds a loot table's function and condition of a mod's own kind. The entry that names a `type` in a namespace outside `minecraft:` — where the loot roll used to silently skip it — reaches `native_loot_function(kind, data, ctx, stack)` or `native_loot_condition(kind, data, ctx, holds)` when the table rolls. The context brings the entity, the damage, the player, the tool, the block, the luck, the biome and a seed from the roll's random. The condition hook answers in the tables the items engine rolls (block drops, entity drops, loot_table, interact_loot), where entity, damage, player and biome are None; the function hook there follows when the stack types converge. An unclaimed function leaves the stack, an unclaimed condition fails, as unknown kinds do. Bundles that use them need "hooks": 133.
+API 133 adds a loot table's function and condition of a mod's own kind. The entry that names a `type` in a namespace outside `minecraft:` — where the loot roll used to silently skip it — reaches `native_loot_function(kind, data, ctx, stack)` or `native_loot_condition(kind, data, ctx, holds)` when the table rolls. The context brings the entity, the damage, the player, the tool, the block, the luck, the biome and a seed from the roll's random. Both hooks answer in the tables the items engine rolls (block drops, entity drops, loot_table, interact_loot), where entity, damage, player and biome are None; the function hook there gets the stack as the main engine's (its item, count, damage, enchantments, potion and saved components) and takes back what it changes, but a function that asks for a map's structure search changes nothing there. An unclaimed function leaves the stack, an unclaimed condition fails, as unknown kinds do. Bundles that use them need "hooks": 133.
 
 API 134 adds a server's levels opening and closing, on the single player server thread and on a dedicated server: `native_level_load(dimension)` when a level opens, before any of its chunks (NeoForge's `LevelEvent.Load`), and `native_level_unload(dimension)` once it has closed, after its last save (`LevelEvent.Unload`). The level the world opens in comes before `WorldOpenReady`; the Nether and the End open when someone first goes there and close after 300 ticks with nobody in them. Every level still open closes when the server stops, before `WorldCloseFinal`, or when its open or its loop fails, so each load has one unload. Bundles that use them need "hooks": 134.
 
