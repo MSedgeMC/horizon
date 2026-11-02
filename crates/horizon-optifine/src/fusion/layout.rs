@@ -6,7 +6,7 @@
 //! (and, where both sides beside a corner join, that corner) in green. `compact`'s template
 //! names its 5 tiles, not their masks; which one a face takes is the wiki's GIF of the layout.
 
-use crate::ctm::connect::{D, DL, DR, L, R, U, UL, UR, overlay_tiles, reduce};
+use crate::ctm::connect::{D, DL, DR, L, R, U, UL, UR, reduce};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Layout {
@@ -130,9 +130,19 @@ const fn invert<const N: usize>(table: [u8; N]) -> [u8; 256] {
 const FULL_INDEX: [u8; 256] = invert(FULL);
 const SIMPLE_INDEX: [u8; 256] = invert(SIMPLE);
 
-/// OptiFine's overlay tiles ([`overlay_tiles`]) as cells of Fusion's 6 x 3 overlay grid: edge
-/// and corner pieces on the left half, the tiles for two or more sides on the right.
-const OVERLAY_CELLS: [u8; 17] = [0, 1, 2, 3, 5, 4, 11, 6, 10, 8, 15, 17, 9, 16, 12, 13, 14];
+/// The overlay grid (6 x 3). On its left half an edge piece toward each side and a piece in
+/// each corner; on its right the pieces for two and three sides joined through the corners
+/// between them, and the ring for all eight neighbours.
+const RING: u8 = 10;
+/// Clockwise from the top: each side, and the corner after it.
+const CYCLE: [(u8, u8); 4] = [(U, UR), (R, DR), (D, DL), (L, UL)];
+/// By the side a run starts at, in `CYCLE`'s order: the piece for it alone, with the next side,
+/// with the next two.
+const EDGE: [u8; 4] = [13, 6, 1, 8];
+const PAIR: [u8; 4] = [15, 3, 5, 17];
+const TRIPLE: [u8; 4] = [9, 4, 11, 16];
+/// The corner pieces, in `CYCLE`'s order of the corners.
+const CORNER: [u8; 4] = [12, 0, 2, 14];
 
 impl Layout {
     pub fn parse(name: &str) -> Option<Self> {
@@ -193,10 +203,47 @@ impl Layout {
         }
     }
 
-    /// The overlay grid's tiles for `mask`, bottom first: one for the sides that join (two
-    /// when they face each other), then one per joined corner with neither side beside it.
+    /// The overlay grid's tiles for `mask`, bottom first. Going round the face, each run of
+    /// joined sides with joined corners between them is one piece; then each joined corner with
+    /// neither side beside it. Unlike OptiFine's overlay, a corner matters between two joined
+    /// sides: without it they are two pieces (the wiki's GIF of the layout).
     pub fn overlay_tiles(mask: u8) -> impl Iterator<Item = u8> {
-        overlay_tiles(mask).map(|i| OVERLAY_CELLS[i])
+        let mut out = [0; 4];
+        let mut n = 0;
+        let mut push = |tile| {
+            out[n] = tile;
+            n += 1;
+        };
+        let side = |i: usize| mask & CYCLE[i % 4].0 != 0;
+        // Side `i` joins the next one clockwise.
+        let linked = |i: usize| side(i) && side(i + 1) && mask & CYCLE[i % 4].1 != 0;
+        if mask == 0xff {
+            push(RING);
+        } else {
+            for start in (0..4).filter(|&i| side(i) && !linked(i + 3)) {
+                let mut len = 1;
+                while len < 4 && linked(start + len - 1) {
+                    len += 1;
+                }
+                match len {
+                    1 => push(EDGE[start]),
+                    2 => push(PAIR[start]),
+                    3 => push(TRIPLE[start]),
+                    // Every side, one corner open: the grid has no piece for it. Two three-side
+                    // pieces, overlapping on the middle two sides, keep every joined corner.
+                    _ => {
+                        push(TRIPLE[start]);
+                        push(TRIPLE[(start + 1) % 4]);
+                    }
+                }
+            }
+            for (i, &(s, corner)) in CYCLE.iter().enumerate() {
+                if mask & corner != 0 && mask & (s | CYCLE[(i + 1) % 4].0) == 0 {
+                    push(CORNER[i]);
+                }
+            }
+        }
+        out.into_iter().take(n)
     }
 }
 
@@ -320,16 +367,25 @@ mod tests {
         assert_eq!(cells(R), [6]);
         // Sand all round: the ring, (4, 1).
         assert_eq!(cells(0xff), [10]);
-        // Left and down with their corner: one L-shaped tile, (5, 0); the other pairs and
-        // the three-side tiles from the right half.
+        // Two sides and the corner between them: one L-shaped piece off the right half.
         assert_eq!(cells(L | D | DL), [5]);
-        assert_eq!(cells(R | D), [3]);
-        assert_eq!(cells(U | R), [15]);
-        assert_eq!(cells(U | L), [17]);
-        assert_eq!(cells(R | D | L), [4]);
-        assert_eq!(cells(U | R | D), [9]);
-        assert_eq!(cells(U | D | L), [11]);
-        assert_eq!(cells(U | R | L), [16]);
+        assert_eq!(cells(R | D | DR), [3]);
+        assert_eq!(cells(U | R | UR), [15]);
+        assert_eq!(cells(U | L | UL), [17]);
+        // Without the corner: two edge pieces.
+        assert_eq!(cells(R | D), [6, 1]);
+        // Three sides and both corners between them.
+        assert_eq!(cells(R | D | L | DR | DL), [4]);
+        assert_eq!(cells(U | R | D | UR | DR), [9]);
+        assert_eq!(cells(U | D | L | UL | DL), [11]);
+        assert_eq!(cells(U | R | L | UL | UR), [16]);
+        // The wiki's GIF: sand up, up-left, left and right, not up-right. The up-left piece,
+        // (5, 2), and the right edge, (0, 1).
+        assert_eq!(cells(U | UL | L | R), [6, 17]);
+        // Every side and no corner: four edges; every side but the top-left corner: the
+        // pieces for up-right-down and right-down-left.
+        assert_eq!(cells(U | R | D | L), [13, 6, 1, 8]);
+        assert_eq!(cells(0xff & !UL), [9, 4]);
         // A lone corner each.
         assert_eq!(cells(DL), [2]);
         assert_eq!(cells(UL), [14]);
