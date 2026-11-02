@@ -131,6 +131,9 @@ impl Meta {
 
     /// A `fusion` section (or a `sub_texture`).
     pub fn parse(json: &Json) -> Result<Self, String> {
+        if json.as_object().is_none() {
+            return Err("a texture's Fusion metadata that isn't an object".into());
+        }
         let base = Base {
             emissive: bool_field(json, "emissive")?.unwrap_or(false),
             render_type: choice(
@@ -399,6 +402,8 @@ mod tests {
             r#"{"fusion": {"type": "scrolling", "loop_pause": -1}}"#,
             r#"{"fusion": {"type": "connecting", "sub_texture": {"type": "random", "rows": 0}}}"#,
             r#"{"fusion": {"type": "glowing"}}"#,
+            r#"{"fusion": "connecting"}"#,
+            r#"{"fusion": {"type": "connecting", "sub_texture": "random"}}"#,
             r#"{"fusion": {"type": "connecting", "layout": "diagonal"}}"#,
             r#"{"fusion": {"type": "base", "emissive": "yes"}}"#,
             r#"{"fusion": {"type": "base", "render_type": "solid"}}"#,
