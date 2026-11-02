@@ -3115,6 +3115,16 @@ impl Game<'_> {
     pub(super) fn native_level_unload(&mut self, dimension: &str) {
         let _ = dimension;
     }
+    /// The server's difficulty changed, from `from` to `to` (`peaceful`,
+    /// `easy`, `normal`, `hard`; NeoForge's `DifficultyChangeEvent`). It is
+    /// vanilla's `MinecraftServer.setDifficulty`, which `/difficulty`, a
+    /// dedicated server's management and a test environment's difficulty all
+    /// go through, and it is told only when the difficulty is another one. It
+    /// only hears: the change has already happened. Server-side. API
+    /// @API:difficulty_changed@.
+    pub(super) fn native_difficulty_changed(&mut self, from: &str, to: &str) {
+        let _ = (from, to);
+    }
     /// Chunk `chunk` (`[x, z]`, in chunks) of `dimension` came into the world
     /// (NeoForge's `ChunkEvent.Load`): `new` when it was just generated, false
     /// when read from the save. A flat world's chunk that leaves before it's
