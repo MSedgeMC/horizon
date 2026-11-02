@@ -10454,6 +10454,7 @@ impl Game<'_> {
             let mut crafted = 0;
             while let Some((recipe, result)) = self.craft_recipe() {
                 let made = (result.item.clone(), result.count);
+                let taken = result.clone();
                 let cells = self.craft_size * self.craft_size;
                 let ingredients = self.craft_grid[..cells].to_vec();
                 let remainders = world_recipes!(self).remainders(
@@ -10494,6 +10495,10 @@ impl Game<'_> {
                     }
                 }
                 crafted += 1;
+                // `ResultSlot.onTake`: the recipe and the stack taken
+                // (native_item_crafted).
+                let player = self.native_acting_id();
+                self.native_item_crafted(player, &format!("minecraft:{recipe}"), &taken);
                 self.stats.add("crafted", &made.0, made.1 as i32);
                 self.award_crafted(&[(format!("minecraft:{recipe}"), ingredients)]);
                 if !shift || crafted >= 64 {
