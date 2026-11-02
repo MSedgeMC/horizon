@@ -26,13 +26,15 @@ import math
 import os
 import re
 import subprocess
-import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-import lab  # noqa: E402
-import perf_bench as pb  # noqa: E402
+try:
+    from . import lab
+    from . import perf_bench as pb
+except ImportError:
+    import lab
+    import perf_bench as pb
 
 WORK = lab.ROOT / ".local/pacing-bench"
 SCENARIOS = ["fly16", "ocean", "fly64", "teleport", "nether", "inventory"]
