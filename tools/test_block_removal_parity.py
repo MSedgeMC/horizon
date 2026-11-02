@@ -6,8 +6,10 @@ shelf, shulker box or another block entity holder at the origin holds random
 contents; the case then replaces it with `Level.setBlock` (another block, the
 same block in another state, with or without UPDATE_SKIP_BLOCK_ENTITY_SIDEEFFECTS),
 destroys it with `Level.destroyBlock` (with or without drops), removes it with
-`Level.removeBlock`, or a survival player mines it (`ServerPlayerGameMode.destroyBlock`,
-holding a tool or nothing, #844). Vanilla runs over the headless level of the dispenser oracle
+`Level.removeBlock`, or a survival or Creative player mines it
+(`ServerPlayerGameMode.destroyBlock`, holding a tool or nothing, #844: a Creative
+player's break still hands back a filled shulker box, `ShulkerBoxBlock.playerWillDestroy`).
+Vanilla runs over the headless level of the dispenser oracle
 (`VanillaDispenserOracle`, "remove" cases), which replays `LevelChunk.setBlockState`'s
 `BlockEntity.preRemoveSideEffects`; Horizon runs its game glue in a headless game
 (`HORIZON_DISPENSE_FIXTURE`). Both print the block changes, the contents left,
@@ -143,9 +145,10 @@ def cases(facts, count, seed, only):
         elif roll < 0.92:
             op = {'op': 'remove'}
         else:
-            # ServerPlayerGameMode.destroyBlock: a survival player mines it (#844). The tool comes
-            # from the roll, not another draw, so the cases after this one stay the same.
-            op = {'op': 'mine', 'item': TOOLS[int(roll * 1000) % len(TOOLS)]}
+            # ServerPlayerGameMode.destroyBlock: a survival player mines it (#844), a Creative one
+            # above 0.96 (which keeps the shulker box it cannot drop). The tool and the game mode
+            # come from the roll, not another draw, so the cases after this one stay the same.
+            op = {'op': 'mine', 'item': TOOLS[int(roll * 1000) % len(TOOLS)], 'creative': roll > 0.96}
         case = {**h.environment(rng), 'mode': 'remove', 'pos': [0, 0, 0], 'cells': cells, 'items': items, 'remove': op}
         case.pop('raining', None)
         case.pop('thundering', None)
