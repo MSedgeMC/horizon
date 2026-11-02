@@ -19,7 +19,7 @@ StringTagVisitor.visitIntArray	inline	crates/horizon-client-core/src/snbt.rs::vi
 StringTagVisitor.visitLongArray	inline	crates/horizon-client-core/src/snbt.rs::visit	compact [L;..L] form
 StringTagVisitor.visitList	inline	crates/horizon-client-core/src/snbt.rs::visit	compact list form
 StringTagVisitor.visitCompound	inline	crates/horizon-client-core/src/snbt.rs::visit	compact form; keys sorted
-StringTagVisitor.handleKeyEscape	port	crates/horizon-client-core/src/snbt.rs::unquoted_key	decides bare or quoted key; quote_and_escape does the quoting
+StringTagVisitor.handleKeyEscape	inline	crates/horizon-world/src/snbt_text.rs::quote_and_escape	quotes a compound key only when it needs it, escaping what a bare key cannot hold; the pretty printer in horizon-client-core/src/snbt.rs calls it for every key
 Tag.acceptAsRoot	skip:java		streaming visitor entry point; Horizon reads whole trees
 Tag.asBoolean	port	crates/horizon-world/src/datafix/dynamic.rs::as_bool_opt	non-zero number is true
 TagParser.castToCompoundOrThrow	inline	crates/horizon-command/src/snbt.rs::parse_compound_argument	expected-compound error
