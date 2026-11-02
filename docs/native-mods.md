@@ -1274,6 +1274,12 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   `native_player`, `native_give_items` and the other helpers reach them. A respawn at an anchor in another dimension, or
   at the world spawn's free column, may still move them on a later tick, once that level has loaded round them; the
   End-exit respawn (after the credits) does not fire it.
+- **`native_player_fish(player, name, state, cancel)`**: a player's fishing rod, on a server: `state` 0 the cast, 1 a fish
+  biting, 2 the reel-in of a bite (the catch), 3 the reel-in with nothing on the line, 4 the reel-in of a bobber hooked
+  to an entity or item. Set `cancel` and nothing is thrown (0), the fish gets away and the wait starts over (1), or the
+  bobber stays out with no wear on the rod (2 to 4). The bobber ending by itself (too far, rod put away, owner dead) is
+  not heard, nor is the host of a LAN world's rod. The player's state is swapped in, so `native_acting_player`,
+  `native_tell` and the item helpers reach them.
 - **`native_perform_command(player, command, ran)`**: a player typed a registered command (without its slash) and
   their level allows it, whether the world allows commands or not. The mod parses the line and sets `ran`. The
   player's state is swapped in for the call, as for their other actions, so `native_player` reads them; a
