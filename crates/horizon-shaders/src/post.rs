@@ -385,6 +385,7 @@ pub struct Post {
     pub entities_translucent: Option<PostProgram>,
     /// What draws particles.
     pub particles: Option<PostProgram>,
+    pub damaged_block: Option<PostProgram>,
     /// What draws the game's clouds.
     pub clouds: Option<PostProgram>,
     /// What draws rain and snow, after deferred.
@@ -482,6 +483,7 @@ pub fn load_post(
         block: None,
         entities_translucent: None,
         particles: None,
+        damaged_block: None,
         clouds: None,
         weather: None,
         hand: None,
@@ -609,6 +611,19 @@ pub fn load_post(
         ),
         None => (None, None),
     };
+    let damaged_block = inputs
+        .entities
+        .as_ref()
+        .and_then(|i| gbuffers(&["gbuffers_damagedblock"], Group::Gbuffers, i))
+        .map(|mut p| {
+            p.blend = blend(properties, &p.name).unwrap_or(Some([
+                Factor::DstColor,
+                Factor::SrcColor,
+                Factor::One,
+                Factor::Zero,
+            ]));
+            p
+        });
     // Translucent entities and particles blend (OQ-23). Particles keep vanilla's alpha cut at
     // 0.1; translucent entities lose only fully transparent texels (a shadow fades out).
     let translucent =
@@ -682,6 +697,7 @@ pub fn load_post(
     loader.post.block = block;
     loader.post.entities_translucent = entities_translucent;
     loader.post.particles = particles;
+    loader.post.damaged_block = damaged_block;
     loader.post.clouds = clouds;
     loader.post.weather = weather;
     loader.post.hand = hand;
@@ -723,6 +739,7 @@ fn load_shadow(
         &post.block,
         &post.entities_translucent,
         &post.particles,
+        &post.damaged_block,
         &post.clouds,
         &post.weather,
         &post.hand,
