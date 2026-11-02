@@ -202,6 +202,8 @@ pub struct ItemRenderState {
     pub layers: Vec<LayerRender>,
     pub oversized_in_gui: bool,
     pub animated: bool,
+    /// The OptiFine CIT glint layers the stack draws in the GUI (`cit_glint`).
+    pub cit_glint: Option<Arc<crate::cit_glint::StackGlint>>,
     /// HDR output's tier of an item that glows (`dynamic_light::Luminance::hdr_tier`).
     pub hdr_tier: u8,
     /// In HDR output, the block light of an item that glows: its block's, as a placed one has
@@ -768,6 +770,7 @@ impl ItemRenderer {
             layers,
             oversized_in_gui: resolved.oversized_in_gui,
             animated,
+            cit_glint: None,
             hdr_tier: 0,
             hdr_light: 0,
         }
