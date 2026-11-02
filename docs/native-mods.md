@@ -1289,6 +1289,11 @@ For mods that run where the world is simulated: a dedicated server, a LAN host, 
   `native_broadcast(text)`, to every player and the server's
   log; `native_feedback(text)`, the command's answer to the player whose command it is; `native_world_dir()`, the
   open world's folder, where a server mod keeps its data in a folder of its own so the world's backups carry it.
+- **`native_item_damaged(player, name, item, amount, cancel)`**: an item of a player is about to lose durability, on a
+  server (`ItemStack.hurtAndBreak`: tools, armour, shield, rod, elytra), after Unbreaking has had its say. Change
+  `amount` (0 leaves the item whole) or set `cancel` for no wear. Not heard for a creative player or when Unbreaking
+  saved the item, nor for a mob's armour, a dispenser's tool or the host of a LAN world. The player's state is swapped
+  in, so `native_acting_player`, `native_tell` and the item helpers reach them.
 - Items (API 9), of the acting player (inside `native_perform_command`, whose player is swapped in): `native_held()`
   (the main hand's item, count, and whether it is plain), `native_count_items(item)`, `native_carried_items()`,
   `native_take_items(item, count)` (the main hand first, then as `Inventory.add` orders slots),
