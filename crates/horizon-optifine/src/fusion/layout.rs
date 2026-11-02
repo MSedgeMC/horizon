@@ -382,8 +382,9 @@ mod tests {
         // The wiki's GIF: sand up, up-left, left and right, not up-right. The up-left piece,
         // (5, 2), and the right edge, (0, 1).
         assert_eq!(cells(U | UL | L | R), [6, 17]);
-        // Every side and no corner: four edges; every side but the top-left corner: the
-        // pieces for up-right-down and right-down-left.
+        // Every side and no corner: four edges. Every side but the top-left corner: no
+        // template or GIF shows it, so this pins `overlay_tiles`' own choice, the pieces for
+        // up-right-down and right-down-left.
         assert_eq!(cells(U | R | D | L), [13, 6, 1, 8]);
         assert_eq!(cells(0xff & !UL), [9, 4]);
         // A lone corner each.
