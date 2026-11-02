@@ -1341,11 +1341,16 @@ fn build_pass(
         } else if let Some(&buffer) = p.buffers.get(l) {
             let format = formats[buffer as usize];
             let mut state = target(format);
-            if let (Some(t), Some(b)) = (&mut state, p.blend)
-                && format
-                    .guaranteed_format_features(features)
-                    .flags
-                    .contains(wgpu::TextureFormatFeatureFlags::BLENDABLE)
+            if let (Some(t), Some(b)) = (
+                &mut state,
+                p.buffer_blends
+                    .iter()
+                    .find(|(n, _)| *n == buffer)
+                    .map_or(p.blend, |(_, b)| *b),
+            ) && format
+                .guaranteed_format_features(features)
+                .flags
+                .contains(wgpu::TextureFormatFeatureFlags::BLENDABLE)
             {
                 t.blend = Some(blend_state(b));
             }
