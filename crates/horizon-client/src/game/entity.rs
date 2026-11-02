@@ -114,14 +114,22 @@ pub(crate) use define_entity_handles;
 
 entity_lists!(define_entity_handles,);
 
+macro_rules! entity_borrow {
+    (shared, $place:expr) => {
+        &$place
+    };
+    (exclusive, $place:expr) => {
+        &mut $place
+    };
+}
+pub(crate) use entity_borrow;
+
 macro_rules! match_entity {
-    (($binding:pat, $game:expr, $handle:expr, $body:expr)
+    (($borrow:ident, $entity:ident, $game:expr, $handle:expr, $body:expr)
      $($kind:ident: $($list:ident).+,)*) => {
         match $handle {
             $($crate::game::entity::EntityHandle::$kind(i) => {
-                // `ref` or `ref mut`, chosen by the caller.
-                #[allow(clippy::toplevel_ref_arg)]
-                let $binding = $game$(.$list)+[i];
+                let $entity = $crate::game::entity::entity_borrow!($borrow, $game$(.$list)+[i]);
                 $body
             })*
         }
@@ -133,7 +141,7 @@ pub(crate) use match_entity;
 /// one match, each arm compiled for its kind, so nothing goes through a vtable.
 macro_rules! with_entity {
     ($game:expr, $handle:expr, $entity:ident => $body:expr) => {
-        $crate::game::entity::entity_lists!(match_entity, ref $entity, $game, $handle, $body)
+        $crate::game::entity::entity_lists!(match_entity, shared, $entity, $game, $handle, $body)
     };
 }
 pub(super) use with_entity;
@@ -141,7 +149,7 @@ pub(super) use with_entity;
 /// [`with_entity`], with the entity mutable.
 macro_rules! with_entity_mut {
     ($game:expr, $handle:expr, $entity:ident => $body:expr) => {
-        $crate::game::entity::entity_lists!(match_entity, ref mut $entity, $game, $handle, $body)
+        $crate::game::entity::entity_lists!(match_entity, exclusive, $entity, $game, $handle, $body)
     };
 }
 pub(super) use with_entity_mut;
