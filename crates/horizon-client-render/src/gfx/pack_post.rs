@@ -408,6 +408,7 @@ pub(super) struct World<'a> {
     pub block_ids: &'a [i32],
     /// The atlas of the sun and moon's sprites.
     pub celestial: Option<wgpu::TextureView>,
+    pub gui_size: [u32; 2],
     /// Set 1 of the clouds' draw: their offset and palette.
     pub clouds: Option<&'a wgpu::BindGroupLayout>,
     /// The game can hand its rain and snow to the pack.
@@ -510,6 +511,7 @@ pub struct PackPost {
     /// with the page buffer it was made for.
     block_ids: Option<(wgpu::BindGroupLayout, wgpu::Buffer)>,
     page_groups: HashMap<u32, (wgpu::Buffer, wgpu::BindGroup)>,
+    gui_size: [u32; 2],
     /// GPU time of each pass, while the renderer asks for it (`pack_timing.rs`).
     pub timing: Option<super::pack_timing::PassTiming>,
     /// `depthtex0` at the screen's centre, read back for `centerDepthSmooth`.
@@ -1438,7 +1440,15 @@ fn build_pass(
                 depth_write_enabled: Some(g.depth_write),
                 depth_compare: Some(wgpu::CompareFunction::LessEqual),
                 stencil: Default::default(),
-                bias: Default::default(),
+                bias: if p.name == "gbuffers_damagedblock" {
+                    wgpu::DepthBiasState {
+                        constant: -10,
+                        slope_scale: -1.0,
+                        clamp: 0.0,
+                    }
+                } else {
+                    Default::default()
+                },
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
@@ -1898,8 +1908,15 @@ impl PackPost {
             post.block,
             post.entities_translucent,
             post.particles,
+            post.damaged_block,
         ];
-        let late = [false, false, post.translucent_late, post.particles_late];
+        let late = [
+            false,
+            false,
+            post.translucent_late,
+            post.particles_late,
+            false,
+        ];
         let shadow_only = (post.shadow_only_player, post.shadow_only_lit_blocks);
         let shadow_programs = [post.shadow_entities, post.shadow_block];
         let entity_vertices = (programs.iter().chain(&shadow_programs))
@@ -1915,8 +1932,21 @@ impl PackPost {
             cull: false,
         });
         let entity_passes = programs.map(|p| {
-            p.zip(entity_geometry.as_ref())
-                .and_then(|(p, g)| build(p, Some(g)))
+            p.zip(entity_geometry.as_ref()).and_then(|(p, g)| {
+                if p.name == "gbuffers_damagedblock" {
+                    let decal = Geometry {
+                        buffers: g.buffers,
+                        table: g.table,
+                        depth_write: false,
+                        atlas: g.atlas.clone(),
+                        ids: g.ids,
+                        cull: false,
+                    };
+                    build(p, Some(&decal))
+                } else {
+                    build(p, Some(g))
+                }
+            })
         });
         let shadow_entities = shadow_programs.map(|p| {
             p.zip(entity_geometry.as_ref())
@@ -2248,6 +2278,7 @@ impl PackPost {
             draws,
             block_ids,
             page_groups: HashMap::new(),
+            gui_size: world.gui_size,
             timing: None,
             center_depth: None,
             custom,
@@ -2873,6 +2904,7 @@ impl PackPost {
         queue: &wgpu::Queue,
         entities: &[super::Vertex],
         spans: &[super::pack_draw::EntitySpan],
+        crumbling: [f32; 4],
         rest: &mut Vec<super::Vertex>,
     ) {
         let shadow = self.shadow_casters();
@@ -2889,6 +2921,7 @@ impl PackPost {
             entities,
             spans,
             drawn,
+            (crumbling, self.gui_size),
             shadow,
             rest,
         );
