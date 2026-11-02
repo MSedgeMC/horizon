@@ -3991,12 +3991,19 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         }
     }
     /// 2D spatial arrow key navigation across enabled buttons.
-    pub fn arrow_key(&mut self, key: winit::keyboard::KeyCode, size: (f32, f32)) {
+    pub fn arrow_key(&mut self, key: winit::keyboard::KeyCode, size: (f32, f32), shift: bool) {
         use winit::keyboard::KeyCode;
         if self.rules.get_mut().is_some() {
             return;
         }
         if self.has_caret_field() {
+            return;
+        }
+        if self.focused_button.is_none()
+            && let Mode::Multiplayer(screen) = &mut self.mode
+            && matches!(key, KeyCode::ArrowUp | KeyCode::ArrowDown)
+            && screen.arrow(key == KeyCode::ArrowUp, shift, size, &self.saves)
+        {
             return;
         }
         if self.list_focused()

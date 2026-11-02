@@ -1633,6 +1633,60 @@ impl Screen {
         Outcome::None
     }
     /// The mouse wheel over the server list (`scrollRate`: half a row).
+    /// Up or Down on the list (`AbstractSelectionList.nextEntry`): the next
+    /// server or LAN game, the first (Down) or last (Up) with none selected, and
+    /// none past the ends. With Shift a saved server swaps with its neighbour
+    /// (`OnlineServerEntry.keyPressed`) and stays selected. False when the screen
+    /// is not the list or has no entries.
+    pub fn arrow(&mut self, up: bool, shift: bool, size: (f32, f32), saves: &Path) -> bool {
+        let Self::List {
+            servers,
+            selected,
+            lan,
+            scroll,
+            ..
+        } = self
+        else {
+            return false;
+        };
+        let total = servers.len() + lan.games().len();
+        if total == 0 {
+            return false;
+        }
+        let next = match *selected {
+            Some(k) if shift => {
+                // A LAN game has no place to move to.
+                let to = if up { k.checked_sub(1) } else { Some(k + 1) };
+                if let Some(to) = to.filter(|&to| k < servers.len() && to < servers.len()) {
+                    servers.swap(k, to);
+                    save_servers(&servers_file(saves), servers);
+                    Some(to)
+                } else {
+                    Some(k)
+                }
+            }
+            Some(k) if up => Some(k.saturating_sub(1)),
+            Some(k) => Some((k + 1).min(total - 1)),
+            None if shift => None,
+            None => Some(if up { total - 1 } else { 0 }),
+        };
+        *selected = next;
+        if let Some(k) = next {
+            // scrollToEntry: the row, with the LAN header between the servers
+            // and the games, into view.
+            let row = if k < servers.len() { k } else { k + 1 };
+            let (top, bottom, _) = list_area(size.0.ceil(), size.1.ceil());
+            let content = content_height(servers.len(), lan.games().len());
+            let (row_top, view) = (2.0 + row as f32 * ROW_HEIGHT, bottom - top);
+            if row_top < scroll.amount {
+                scroll.amount = row_top;
+            } else if row_top + ROW_HEIGHT > scroll.amount + view {
+                scroll.amount = row_top + ROW_HEIGHT - view;
+            }
+            scroll.clamp(top, bottom, content);
+        }
+        true
+    }
     pub fn wheel(&mut self, delta: f32, cursor: (f32, f32), size: (f32, f32)) {
         if let Self::List {
             servers,
@@ -2222,6 +2276,55 @@ mod tests {
         offered_before(&[ServerEntry::new("Test", "horizon.bunchy7s.dev:25570")]);
         add_official_server(&dir).unwrap();
         assert_eq!(ips(), ["horizon.bunchy7s.dev:25570"]);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn arrow_keys_select_servers_and_shift_moves_them() {
+        let dir = std::env::temp_dir().join(format!("horizon-mp-keys-{}", std::process::id()));
+        let saves = dir.join("saves");
+        std::fs::create_dir_all(&saves).unwrap();
+        let file = servers_file(&saves);
+        let list: Vec<ServerEntry> = ["a", "b", "c"]
+            .iter()
+            .map(|n| ServerEntry::new(n, "127.0.0.1:2"))
+            .collect();
+        servers::save(&file, &list).unwrap();
+        let mut screen = Screen::list(&saves);
+        let size = (427.0, 240.0);
+        let state = |screen: &Screen| match screen {
+            Screen::List {
+                servers, selected, ..
+            } => (
+                servers.iter().map(|s| s.name.clone()).collect::<Vec<_>>(),
+                *selected,
+            ),
+            _ => unreachable!(),
+        };
+        let abc = vec!["a".to_owned(), "b".into(), "c".into()];
+        // None selected: Down takes the first, as vanilla's nextEntry does.
+        assert!(screen.arrow(false, false, size, &saves));
+        assert_eq!(state(&screen), (abc.clone(), Some(0)));
+        // Up at the top stays; Down walks; the last stays.
+        screen.arrow(true, false, size, &saves);
+        assert_eq!(state(&screen).1, Some(0));
+        screen.arrow(false, false, size, &saves);
+        screen.arrow(false, false, size, &saves);
+        screen.arrow(false, false, size, &saves);
+        assert_eq!(state(&screen).1, Some(2));
+        // Shift+Up moves "c" above "b", keeps it selected and saves the order.
+        screen.arrow(true, true, size, &saves);
+        assert_eq!(
+            state(&screen),
+            (vec!["a".to_owned(), "c".into(), "b".into()], Some(1))
+        );
+        let saved: Vec<String> = servers::load(&file).into_iter().map(|s| s.name).collect();
+        assert_eq!(saved, ["a", "c", "b"]);
+        // Nothing moves past the first server.
+        screen.arrow(true, true, size, &saves);
+        screen.arrow(true, true, size, &saves);
+        assert_eq!(state(&screen).1, Some(0));
+        assert_eq!(state(&screen).0[0], "c");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

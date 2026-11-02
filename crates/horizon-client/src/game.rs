@@ -17640,8 +17640,9 @@ impl Game<'_> {
                                 | KeyCode::ArrowUp
                                 | KeyCode::ArrowDown),
                             ) => {
+                                let shift = self.has_shift_down();
                                 if let Some(t) = self.title.as_mut() {
-                                    t.arrow_key(key, (w, h));
+                                    t.arrow_key(key, (w, h), shift);
                                 }
                             }
                             PhysicalKey::Code(KeyCode::Backspace) => self.title_edit(None, true),
