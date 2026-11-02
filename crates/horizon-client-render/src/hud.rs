@@ -247,10 +247,10 @@ fn wrap_border((name, w, h, data): &PackedImage) -> PackedImage {
     }
     (name.clone(), bw, bh, out)
 }
-/// The textures the enabled packs' Custom Item Textures item rules draw, theirs and their JSON
-/// models', under their `cit_assets` ids, beyond those already packed; with their flags and
-/// whether they animate. They are item textures, so an animated strip keeps its first frame.
-/// None without `optifine/cit` rules.
+/// The textures the enabled packs' Custom Item Textures rules draw, beyond those already packed:
+/// item rules' textures and their JSON models', armour and elytra rules' textures, under their
+/// `cit_assets` ids, with their flags and whether they animate. An animated strip keeps its
+/// first frame; a still texture is packed whole. None without `optifine/cit` rules.
 fn cit_sprites(
     root: &Path,
     packed: &[PackedImage],
@@ -261,6 +261,7 @@ fn cit_sprites(
     if !rules.is_empty() {
         let models = crate::cit_assets::load_models(root, &rules);
         ids.extend(crate::cit_assets::model_sprites(&models));
+        ids.extend(crate::cit_armor::armor_sprites(&rules));
     }
     let ids: Vec<String> = ids
         .into_iter()
@@ -2887,7 +2888,7 @@ mod tests {
         assert_eq!(animations[0].1.frame_count(), 3);
     }
     #[test]
-    fn a_texture_only_an_armor_rule_names_is_not_packed() {
+    fn an_armor_rules_texture_is_packed_too() {
         let root = cit_root(
             "armor",
             &[(
@@ -2897,11 +2898,15 @@ mod tests {
         );
         let cit = root.join("assets/minecraft/optifine/cit");
         write_strip(&cit.join("a.png"), 64, 32, &[[1, 2, 3, 255]], None);
-        // The rule loads; only its kind keeps the texture out.
-        assert_eq!(crate::cit::load_rules(&root).len(), 1);
+        let rules = crate::cit::load_rules(&root);
+        assert_eq!(rules.len(), 1);
         let atlas = HudAtlas::build(&root).unwrap();
         let _ = fs::remove_dir_all(&root);
-        assert!(!atlas.sprites.keys().any(|k| k.starts_with("horizon_cit:")));
+        // Worn armour draws from the same atlas, under the name the layer looks up.
+        let rect = atlas.sprites["horizon_cit:minecraft/optifine/cit/a"];
+        assert_eq!(rect.texels((atlas.width, atlas.height)), (64, 32));
+        let layer = crate::cit_armor::layer_sprite(&rules[0], "minecraft:iron", false, false);
+        assert!(atlas.sprites.contains_key(&layer.unwrap()));
     }
     #[test]
     fn named_cit_textures_pack_once_and_bad_ones_are_skipped() {

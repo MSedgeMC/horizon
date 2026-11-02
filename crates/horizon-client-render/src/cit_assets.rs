@@ -58,12 +58,11 @@ pub fn resource(id: &str, ext: &str) -> Option<String> {
     horizon_optifine::paths::valid(rest).then(|| format!("assets/{rest}.{ext}"))
 }
 
-/// Sprite ids the item rules draw: `Kind::Item` rules' `texture` and `texture.<name>` values.
-/// (Textures named by CIT JSON models are [`model_sprites`].) A path no id can name is skipped
-/// with a warning.
-pub fn item_sprites(rules: &[Rule]) -> BTreeSet<String> {
+/// Sprite ids the rules whose kind passes `keep` draw: their `texture` and `texture.<name>`
+/// values. A path no id can name is skipped with a warning.
+pub fn rule_sprites(rules: &[Rule], keep: impl Fn(Kind) -> bool) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
-    for rule in rules.iter().filter(|r| r.kind == Kind::Item) {
+    for rule in rules.iter().filter(|r| keep(r.kind)) {
         let named = rule.textures.iter().map(|(_, path)| path);
         for path in rule.texture.iter().chain(named) {
             match sprite_id(path) {
@@ -78,6 +77,12 @@ pub fn item_sprites(rules: &[Rule]) -> BTreeSet<String> {
         }
     }
     out
+}
+
+/// Sprite ids the item rules draw (`Kind::Item`, see [`rule_sprites`]). Textures named by CIT
+/// JSON models are [`model_sprites`].
+pub fn item_sprites(rules: &[Rule]) -> BTreeSet<String> {
+    rule_sprites(rules, |kind| kind == Kind::Item)
 }
 
 /// The resource path a model value `./x` (or `./../x`, `../x`) names beside the file at `file`,
