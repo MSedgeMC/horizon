@@ -553,7 +553,7 @@ mod tests {
 /// sprite over each model face. Pack geometry uses ordinary atlas UVs, not Horizon's overlay codes.
 fn project_cracks(vertices: &mut [Vertex], sprite: [f32; 4], atlas: [u32; 2]) {
     let dims = [atlas[0].max(1) as f32, atlas[1].max(1) as f32];
-    for quad in vertices.chunks_exact_mut(4) {
+    for quad in vertices.as_chunks_mut::<4>().0 {
         let origin = [
             (quad[0].light & 65535) as f32 / 65535.0,
             (quad[0].light >> 16) as f32 / 65535.0,
