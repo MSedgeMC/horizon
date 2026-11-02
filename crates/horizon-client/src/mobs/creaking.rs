@@ -393,3 +393,9 @@ pub fn anim(m: &Mob, s: &State, p: &mut Poses, animations: &HashMap<String, Anim
 pub fn is_creaking(m: &Mob) -> bool {
     m.species() == Species::Creaking
 }
+/// `Creaking.canUsePortal(boolean)`: `!isHeartBound() && super.canUsePortal`.
+/// A creaking the heart holds stays in the world the heart is in; a free one
+/// travels like any other monster.
+pub fn can_use_portal(m: &Mob) -> bool {
+    !heart_bound(m)
+}
