@@ -7085,6 +7085,11 @@ impl Game<'_> {
             self.tick_riding(keys)?;
         }
         let riding = self.riding.is_some();
+        // A seat that is given up is taken again as a new one: the next mount
+        // snaps the camera even when it is the same vehicle.
+        if !riding {
+            self.posed_rider = None;
+        }
         let entity_collisions = self.player_entity_collisions();
         let spin_targets = self.spin_targets();
         let sprint_window = self.settings.sprint_window;
