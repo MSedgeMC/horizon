@@ -87,7 +87,7 @@ impl StartupMenu {
         Ok(menu)
     }
 
-    pub(super) fn set_root(&mut self, root: PathBuf, settings: &Settings) {
+    pub(super) fn set_root(&mut self, root: PathBuf, settings: &Settings, player_name: String) {
         horizon_client::ui::load_metadata(&root);
         horizon_client::lang::set(horizon_client::lang::Language::load(
             &[&root],
@@ -101,6 +101,7 @@ impl StartupMenu {
             );
             title.last_server = settings.file.string("lastServer");
             title.skip_multiplayer_warning = settings.file.bool("skipMultiplayerWarning");
+            title.player_name = player_name;
             // Gui.addInitialScreens: the accessibility onboarding comes first.
             if settings.file.bool("onboardAccessibility") {
                 title.start_onboarding();
@@ -660,6 +661,13 @@ impl Loading {
             Action::CopyText(text) => {
                 use horizon_client::clipboard::Clipboard;
                 self.menu.clipboard.set(&text);
+            }
+            // The title screen's player name: kept for the next launch and used
+            // by the entry the player picks next.
+            Action::PlayerName(name) => {
+                if let Some(o) = self.options.as_mut() {
+                    o.set_player_name(name);
+                }
             }
             Action::DataPacks { dir, selected } => {
                 let resources = self.vanilla_root.clone();

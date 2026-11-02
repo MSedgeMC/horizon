@@ -510,6 +510,23 @@ impl Options {
             )
         })
     }
+    /// A name the player chose on the title screen: kept beside options.txt for
+    /// the next launch and used by every connection from here on, replacing an
+    /// earlier `--name` for this run. A name the game refuses changes nothing.
+    fn set_player_name(&mut self, name: String) {
+        if !horizon_client::offline_name::is_valid(&name) {
+            return;
+        }
+        let dir = horizon_client::logging::player_dir();
+        if let Err(e) = horizon_client::offline_name::store(&dir, &name) {
+            // A read-only game folder: the name still applies to this run.
+            log::warn!(
+                "Horizon: could not keep the player name in {}: {e}",
+                dir.display()
+            );
+        }
+        self.player_name = Some(name);
+    }
     /// The command line, then what it asks of the process: the game folder, the account.
     /// A bad command line is a [`launch_api::UsageError`] (exit code 2, no crash report).
     fn read() -> Result<Option<Self>> {
@@ -11745,6 +11762,9 @@ impl Game<'_> {
                 self.open_options_at(true, horizon_client::options_ui::Page::Language)
             }
             Action::Sounds => self.open_options_at(true, horizon_client::options_ui::Page::Sound),
+            // The title screen's player name: kept for the next launch and used
+            // by the next connection (the screen already shows it).
+            Action::PlayerName(name) => self.options.set_player_name(name),
             Action::Credits => {
                 self.open_options_at(true, horizon_client::options_ui::Page::Credits)
             }
@@ -20344,7 +20364,11 @@ impl Loading {
             "Horizon: loading the title artwork after {} ms",
             self.started.elapsed().as_millis()
         );
-        self.menu.set_root(root, &self.settings);
+        let name = self
+            .options
+            .as_ref()
+            .map_or_else(|| "Player".to_owned(), Options::player_name);
+        self.menu.set_root(root, &self.settings, name);
         self.gui = Some(gui);
         self.title_drawn = false;
         horizon_client::ui_theme::reset_atlas();

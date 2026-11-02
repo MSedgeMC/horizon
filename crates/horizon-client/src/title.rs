@@ -262,6 +262,13 @@ pub enum Alert {
 #[derive(Clone, Debug)]
 pub enum Mode {
     Main,
+    /// Horizon's own: the offline name the next connection joins with
+    /// (`horizon-player.txt`), edited under the title screen's menu.
+    PlayerName {
+        name: String,
+        /// The entered name is not one the game accepts (`offline_name::is_valid`).
+        error: bool,
+    },
     Select {
         worlds: Vec<WorldEntry>,
         selected: Option<usize>,
@@ -366,6 +373,8 @@ pub enum Action {
     Options,
     Accessibility,
     Language,
+    /// A new offline player name, for the next connection and the next launch.
+    PlayerName(String),
     /// AccessibilityOnboardingScreen's Music & Sounds button.
     Sounds,
     /// The title's bottom text (`PlainTextButton`): `CreditsAndAttributionScreen`.
@@ -400,6 +409,9 @@ pub struct Title {
     pub last_server: String,
     /// `skipMultiplayerWarning`, synchronized with `options.txt` the same way.
     pub skip_multiplayer_warning: bool,
+    /// The offline name a connection joins with (`horizon-player.txt`): the game
+    /// sets it from its options, and the title screen shows and edits it.
+    pub player_name: String,
     pub saves: PathBuf,
     /// The prepared resource root: the flat preset list and block registry.
     resources: PathBuf,
@@ -415,6 +427,8 @@ pub struct Title {
     warning_check: Cell<[f32; 4]>,
     /// The bottom notice's `PlainTextButton` as last drawn: x, y, width, height.
     credits_button: Cell<[f32; 4]>,
+    /// The bottom-left player name's `PlainTextButton` as last drawn: x, y, width, height.
+    player_button: Cell<[f32; 4]>,
     /// `Minecraft.allowsMultiplayer()` once the account's attributes are known.
     pub allows_multiplayer: bool,
     /// The ban screens `Gui.addInitialScreens` queued, shown once the title is up.
@@ -701,10 +715,14 @@ fn rolls_user_splash(text: &str, seed: u64, date: (u32, u32)) -> bool {
 
 impl Title {
     /// Names the player for the `<NAME> IS YOU` splash; `name` is only asked for when that splash was rolled.
+    /// Names the player for the `<NAME> IS YOU` splash, and gives the title the
+    /// name it shows and edits (the one a connection joins with).
     pub fn with_user(mut self, name: impl FnOnce() -> String) -> Self {
+        let name = name();
         if self.splash_you {
-            self.splash = Some(format!("{} IS YOU", name().to_uppercase()));
+            self.splash = Some(format!("{} IS YOU", name.to_uppercase()));
         }
+        self.player_name = name;
         self
     }
     pub fn new(saves: PathBuf, resources: &Path) -> Self {
@@ -728,6 +746,7 @@ impl Title {
             mode,
             last_server: String::new(),
             skip_multiplayer_warning: false,
+            player_name: String::new(),
             saves,
             resources: resources.to_owned(),
             started: now,
@@ -739,6 +758,7 @@ impl Title {
             message_lines: Cell::new(1),
             warning_check: Cell::new([0.0; 4]),
             credits_button: Cell::new([0.0; 4]),
+            player_button: Cell::new([0.0; 4]),
             allows_multiplayer: true,
             ban_queue: Default::default(),
             ban_buttons: Cell::new([(0.0, 0.0); 3]),
@@ -1736,6 +1756,26 @@ impl Title {
                 }
                 buttons
             }
+            // Horizon's own screen: Done saves the name (when the game accepts
+            // it), Cancel goes back; both are ConfirmScreen-sized.
+            Mode::PlayerName { .. } => vec![
+                b(
+                    (w / 2.0).floor() - 154.0,
+                    h - 52.0,
+                    150.0,
+                    &lang::get_or("gui.done", "Done"),
+                    true,
+                    60,
+                ),
+                b(
+                    (w / 2.0).floor() + 4.0,
+                    h - 52.0,
+                    150.0,
+                    &lang::get_or("gui.cancel", "Cancel"),
+                    true,
+                    61,
+                ),
+            ],
             Mode::Select { worlds, selected } => {
                 let world = selected.and_then(|i| worlds.get(i));
                 // SelectWorldScreen.updateButtonStatus: primaryActionMessage, canEdit, canRecreate.
@@ -2302,6 +2342,11 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     ),
                 ),
             ),
+            // Horizon's own screen: its title, as an accessibility screen reads it.
+            Mode::PlayerName { .. } => ScreenInfo::new(
+                "player_name",
+                get("horizon.playerName.title", "Player Name"),
+            ),
             Mode::Multiplayer(_) => return None,
         };
         Some(info)
@@ -2431,6 +2476,23 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 }
                 let version = format!("Horizon {} (Rust)", horizon_core::VANILLA_VERSION);
                 batch.text(atlas, &version, 2.0, h - 10.0, u32::MAX, true);
+                // Horizon's own line above it: the offline name the next
+                // connection joins with, a `PlainTextButton` that edits it.
+                let player = translate("horizon.playerName", "Player: %s", &[&self.player_name]);
+                let pw = HudBatch::text_width(atlas, &player).ceil();
+                let rect = [2.0, h - 20.0, pw, 10.0];
+                self.player_button.set(rect);
+                crate::widgets::record(&player, rect, true);
+                let over = cursor.0 >= rect[0]
+                    && cursor.0 < rect[0] + rect[2]
+                    && cursor.1 >= rect[1]
+                    && cursor.1 < rect[1] + rect[3];
+                crate::widgets::widget_cursor(over, true);
+                let mut text = Text::literal(&player);
+                if over {
+                    text = text.underlined();
+                }
+                batch.text_styled(atlas, &text, rect[0], rect[1], u32::MAX, true);
                 // A nightly names its build in the top-left corner, the one spot no button reaches at any GUI
                 // scale, so screenshots and reports say which build they come from.
                 if let Some(nightly) = horizon_core::release::nightly_label() {
@@ -2457,6 +2519,49 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                     text = text.underlined();
                 }
                 batch.text_styled(atlas, &text, rect[0], rect[1], u32::MAX, true);
+            }
+            Mode::PlayerName { name, error } => {
+                crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
+                centered(
+                    atlas,
+                    batch,
+                    &lang::get_or("horizon.playerName.title", "Player Name"),
+                    20.0,
+                    u32::MAX,
+                );
+                batch.text(
+                    atlas,
+                    &lang::get_or("horizon.playerName.label", "Offline player name"),
+                    (w / 2.0).floor() - 100.0,
+                    45.0,
+                    rgba(160, 160, 160, 255),
+                    true,
+                );
+                self.caret.borrow_mut().draw(
+                    batch,
+                    atlas,
+                    (PLAYER_NAME, name, 16),
+                    [(w / 2.0).floor() - 100.0, 59.0, 200.0, 20.0],
+                    true,
+                    self.started,
+                );
+                let hint = if *error {
+                    lang::get_or(
+                        "horizon.playerName.invalid",
+                        "1 to 16 characters: letters, digits and _",
+                    )
+                } else {
+                    lang::get_or(
+                        "horizon.playerName.hint",
+                        "Used when the next world or server is joined.",
+                    )
+                };
+                let color = if *error {
+                    rgba(255, 85, 85, 255)
+                } else {
+                    rgba(160, 160, 160, 255)
+                };
+                centered(atlas, batch, &hint, 85.0, color);
             }
             Mode::Select { worlds, selected } => {
                 crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
@@ -3251,6 +3356,15 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             if (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y) {
                 return (Action::Credits, true);
             }
+            // The player name line above it opens the name screen.
+            let [bx, by, bw, bh] = self.player_button.get();
+            if (bx..bx + bw).contains(&x) && (by..by + bh).contains(&y) {
+                self.mode = Mode::PlayerName {
+                    name: self.player_name.clone(),
+                    error: false,
+                };
+                return (Action::None, true);
+            }
         }
         let hit = self
             .buttons(w, h)
@@ -3347,6 +3461,23 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             (Mode::Main, Some(3)) => Action::Options,
             (Mode::Main, Some(7)) => Action::Accessibility,
             (Mode::Main, Some(6)) => Action::Language,
+            // Done keeps a name the game accepts and leaves the screen; a
+            // refused one says why and stays.
+            (Mode::PlayerName { name, error }, Some(60)) => {
+                if horizon_client::offline_name::is_valid(name) {
+                    let name = name.clone();
+                    self.player_name.clone_from(&name);
+                    self.mode = Mode::Main;
+                    Action::PlayerName(name)
+                } else {
+                    *error = true;
+                    Action::None
+                }
+            }
+            (Mode::PlayerName { .. }, Some(61)) => {
+                self.mode = Mode::Main;
+                Action::None
+            }
             (Mode::Select { worlds, selected }, Some(10)) => {
                 match selected.and_then(|i| worlds.get(i)).cloned() {
                     Some(world) => self.play(world),
@@ -3736,6 +3867,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
         let x = (w / 2.0).floor() - 100.0;
         match &self.mode {
             Mode::Select { .. } if self.search_focused => Some([x, 21.0, 200.0, 20.0]),
+            Mode::PlayerName { .. } => Some([x, 59.0, 200.0, 20.0]),
             Mode::Edit { focused: true, .. } => Some([x, edit_top(h) + 39.0, 200.0, 20.0]),
             Mode::Create { focus, options, .. } => create_world::field_rect(w, h, options.tab)
                 .filter(|(id, _)| id == focus)
@@ -4453,9 +4585,11 @@ const EDIT_NAME: crate::clipboard::FieldId = ("world.edit-name", 0);
 const WORLD_NAME: crate::clipboard::FieldId = ("world.name", 0);
 const WORLD_SEED: crate::clipboard::FieldId = ("world.seed", 0);
 const FLAT_SHARE: crate::clipboard::FieldId = ("world.flat-share", 0);
+/// The player name screen's field (`horizon-player.txt`).
+const PLAYER_NAME: crate::clipboard::FieldId = ("player.name", 0);
 /// The focused field of the world screens and the server screens: the list's
-/// search, a world name or seed, or Add Server, Direct Connection and Join a
-/// Friend.
+/// search, a world name or seed, the offline player name, or Add Server, Direct
+/// Connection and Join a Friend.
 fn caret_field<'a>(
     mode: &'a mut Mode,
     search_focused: bool,
@@ -4463,6 +4597,8 @@ fn caret_field<'a>(
 ) -> Option<(crate::clipboard::FieldId, &'a mut String, usize)> {
     match mode {
         Mode::Select { .. } if search_focused => Some((SEARCH, search, 50)),
+        // `StringUtil.isValidPlayerName`: 16 characters.
+        Mode::PlayerName { name, .. } => Some((PLAYER_NAME, name, 16)),
         Mode::Edit {
             name,
             focused: true,
@@ -4570,6 +4706,119 @@ mod classic_tests {
             title.click(310.0, 225.0, (427.0, 240.0)),
             (Action::None, false)
         );
+    }
+
+    #[test]
+    fn the_player_name_line_opens_the_name_screen() {
+        // The bottom-left line, a PlainTextButton drawn above the version: a
+        // press inside its last drawn rect opens Horizon's name screen.
+        let mut title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        title.player_name = "Player00042".into();
+        title.player_button.set([2.0, 220.0, 120.0, 10.0]);
+        assert_eq!(
+            title.click(3.0, 221.0, (427.0, 240.0)),
+            (Action::None, true)
+        );
+        match &title.mode {
+            Mode::PlayerName { name, error } => {
+                assert_eq!(name, "Player00042");
+                assert!(!error);
+            }
+            mode => panic!("{mode:?}"),
+        }
+        // Outside it nothing happens.
+        let mut title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        title.player_button.set([2.0, 220.0, 120.0, 10.0]);
+        assert_eq!(
+            title.click(3.0, 200.0, (427.0, 240.0)),
+            (Action::None, false)
+        );
+        assert!(matches!(title.mode, Mode::Main));
+    }
+
+    #[test]
+    fn a_name_the_game_accepts_comes_back_as_the_action() {
+        // Done: the name is the title's from then on, and the game is told.
+        let mut title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        title.mode = Mode::PlayerName {
+            name: "Alex_2".into(),
+            error: false,
+        };
+        assert_eq!(
+            title.click(100.0, 275.0, (480.0, 320.0)),
+            (Action::PlayerName("Alex_2".into()), true)
+        );
+        assert!(matches!(title.mode, Mode::Main));
+        assert_eq!(title.player_name, "Alex_2");
+    }
+
+    #[test]
+    fn a_name_the_game_refuses_stays_on_the_screen() {
+        // StringUtil.isValidPlayerName: a space is refused, Done does nothing
+        // but say why, and the name the game has stays.
+        let mut title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        title.player_name = "Player00042".into();
+        title.mode = Mode::PlayerName {
+            name: "bad name".into(),
+            error: false,
+        };
+        assert_eq!(
+            title.click(100.0, 275.0, (480.0, 320.0)),
+            (Action::None, true)
+        );
+        match &title.mode {
+            Mode::PlayerName { name, error } => {
+                assert_eq!(name, "bad name");
+                assert!(error);
+            }
+            mode => panic!("{mode:?}"),
+        }
+        assert_eq!(title.player_name, "Player00042");
+        // Cancel leaves the screen and the name alone.
+        assert_eq!(
+            title.click(300.0, 275.0, (480.0, 320.0)),
+            (Action::None, true)
+        );
+        assert!(matches!(title.mode, Mode::Main));
+        assert_eq!(title.player_name, "Player00042");
+    }
+
+    #[test]
+    fn the_name_field_takes_sixteen_characters() {
+        let mut title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        title.mode = Mode::PlayerName {
+            name: String::new(),
+            error: false,
+        };
+        assert!(title.has_caret_field());
+        title.type_text("Steve_1");
+        title.backspace();
+        title.type_text("2");
+        match &title.mode {
+            Mode::PlayerName { name, .. } => assert_eq!(name, "Steve_2"),
+            mode => panic!("{mode:?}"),
+        }
+        // The box stops at the 16 a profile name takes.
+        title.type_text("Abcdefghijklmnopqrst");
+        match &title.mode {
+            Mode::PlayerName { name, .. } => assert_eq!(name, "Steve_2Abcdefghi"),
+            mode => panic!("{mode:?}"),
+        }
     }
 
     #[test]

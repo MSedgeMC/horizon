@@ -40,6 +40,16 @@ pub fn load_or_create(dir: &Path) -> String {
     name
 }
 
+/// Writes `name` so the next launch reads it back from `dir`. A name the game
+/// would not accept leaves the file alone and returns false.
+pub fn store(dir: &Path, name: &str) -> std::io::Result<bool> {
+    if !is_valid(name) {
+        return Ok(false);
+    }
+    fs::write(dir.join(FILE), format!("{KEY}{name}\n"))?;
+    Ok(true)
+}
+
 fn parse(text: &str) -> Option<String> {
     text.lines()
         .find_map(|line| line.trim_end_matches('\r').strip_prefix(KEY))
@@ -96,6 +106,26 @@ mod tests {
         // An edited name is used as it is.
         fs::write(d.join(FILE), "name:Alex_2\r\n").unwrap();
         assert_eq!(load_or_create(&d), "Alex_2");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_chosen_name_is_stored_and_read_back() {
+        let d = dir("stored");
+        assert_eq!(load_or_create(&d).len(), 11);
+        assert!(store(&d, "Alex_2").unwrap());
+        assert_eq!(load_or_create(&d), "Alex_2");
+        // The next choice replaces the last one.
+        assert!(store(&d, "Notch").unwrap());
+        assert_eq!(load_or_create(&d), "Notch");
+        // Sixteen characters are the most a profile name takes.
+        assert!(store(&d, "SixteenCharsName").unwrap());
+        assert_eq!(load_or_create(&d), "SixteenCharsName");
+        // A name the game refuses keeps the last good one.
+        for bad in ["", "has space", "SeventeenCharsName", "été"] {
+            assert!(!store(&d, bad).unwrap(), "{bad:?}");
+            assert_eq!(load_or_create(&d), "SixteenCharsName");
+        }
         let _ = fs::remove_dir_all(&d);
     }
 
