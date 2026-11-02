@@ -18,7 +18,7 @@ AbstractBoat.controlBoat	inline	crates/horizon-client/src/game/boats.rs::Game::t
 AbstractBoat.getDismountLocationForPassenger	port	crates/horizon-client/src/game/boats.rs::Game::boat_dismount_target	gap: minor: no dismount pose check; the floor and water tests are there
 AbstractBoat.clampRotation	inline	crates/horizon-client/src/game/remote_vehicles.rs::Game::remote_ride	the rider's yaw is clamped to 105 degrees off the boat; mobs get the head clamp in boat_passengers.rs seat_boat_mobs
 AbstractBoat.calculatePassengerBodyYRot	inline	crates/horizon-client/src/game/boat_passengers.rs::Game::seat_boat_mobs	animal turned 90 or 270 degrees when the boat is full
-AbstractBoat.onPassengerTurned	inline	crates/horizon-client/src/game/boats.rs::Game::tick_riding	the rider's turn is clamped each tick
+AbstractBoat.onPassengerTurned	inline	crates/horizon-client/src/game/boat_passengers.rs::Game::seat_boat_mobs	clampRotation for the mobs in a boat: each turns to the boat (an animal in a full boat sideways) and its head stays within reach of its body, unless the type cannot turn in boats; a player's seat turns with the boat in remote_vehicles.rs
 AbstractBoat.remove	inline	crates/horizon-client/src/game/boats.rs::Game::hurt_boat	destroyed boats eject mobs and drop the boat; gap: minor: no leash drop, since boats cannot be leashed here
 AbstractBoat.checkFallDamage	missing		minor: boats keep no fall distance; boats take no fall damage either way
 AbstractBoat.getPaddleState	port	crates/horizon-client/src/game/boats.rs::Boat::rowing_time	paddle flag, set only while a rider drives
