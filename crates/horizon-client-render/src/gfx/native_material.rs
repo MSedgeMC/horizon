@@ -168,7 +168,7 @@ fn horizon_material_mark(in: HorizonMaterialOut, texel: vec4<f32>) -> f32 {
         let t = textureLoad(horizon_terrain_emission_thresholds,
             vec2(i32(l % horizon_terrain_SPRITE_SPLIT), i32(l / horizon_terrain_SPRITE_SPLIT)), 0);
         let y = horizon_terrain_brightness(texel.rgb);
-        if y >= select(t.r, t.g, whole) {
+        if whole || y >= t.r {
             return horizon_terrain_hdr_mark(tier, y);
         }
     }
