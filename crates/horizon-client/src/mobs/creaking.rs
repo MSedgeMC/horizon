@@ -399,3 +399,33 @@ pub fn is_creaking(m: &Mob) -> bool {
 pub fn can_use_portal(m: &Mob) -> bool {
     !heart_bound(m)
 }
+#[cfg(test)]
+mod portal_tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn mob(species: Species) -> Mob {
+        let mut kind = (*crate::mobs::sensor_scan_tests::kind()).clone();
+        kind.species = species;
+        Mob::new(1, Arc::new(kind), Vec3::ZERO, 0.0)
+    }
+
+    /// `Creaking.canUsePortal`: the creaking's own `!isHeartBound()`, then
+    /// `super.canUsePortal`. A bound creaking is refused the portal; a free
+    /// one is not, and a home point another species keeps (a wolf's bed) is
+    /// not a heart.
+    #[test]
+    fn only_a_creaking_bound_to_a_heart_is_refused_the_portal() {
+        let mut m = mob(Species::Creaking);
+        assert!(!heart_bound(&m), "born free");
+        assert!(can_use_portal(&m), "a free creaking travels");
+        m.extra.home = Some([4, 64, -7]);
+        assert!(heart_bound(&m));
+        assert!(!can_use_portal(&m), "the heart holds it here");
+
+        let mut wolf = mob(Species::Wolf);
+        wolf.extra.home = Some([4, 64, -7]);
+        assert!(!heart_bound(&wolf));
+        assert!(can_use_portal(&wolf), "a wolf's home is no heart");
+    }
+}
