@@ -43,14 +43,14 @@ GsonHelper.sortByKeyIfNeeded	inline	crates/horizon-world/src/datafix/json.rs::to
 GsonHelper.encodesLongerThan	missing		minor: no 32767-character book page or component length check exists in crates; the limit is not enforced
 GsonHelper.CountedAppendable.accountChars	skip:java		character counter behind encodesLongerThan, which Horizon does not port
 GsonHelper.CountedAppendable.append	skip:java		character counter behind encodesLongerThan, which Horizon does not port
-HashOps.createNumeric	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.createString	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.hashMap	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.createMap	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.createList	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.createByteList	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.createIntList	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
-HashOps.createLongList	missing		minor: no component hashing; Hashed::of in crates/horizon-protocol/src/item.rs keeps item and count only
+HashOps.createNumeric	inline	crates/horizon-protocol/src/hash_ops.rs::HashOps::from_nbt	a number is hashed by its own type, create_byte through create_double, and from_nbt picks the same one by tag type; component hashing is in horizon-protocol/src/item/hash
+HashOps.createString	port	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_string	the UTF-16 units behind it are create_string_units, which is what the component codecs use
+HashOps.hashMap	inline	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_map	a string-keyed map hashes its keys with create_string_units and hands the entries to create_map, sorted by key hash then value hash
+HashOps.createMap	port	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_map	entries sorted by key then value hash, both padded to a long, under the map's own tag bytes
+HashOps.createList	port	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_list	in order, each element's four bytes, under the list's tag bytes
+HashOps.createByteList	port	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_byte_list	
+HashOps.createIntList	port	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_int_list	
+HashOps.createLongList	port	crates/horizon-protocol/src/hash_ops.rs::HashOps::create_long_list	from_nbt hashes a LongArray through it
 HashOps.mergeToList	skip:java		DynamicOps merge into a hashed list; Horizon builds no hashed data incrementally
 HashOps.mergeToMap	skip:java		DynamicOps merge into a hashed map; Horizon builds no hashed data incrementally
 HashOps.ListHashBuilder.build	skip:java		DynamicOps builder for hashed lists; not needed without component hashing
