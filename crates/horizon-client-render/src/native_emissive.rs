@@ -28,21 +28,19 @@ pub fn load(root: &Path, sprites: &mut Sprites) {
     }
 }
 
-/// OptiFine's emissive overlays of the block sprites already loaded (what the terrain draws;
-/// items draw from the HUD atlas): for each
-/// `<ns>:block/<name>`, or connected-texture tile `assets/<ns>/optifine/ctm/.../<name>.png`,
-/// whose `<name><suffix>.png` sits beside it, the overlay is loaded too and paired with it, first
-/// by name, at most [`MAX`] - [`NATIVE`] (native mods keep their share of
-/// the table). A pack without such files adds nothing.
-/// A connected-texture tile's sprite name (its resource path, `Sprites::insert_file`'s) without
-/// `.png`.
-fn ctm_tile(name: &str) -> Option<&str> {
-    let stem = name.strip_suffix(".png")?;
-    let mut parts = stem.strip_prefix("assets/")?.splitn(3, '/');
-    let (_namespace, top, rest) = (parts.next()?, parts.next()?, parts.next()?);
-    (matches!(top, "optifine" | "mcpatcher") && rest.starts_with("ctm/")).then_some(stem)
+/// A connected-texture tile's sprite name without `.png`: tiles outside `textures/` are named by
+/// their resource path (`Sprites::insert_file`, which only they use), block sprites by an id.
+fn tile_file(name: &str) -> Option<&str> {
+    name.strip_prefix("assets/")?;
+    name.strip_suffix(".png")
 }
 
+/// OptiFine's emissive overlays of the block sprites already loaded (what the terrain draws;
+/// items draw from the HUD atlas): for each
+/// `<ns>:block/<name>`, or connected-texture tile `assets/<ns>/.../<name>.png`, whose
+/// `<name><suffix>.png` sits beside it, the overlay is loaded too and paired with it, blocks
+/// first, then tiles, each by name, at most [`MAX`] - [`NATIVE`] (native mods keep their share of
+/// the table). A pack without such files adds nothing.
 pub fn load_optifine(root: &Path, sprites: &mut Sprites) -> Vec<(String, String)> {
     let suffix = horizon_optifine::emissive::suffix(root);
     // Blocks with identical pixels share a layer (and the shader pairs by layer): a shared
@@ -51,7 +49,7 @@ pub fn load_optifine(root: &Path, sprites: &mut Sprites) -> Vec<(String, String)
     for layer in sprites.layers.values() {
         *sharing.entry(*layer).or_default() += 1;
     }
-    let bases: Vec<String> = sprites
+    let mut bases: Vec<String> = sprites
         .layers
         .iter()
         .filter(|(name, layer)| {
@@ -59,14 +57,16 @@ pub fn load_optifine(root: &Path, sprites: &mut Sprites) -> Vec<(String, String)
                 && (name
                     .split_once(':')
                     .is_some_and(|(_, p)| p.starts_with("block/") && !p.ends_with(&suffix))
-                    || ctm_tile(name).is_some_and(|stem| !stem.ends_with(&suffix)))
+                    || tile_file(name).is_some_and(|stem| !stem.ends_with(&suffix)))
         })
         .map(|(name, _)| name.clone())
         .collect();
+    // Blocks before tiles: a pack's many tiles must not crowd vanilla blocks' overlays out.
+    bases.sort_by_key(|name| (tile_file(name).is_some(), name.clone()));
     let mut pairs = Vec::new();
     for base in bases {
         // A tile is named by its file, a block sprite by its id.
-        let (overlay, file) = match ctm_tile(&base) {
+        let (overlay, file) = match tile_file(&base) {
             Some(stem) => {
                 let overlay = format!("{stem}{suffix}.png");
                 (overlay.clone(), root.join(overlay))
@@ -223,25 +223,33 @@ mod tests {
         png(&tiles.join("0.png"), 230);
         png(&tiles.join("0_glow.png"), 240);
         png(&tiles.join("1.png"), 250);
-        for tile in ["0", "1"] {
+        // A tile outside `ctm/` (`tiles=~/glass/2`) is a tile all the same.
+        png(&root.join("assets/minecraft/optifine/glass/2.png"), 245);
+        png(
+            &root.join("assets/minecraft/optifine/glass/2_glow.png"),
+            246,
+        );
+        for tile in ["ctm/lamp/0", "ctm/lamp/1", "glass/2"] {
             sprites
-                .insert_file(
-                    &root,
-                    &format!("assets/minecraft/optifine/ctm/lamp/{tile}.png"),
-                )
+                .insert_file(&root, &format!("assets/minecraft/optifine/{tile}.png"))
                 .unwrap();
         }
         let pairs = load_optifine(&root, &mut sprites);
         assert_eq!(
             pairs,
+            // Blocks first, then tiles.
             [
+                (
+                    "minecraft:block/deepslate".into(),
+                    "minecraft:block/deepslate_glow".into()
+                ),
                 (
                     "assets/minecraft/optifine/ctm/lamp/0.png".into(),
                     "assets/minecraft/optifine/ctm/lamp/0_glow.png".into()
                 ),
                 (
-                    "minecraft:block/deepslate".into(),
-                    "minecraft:block/deepslate_glow".into()
+                    "assets/minecraft/optifine/glass/2.png".into(),
+                    "assets/minecraft/optifine/glass/2_glow.png".into()
                 ),
             ]
         );
