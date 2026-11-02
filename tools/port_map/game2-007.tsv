@@ -1,11 +1,11 @@
 AbstractBoat.setInitialPos	port	crates/horizon-client/src/game/boats.rs::Boat::new	spawn sets the position and its previous copy; velocity and yaw start at zero
 AbstractBoat.defineSynchedData	skip:java		SynchedEntityData definitions; Horizon keeps paddle, hurt and input state on the Boat struct
 AbstractBoat.getPassengerAttachmentPoint	port	crates/horizon-client/src/game/boats.rs::Boat::seat	seat height and the two-seat offsets, +0.2 for an animal; chest boat's 0.15 is included
-AbstractBoat.onAboveBubbleColumn	missing		player: a boat over a bubble column is not lifted or pushed down and no splash plays on it; Horizon has no bubble column for boats
+AbstractBoat.onAboveBubbleColumn	inline	crates/horizon-client/src/game/boats.rs::Game::boat_above_bubble_column	the column is remembered, the 60-tick countdown starts, and `boat_splash_roll`'s one-in-a-hundred splash plays for a boat that is not under water
 AbstractBoat.animateHurt	port	crates/horizon-client/src/game/boats.rs::Game::hurt_boat	sets the hurt wobble and time; gap: minor: uses the server damage x10, no separate client x11 wobble value
-AbstractBoat.tickBubbleColumn	missing		player: a boat in a bubble column does not rise or sink and ejects no passengers from a down column; Horizon has no bubble time on boats
-AbstractBoat.handleEntityEvent	missing		player: the bubble column effect event (71 or 72) never reaches a boat, same gap as the bubble column lift
-AbstractBoat.handleBubbleColumnEffect	missing		player: a boat in an up or down bubble column keeps its speed; Horizon never changes its vertical velocity from a column
+AbstractBoat.tickBubbleColumn	port	crates/horizon-client/src/game/boats.rs::Game::tick_boat_bubble_column	after BUBBLE_TIME over a column: a down column lets the riders out, event 71 or 72 goes to every client, then the push
+AbstractBoat.handleEntityEvent	inline	crates/horizon-client/src/game/remote_vehicles.rs::Game::remote_boat_event	events 71 and 72, and nothing else, reach the boat they name and push it the same way the server did
+AbstractBoat.handleBubbleColumnEffect	port	crates/horizon-client/src/game/boats.rs::Game::handle_bubble_column_effect	an up column sets the vertical speed to 0.6, a down column adds -0.7
 AbstractBoat.setPaddleState	inline	crates/horizon-client/src/game/boats.rs::Game::tick_boat	paddle flags are set from the rider's input inside the controlled branch
 AbstractBoat.getLeashOffset	port	crates/horizon-client/src/mobs/leash.rs::Holder::boat_leash_offset	1.375 by 0.5625 for a boat or raft
 AbstractBoat.getStatus	port	crates/horizon-client/src/game/boats.rs::Game::boat_status	in air, in water, under water or on land
