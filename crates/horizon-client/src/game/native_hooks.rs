@@ -4880,6 +4880,12 @@ impl Game<'_> {
     ) -> Option<ItemStack> {
         self.insert_stack_through(pos, face, stack)
     }
+    /// The window's width and height in physical pixels, independent of GUI
+    /// scale; none on a server or when no window exists. API @API:physical_window_size@.
+    pub(super) fn native_physical_window_size(&self) -> Option<[u32; 2]> {
+        let size = self.window.as_ref()?.inner_size();
+        Some([size.width, size.height])
+    }
     /// Where the mouse is, in GUI pixels. API 20.
     pub(super) fn native_cursor(&self) -> [f32; 2] {
         [self.cursor.0, self.cursor.1]
