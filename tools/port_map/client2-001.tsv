@@ -134,9 +134,9 @@ PlayerSkinRenderCache.RenderInfo.textureView	skip:other		GPU texture view cache;
 PlayerSkinRenderCache.RenderInfo.glyphRenderTypes	skip:other		font render types for name tags; Horizon's text uses its own glyph pipeline
 PlayerSkinRenderCache.RenderInfo.equals	skip:java		value equality for a cache key
 PlayerSkinRenderCache.RenderInfo.hashCode	skip:java		hash for a cache key
-PostChain.load	missing		minor: no data-driven post chain loader; only the blur and entity outline chains exist, hard-coded
+PostChain.load	port	crates/horizon-client-render/src/post_chain.rs::PostEffects::load	reads post_effect/<id>.json from the active resource root into targets and passes; no file is no chain, an unknown external target fails like vanilla
 PostChain.getReferencedExternalTargets	skip:other		config validation for data-driven post chains
-PostChain.createPass	missing		minor: no data-driven post pass creation; the outline and blur passes are fixed
+PostChain.createPass	port	crates/horizon-client-render/src/post_chain.rs::PostEffects::translated_pass	a pass from its GLSL vertex and fragment shaders, inputs, uniform blocks and output; a shader that will not translate falls back to the built-in stand-in (standin_pass)
 PostChain.addToFrame	port	crates/horizon-client-render/src/gfx/entity_outline.rs::EntityOutline::draw	gap: minor: runs the entity outline chain only; other chains are not built
 PostChain.process	port	crates/horizon-client-render/src/menu_blur.rs::MenuBlur::apply	gap: minor: runs the menu blur only; other chains are not run
 PostChain.getOrCreatePersistentTarget	skip:other		GPU persistent target cache
