@@ -2370,6 +2370,25 @@ mod tests {
             "the uniform is back after the block"
         );
     }
+
+    #[test]
+    fn storage_buffer_extension_keeps_the_legacy_buffer_keyword() {
+        let fragment = "#version 130\n#extension GL_ARB_shader_storage_buffer_object : enable\nlayout(std430,binding=0) readonly buffer Data{uvec4 cells[4];}data;void main(){gl_FragColor=vec4(data.cells[0]);}";
+        let result = program(
+            &[("composite.vsh", VSH_120), ("composite.fsh", fragment)],
+            Target::Window,
+        );
+        assert!(result.is_ok(), "{:?}", result.err());
+    }
+    #[test]
+    fn ordinary_legacy_buffer_identifiers_still_translate() {
+        let fragment = "#version 120\nvoid main(){float buffer=0.5;gl_FragColor=vec4(buffer);}";
+        let result = program(
+            &[("composite.vsh", VSH_120), ("composite.fsh", fragment)],
+            Target::Window,
+        );
+        assert!(result.is_ok(), "{:?}", result.err());
+    }
 }
 
 #[cfg(test)]
