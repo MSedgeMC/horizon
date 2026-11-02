@@ -247,16 +247,22 @@ fn wrap_border((name, w, h, data): &PackedImage) -> PackedImage {
     }
     (name.clone(), bw, bh, out)
 }
-/// The textures the enabled packs' Custom Item Textures item rules draw, under their
-/// `cit_assets` ids, beyond those already packed; with their flags and whether they animate.
-/// They are item textures, so an animated strip keeps its first frame. None without
-/// `optifine/cit` rules.
+/// The textures the enabled packs' Custom Item Textures item rules draw, theirs and their JSON
+/// models', under their `cit_assets` ids, beyond those already packed; with their flags and
+/// whether they animate. They are item textures, so an animated strip keeps its first frame.
+/// None without `optifine/cit` rules.
 fn cit_sprites(
     root: &Path,
     packed: &[PackedImage],
 ) -> Vec<(PackedImage, Option<TextureFlags>, bool)> {
     let have: HashSet<&str> = packed.iter().map(|i| i.0.as_str()).collect();
-    let ids: Vec<String> = crate::cit_assets::item_sprites(&crate::cit::load_rules(root))
+    let rules = crate::cit::load_rules(root);
+    let mut ids = crate::cit_assets::item_sprites(&rules);
+    if !rules.is_empty() {
+        let models = crate::cit_assets::load_models(root, &rules);
+        ids.extend(crate::cit_assets::model_sprites(&models));
+    }
+    let ids: Vec<String> = ids
         .into_iter()
         // Vanilla's sprites are packed without their namespace, as `sprite_name` looks them up;
         // Horizon's own (`horizon/white`, the run-time slots) are added after, and stay its own.
@@ -2825,6 +2831,25 @@ mod tests {
         let rect = atlas.sprites["horizon_cit:minecraft/optifine/cit/a"];
         assert_eq!(rect.texels((atlas.width, atlas.height)), (2, 2));
         assert_eq!(texel_at(&atlas, rect, 1, 1), [10, 200, 30, 255]);
+    }
+    #[test]
+    fn a_cit_models_relative_texture_is_packed() {
+        let root = cit_root(
+            "model",
+            &[
+                ("a.properties", "items=stick\nmodel=sword"),
+                (
+                    "sword.json",
+                    r#"{"parent":"item/generated","textures":{"layer0":"./blade"}}"#,
+                ),
+            ],
+        );
+        let cit = root.join("assets/minecraft/optifine/cit");
+        write_strip(&cit.join("blade.png"), 2, 2, &[[40, 50, 60, 255]], None);
+        let atlas = HudAtlas::build(&root).unwrap();
+        let _ = fs::remove_dir_all(&root);
+        let rect = atlas.sprites["horizon_cit:minecraft/optifine/cit/blade"];
+        assert_eq!(texel_at(&atlas, rect, 1, 1), [40, 50, 60, 255]);
     }
     #[test]
     fn a_still_cit_texture_is_packed_whole() {

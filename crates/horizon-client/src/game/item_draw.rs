@@ -9,6 +9,7 @@ use horizon_assets::item_model::{
 };
 use horizon_client::{
     block_entity_render::{diffuse_lights, vertex_light},
+    cit::{Hand as CitHand, Kind as CitKind},
     hud::{HudBatch, Rect},
     item_render::{self, ItemRenderState, SpecialHost, WorldSink},
     items::ItemStack,
@@ -293,14 +294,37 @@ impl Game<'_> {
         owner: Option<&OwnerState>,
         seed: i32,
     ) -> ItemRenderState {
+        self.resolve_item_in_hand(stack, display, owner, seed, CitHand::Main)
+    }
+    /// [`Self::resolve_item`] of a stack held in `hand`, which OptiFine CIT rules can test
+    /// (GUI items count as the main hand).
+    pub(super) fn resolve_item_in_hand(
+        &self,
+        stack: &ItemStack,
+        display: DisplayContext,
+        owner: Option<&OwnerState>,
+        seed: i32,
+        hand: CitHand,
+    ) -> ItemRenderState {
         let level = self.item_level();
-        let mut state = self.pack.item_renderer.resolve(
+        let renderer = &self.pack.item_renderer;
+        let rule = renderer.cit.as_ref().and_then(|cit| {
+            let item_max = self
+                .res
+                .items()
+                .get(&stack.item)
+                .map_or(0, |i| i.max_damage);
+            let max_damage = item_render::cit::stack_max_damage(stack, item_max);
+            cit.rules.select(CitKind::Item, stack, hand, max_damage)
+        });
+        let mut state = renderer.resolve_with_rule(
             &item_render::stack_view(stack),
             display,
             owner,
             Some(&level),
             seed,
             &self.item_env(),
+            rule,
         );
         state.hdr_tier = self.luminance().hdr_tier(&stack.item);
         if state.hdr_tier > 0 && self.renderer.as_ref().is_some_and(|r| r.hdr_on()) {

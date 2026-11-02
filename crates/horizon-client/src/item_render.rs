@@ -6,6 +6,7 @@
 //! and the special model renderers submit, in pose space. A sink then draws
 //! them: [`gui`] into the HUD batch with the GUI item lighting, [`WorldSink`]
 //! into entity vertices with the level's lighting.
+pub mod cit;
 pub mod gui;
 mod special;
 
@@ -498,6 +499,9 @@ pub struct ItemRenderer {
     grass: Vec<i32>,
     /// `minecraft:item` registry ids (`Item.getId`).
     item_ids: HashMap<String, i32>,
+    /// The enabled packs' OptiFine CIT rules and their swapped bakes; `None`
+    /// without rules.
+    pub cit: Option<cit::CitModels>,
 }
 
 /// Every `items/**/*.json` client item definition, by identifier.
@@ -582,7 +586,7 @@ impl ItemRenderer {
             },
             prototypes,
         };
-        let library = library?;
+        let (library, cit) = cit::load(root, library?);
         let permutations = PalettedPermutations::from_atlas(
             &fs::read_to_string(root.join("assets/minecraft/atlases/items.json"))
                 .unwrap_or_default(),
@@ -626,6 +630,7 @@ impl ItemRenderer {
             gui_drawn: Mutex::default(),
             parts,
             grass,
+            cit,
         })
     }
     /// `ModelBakery` item baking, cached per model.
@@ -661,16 +666,7 @@ impl ItemRenderer {
         {
             return hit.clone();
         }
-        let mut out: Vec<Vec3> = Vec::new();
-        for q in &baked.quads {
-            for p in q.positions {
-                let p = Vec3::from(p);
-                if !out.contains(&p) {
-                    out.push(p);
-                }
-            }
-        }
-        let out = Arc::new(out);
+        let out = Arc::new(corners(baked));
         if let Ok(mut cache) = self.extents.lock() {
             cache.insert(model.to_owned(), out.clone());
         }
@@ -699,6 +695,22 @@ impl ItemRenderer {
         seed: i32,
         env: &dyn ItemEnv,
     ) -> ItemRenderState {
+        self.resolve_with_rule(stack, display, owner, level, seed, env, None)
+    }
+    /// [`Self::resolve`] for a stack OptiFine CIT item rule `rule` (an index
+    /// into `cit.rules.rules`) matched: its model layers draw what the rule
+    /// swaps them for.
+    #[allow(clippy::too_many_arguments)]
+    pub fn resolve_with_rule(
+        &self,
+        stack: &StackView,
+        display: DisplayContext,
+        owner: Option<&OwnerState>,
+        level: Option<&LevelState>,
+        seed: i32,
+        env: &dyn ItemEnv,
+        rule: Option<usize>,
+    ) -> ItemRenderState {
         let ctx = Context {
             display,
             owner,
@@ -713,8 +725,13 @@ impl ItemRenderer {
             .map(|layer| {
                 let (geometry, baked, extents) = match layer.content {
                     LayerContent::Model { model } => {
-                        let baked = self.bake(&model);
-                        let extents = self.quad_extents(&model, &baked);
+                        let (baked, extents) = rule
+                            .and_then(|rule| self.cit_layer(rule, &model))
+                            .unwrap_or_else(|| {
+                                let baked = self.bake(&model);
+                                let extents = self.quad_extents(&model, &baked);
+                                (baked, extents)
+                            });
                         (LayerGeometry::Quads(baked.clone()), baked, extents)
                     }
                     LayerContent::Missing => {
@@ -785,6 +802,19 @@ impl ItemRenderer {
     pub(crate) fn part(&self, key: &str) -> Option<&ModelPart> {
         self.parts.get(key)
     }
+}
+/// `CuboidItemModelWrapper.computeExtents`: the distinct quad corners.
+fn corners(baked: &BakedItemModel) -> Vec<Vec3> {
+    let mut out: Vec<Vec3> = Vec::new();
+    for q in &baked.quads {
+        for p in q.positions {
+            let p = Vec3::from(p);
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out
 }
 /// A `horizon-assets` (row-major, JOML-exact) matrix as glam's.
 pub fn glam_matrix(m: &horizon_assets::math::Mat4) -> Mat4 {
