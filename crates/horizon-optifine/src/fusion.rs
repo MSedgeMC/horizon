@@ -2,7 +2,7 @@
 //! texture's `.mcmeta` ([`texture`]: connecting, random, continuous and scrolling textures, and
 //! the emissive, render type and tinting options every type takes), the connection predicates
 //! that say when a connecting texture joins a neighbour ([`predicate`]), the `connections` of a
-//! `fusion:connecting` block model (`model`), and which tiles of a connecting texture's image a
+//! `fusion:connecting` block model ([`model`]), and which tiles of a connecting texture's image a
 //! face draws ([`layout`]).
 //!
 //! The layouts read the neighbour masks of [`crate::ctm::connect`], which OptiFine's connected
@@ -13,6 +13,7 @@
 //! Fusion itself is all rights reserved: none of its code was read.
 
 pub mod layout;
+pub mod model;
 pub mod predicate;
 pub mod texture;
 
