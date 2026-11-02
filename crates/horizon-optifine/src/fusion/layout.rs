@@ -386,7 +386,7 @@ mod tests {
         // template or GIF shows it, so this pins `overlay_tiles`' own choice, the pieces for
         // up-right-down and right-down-left.
         assert_eq!(cells(U | R | D | L), [13, 6, 1, 8]);
-        assert_eq!(cells(0xff & !UL), [9, 4]);
+        assert_eq!(cells(!UL), [9, 4]);
         // A lone corner each.
         assert_eq!(cells(DL), [2]);
         assert_eq!(cells(UL), [14]);
