@@ -647,6 +647,23 @@ fn wrap64(d: f64) -> f64 {
     let r = d.rem_euclid(360.0);
     if r >= 180.0 { r - 360.0 } else { r }
 }
+/// `DragonDeathPhase.doClientTick`'s explosion puff: the dragon's position
+/// grown by `(nextFloat() - 0.5) * 8` on x and z and `* 4` on y, lifted two
+/// blocks.
+fn death_puff(at: [f64; 3], random: &mut LegacyRandom) -> [f64; 3] {
+    let mut off = |s: f32| f64::from((random.next_float() - 0.5) * s);
+    [at[0] + off(8.0), at[1] + 2.0 + off(4.0), at[2] + off(8.0)]
+}
+/// `DragonDeathPhase.doClientTick` advances the phase's own `time` before it
+/// looks at it, so the puffs fall on ticks 10, 20, ... and never on the first.
+fn death_puff_due(time: i32) -> bool {
+    time > 0 && time % 10 == 0
+}
+/// `DragonSittingAttackingPhase.doClientTick`'s growl pitch:
+/// `0.8F + nextFloat() * 0.3F`.
+fn sitting_growl_pitch(random: &mut LegacyRandom) -> f32 {
+    0.8 + random.next_float() * 0.3
+}
 impl Game<'_> {
     fn fight_path(&self) -> std::path::PathBuf {
         horizon_client::save::dimension_dir(&self.world_root, "minecraft:the_end").join(FIGHT_FILE)
@@ -1781,7 +1798,15 @@ impl Game<'_> {
                 }
             }
             Phase::Attacking { ticks } => {
-                // The growl is `doClientTick`'s (`remote_dragon_phase_tick`).
+                // `DragonSittingAttackingPhase.doClientTick`: a growl on every
+                // client tick of the 40, and the host's own fight is its client
+                // (a server's client plays it in `remote_dragon_phase_tick`).
+                // The pitch comes from the world's random, so the fight's own
+                // stream stays vanilla's.
+                let at = [pos.x, pos.y, pos.z];
+                let pitch = sitting_growl_pitch(&mut self.world.random);
+                self.audio
+                    .play("minecraft:entity.ender_dragon.growl", Some(at), 2.5, pitch);
                 *ticks += 1;
                 if *ticks > 40 {
                     next = Some(Phase::Flaming { ticks: 0 });
@@ -1852,6 +1877,21 @@ impl Game<'_> {
             }
             Phase::Dying { target, time } => {
                 *time += 1;
+                // `DragonDeathPhase.doClientTick`: an explosion puff every 10
+                // ticks of the phase, which `EnderDragon.aiStep` runs only while
+                // the dragon still lives (the descent to the podium, before
+                // `tickDeath` takes over). The host's own fight is that client;
+                // a server's client puffs in `remote_dragon_phase_tick`. The
+                // jitter comes from the world's random so the fight's own stream
+                // stays vanilla's.
+                if death_puff_due(*time) {
+                    let puff = death_puff([pos.x, pos.y, pos.z], &mut self.world.random);
+                    self.particles.add(
+                        &ParticleOptions::simple(ParticleType::ExplosionEmitter),
+                        puff,
+                        [0.0; 3],
+                    );
+                }
                 let t = *target.get_or_insert(Vec3::new(
                     0.5,
                     f64::from(self.motion_blocking_no_leaves(0, 0)),
@@ -3839,19 +3879,15 @@ impl Game<'_> {
                 }
             }
             Phase::Dying { time, .. } => {
-                if *time % 10 == 0 {
-                    let r = &mut d.random;
-                    let o = [
-                        f64::from((r.next_float() - 0.5) * 8.0),
-                        f64::from((r.next_float() - 0.5) * 4.0),
-                        f64::from((r.next_float() - 0.5) * 8.0),
-                    ];
-                    emitter = Some([at[0] + o[0], at[1] + 2.0 + o[1], at[2] + o[2]]);
-                }
+                // The phase's own `time` advances first, so the first puff is
+                // tick 10, not tick 0.
                 *time += 1;
+                if death_puff_due(*time) {
+                    emitter = Some(death_puff(at, &mut d.random));
+                }
             }
             Phase::Attacking { .. } => {
-                growl = Some(0.8 + d.random.next_float() * 0.3);
+                growl = Some(sitting_growl_pitch(&mut d.random));
             }
             _ => {}
         }
@@ -4103,6 +4139,41 @@ mod tests {
             target: None,
             clockwise: false,
         }
+    }
+
+    /// `DragonDeathPhase.doClientTick`: `++time % 10 == 0`, so twenty puffs
+    /// through a 200-tick dying flight and none on its first tick.
+    #[test]
+    fn the_dying_flight_puffs_every_ten_ticks() {
+        assert!(!death_puff_due(0));
+        assert!(!death_puff_due(1));
+        assert!(!death_puff_due(9));
+        assert!(death_puff_due(10));
+        assert!(death_puff_due(200));
+        assert!(!death_puff_due(201));
+        assert_eq!((1..=200).filter(|t| death_puff_due(*t)).count(), 20);
+        // The puff: within four blocks of the dragon and two above it, never on
+        // it (`(nextFloat() - 0.5) * 8` on x and z, `* 4` on y).
+        let mut random = LegacyRandom::new(5);
+        for _ in 0..20 {
+            let q = death_puff([100.0, 70.0, -40.0], &mut random);
+            assert!((q[0] - 100.0).abs() <= 4.0 && q[0] != 100.0, "{q:?}");
+            assert!((q[1] - 72.0).abs() <= 2.0 && q[1] != 72.0, "{q:?}");
+            assert!((q[2] + 40.0).abs() <= 4.0 && q[2] != -40.0, "{q:?}");
+        }
+    }
+
+    /// `DragonSittingAttackingPhase.doClientTick`: `0.8F + nextFloat() * 0.3F`.
+    #[test]
+    fn a_sitting_attack_growl_pitches_between_08_and_11() {
+        let mut random = LegacyRandom::new(9);
+        let mut pitches = Vec::new();
+        for _ in 0..32 {
+            let pitch = sitting_growl_pitch(&mut random);
+            assert!((0.8..1.1).contains(&pitch), "{pitch}");
+            pitches.push(pitch);
+        }
+        assert!(pitches.iter().any(|p| *p != pitches[0]), "{pitches:?}");
     }
 
     #[test]
