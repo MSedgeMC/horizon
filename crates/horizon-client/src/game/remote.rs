@@ -448,6 +448,64 @@ enum OwnProfile {
     Done(Option<horizon_client::skins::Textures>),
 }
 
+/// `ChunkBatchSizeCalculator`: how many chunks a tick to ask the server for, from how long its
+/// last batches took. Vanilla starts at 2 ms a chunk, keeps each sample within a third and three
+/// times the average so one slow batch cannot swing it, and averages with a weight that grows to
+/// 49 old samples.
+pub(super) struct ChunkBatchPacing {
+    /// `aggregatedNanosPerChunk`.
+    nanos_per_chunk: f64,
+    /// `oldSamplesWeight`.
+    old_samples: u32,
+    /// `chunkBatchStartTime`.
+    start: std::time::Instant,
+}
+
+/// `ChunkBatchSizeCalculator.MAX_OLD_SAMPLES_WEIGHT`.
+const MAX_OLD_SAMPLES_WEIGHT: u32 = 49;
+/// `ChunkBatchSizeCalculator.CLAMP_COEFFICIENT`: a sample stays within a third and three times
+/// the running average.
+const CLAMP_COEFFICIENT: f64 = 3.0;
+/// The client's chunk budget a tick that the rate is measured against (`getDesiredChunksPerTick`).
+const CHUNK_BATCH_NANOS_PER_TICK: f64 = 7.0E6;
+
+impl ChunkBatchPacing {
+    pub(super) fn new() -> Self {
+        Self {
+            nanos_per_chunk: 2.0E6,
+            old_samples: 1,
+            start: std::time::Instant::now(),
+        }
+    }
+    /// `onBatchStart`: the batch's clock starts now.
+    pub(super) fn on_batch_start(&mut self) {
+        self.start = std::time::Instant::now();
+    }
+    /// `onBatchFinished`: one sample of `size` chunks in the `elapsed` nanoseconds since the
+    /// batch started. A batch of no chunks teaches nothing.
+    pub(super) fn on_batch_finished(&mut self, elapsed_nanos: u64, size: i32) {
+        if size <= 0 {
+            return;
+        }
+        let per_chunk = elapsed_nanos as f64 / f64::from(size);
+        let sample = per_chunk.clamp(
+            self.nanos_per_chunk / CLAMP_COEFFICIENT,
+            self.nanos_per_chunk * CLAMP_COEFFICIENT,
+        );
+        self.nanos_per_chunk = (self.nanos_per_chunk * f64::from(self.old_samples) + sample)
+            / f64::from(self.old_samples + 1);
+        self.old_samples = MAX_OLD_SAMPLES_WEIGHT.min(self.old_samples + 1);
+    }
+    /// `getDesiredChunksPerTick`.
+    pub(super) fn desired_chunks_per_tick(&self) -> f32 {
+        (CHUNK_BATCH_NANOS_PER_TICK / self.nanos_per_chunk) as f32
+    }
+    /// The nanoseconds since this batch started (`Util.getNanos` between the two packets).
+    fn elapsed_nanos(&self) -> u64 {
+        u64::try_from(self.start.elapsed().as_nanos()).unwrap_or(u64::MAX)
+    }
+}
+
 pub(super) struct Remote {
     pub session: Session,
     pub brand: String,
@@ -461,6 +519,8 @@ pub(super) struct Remote {
     pub attachments: HashMap<Holder, Attachments>,
     /// The server samples far terrain for us, this far at most (`lod_net`).
     pub far_terrain: Option<horizon_client::lod_net::Offer>,
+    /// `chunkBatchSizeCalculator`: the pace this server's chunks come at.
+    batch: ChunkBatchPacing,
     pub(super) builtin: Arc<Builtin>,
     lang: Arc<Language>,
     pub(super) registries: Arc<Dynamic>,
@@ -995,6 +1055,7 @@ impl Game<'_> {
             mod_net: false,
             attachments: HashMap::new(),
             far_terrain: None,
+            batch: ChunkBatchPacing::new(),
             builtin,
             status: lang
                 .get("connect.connecting")
@@ -3175,10 +3236,26 @@ impl Game<'_> {
             C::ForgetLevelChunk(p) => {
                 self.forget_remote_columns(&mut [(p.pos[0], p.pos[1])].into_iter().collect());
             }
-            C::ChunkBatchFinished(_) => {
-                // ChunkBatchSizeCalculator's ceiling; meshing runs on workers.
+            // ClientPacketListener.handleChunkBatchStart: the batch's clock starts.
+            C::ChunkBatchStart(_) => {
+                if let Some(remote) = self.remote.as_mut() {
+                    remote.batch.on_batch_start();
+                }
+            }
+            // ClientPacketListener.handleChunkBatchFinished: one sample of how long this batch
+            // took, then the rate it asks the server for.
+            C::ChunkBatchFinished(p) => {
+                let chunks_per_tick = match self.remote.as_mut() {
+                    Some(remote) => {
+                        let elapsed = remote.batch.elapsed_nanos();
+                        remote.batch.on_batch_finished(elapsed, p.size);
+                        remote.batch.desired_chunks_per_tick()
+                    }
+                    // A batch before the world is joined has no calculator to learn from.
+                    None => 64.0,
+                };
                 self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
-                    chunks_per_tick: 64.0,
+                    chunks_per_tick,
                 }));
             }
             C::BlockUpdate(p) => self.server_block(p.pos, p.state),
@@ -10492,7 +10569,9 @@ fn hold_server_fire(fire_ticks: i32, server_on_fire: bool) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{hold_server_fire, keep_client_state, remote_use_swings, synced_local_use};
+    use super::{
+        ChunkBatchPacing, hold_server_fire, keep_client_state, remote_use_swings, synced_local_use,
+    };
     use horizon_client::{
         containers::{Beacon, BlockEntity},
         items::ItemStack,
