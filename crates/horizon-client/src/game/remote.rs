@@ -10578,6 +10578,49 @@ mod tests {
     };
     use horizon_world::nbt::Tag;
 
+    /// `ChunkBatchSizeCalculator`: the rate a client asks a server for is its chunk budget of
+    /// 7 ms a tick over how long a chunk took, starting at 2 ms. (The flat 64 chunks a tick
+    /// Horizon used to ask for is the server's ceiling, not a measurement.) Each sample is kept
+    /// within a third and three times the running average, and the weight of the old average grows
+    /// to 49 samples.
+    #[test]
+    fn the_chunk_batch_rate_follows_the_batches_the_server_sends() {
+        let close = |got: f32, want: f32| {
+            assert!((got - want).abs() < 1.0E-3, "{got} is not {want}");
+        };
+        let mut pacing = ChunkBatchPacing::new();
+        // 2 ms a chunk: 7 ms of budget holds 3.5 chunks.
+        close(pacing.desired_chunks_per_tick(), 3.5);
+        // A batch of 10 chunks in 5 ms is 0.5 ms each, below a third of the 2 ms average, so it
+        // counts as 2/3 ms: averaged in at weight one, the average is 4/3 ms, 5.25 chunks a tick.
+        pacing.on_batch_finished(5_000_000, 10);
+        close(pacing.desired_chunks_per_tick(), 5.25);
+        // A whole second for one chunk is clamped to three times the average (4 ms), which still
+        // slows the rate down: the average is (4/3 * 2 + 4) / 3 = 20/9 ms, 3.15 chunks a tick.
+        pacing.on_batch_finished(1_000_000_000, 1);
+        close(pacing.desired_chunks_per_tick(), 3.15);
+        // A batch with no chunks in it teaches nothing.
+        let before = pacing.desired_chunks_per_tick();
+        pacing.on_batch_finished(1_000_000_000, 0);
+        assert_eq!(pacing.desired_chunks_per_tick(), before);
+        // A server that keeps sending 0.01 ms chunks raises the rate, but the old average never
+        // counts for less than a fiftieth, so 80 fast batches take it up gradually rather than to
+        // the 7 ms budget at once (700 chunks a tick, which the server caps anyway).
+        for _ in 0..80 {
+            pacing.on_batch_finished(100_000, 10);
+        }
+        assert_eq!(pacing.old_samples, 49, "49 old samples at most");
+        let fast = pacing.desired_chunks_per_tick();
+        assert!((20.0..700.0).contains(&fast), "{fast} chunks a tick");
+        for _ in 0..80 {
+            pacing.on_batch_finished(100_000, 10);
+        }
+        assert!(
+            pacing.desired_chunks_per_tick() > fast,
+            "the rate keeps climbing towards the measured one"
+        );
+    }
+
     /// `MultiPlayerGameMode.useItem`'s `shouldSwing`: the SUCCESS answers
     /// swing, CONSUME's do not (#6425).
     #[test]
