@@ -1538,6 +1538,33 @@ mod tests {
         assert!(!c.scrolling);
     }
 
+    /// `CreativeModeInventoryScreen.mouseClicked`: only the right button
+    /// presses the scrollbar (a left click there goes on as an outside click,
+    /// which drops the carried stack), the press is taken even when the tab
+    /// has nothing to scroll, and the inventory tab has no scrollbar at all.
+    #[test]
+    fn only_the_right_button_presses_the_scrollbar() {
+        let mut c = creative(90);
+        let names = Names {
+            map: HashMap::new(),
+        };
+        c.selected = 1;
+        assert!(!c.press_scrollbar(180.0, 60.0, false, &names));
+        assert!(!c.scrolling, "the left button does not hold it");
+        assert!(c.press_scrollbar(180.0, 60.0, true, &names));
+        assert!(c.scrolling);
+        c.release();
+        // Too few items to scroll: the right press is still taken.
+        c.selected = 0;
+        assert!(c.press_scrollbar(180.0, 60.0, true, &names));
+        assert!(!c.scrolling);
+        // The inventory tab has no scrollbar.
+        c.selected = 3;
+        assert!(c.tab().inventory);
+        assert!(!c.press_scrollbar(180.0, 60.0, true, &names));
+        assert!(!c.press_scrollbar(180.0, 60.0, false, &names));
+    }
+
     #[test]
     fn creative_tab_titles_have_vanilla_keys() {
         assert_eq!(
