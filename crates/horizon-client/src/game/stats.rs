@@ -327,34 +327,38 @@ impl Game<'_> {
                     self.award_custom_stat("minecart_one_cm", total)
                 }
             }
-            None if swimming => self.award_custom_stat("swim_one_cm", total),
-            None if eye_in_water.fluid == horizon_client::blocks::Fluid::Water => {
-                self.award_custom_stat("walk_under_water_one_cm", total)
-            }
-            None if in_water => {
-                if horizontal > 0 {
-                    self.award_custom_stat("walk_on_water_one_cm", horizontal)
-                }
-            }
-            None if climbing => {
-                self.award_custom_stat("climb_one_cm", (d.y * 100.0).round() as i32)
-            }
-            None if on_ground => {
-                if horizontal > 0 {
-                    if sprinting {
-                        self.award_custom_stat("sprint_one_cm", horizontal)
-                    } else if crouching {
-                        self.award_custom_stat("crouch_one_cm", horizontal)
-                    } else {
-                        self.award_custom_stat("walk_one_cm", horizontal)
+            None => {
+                let kind = if swimming {
+                    FootMove::Swimming
+                } else if eye_in_water.fluid == horizon_client::blocks::Fluid::Water {
+                    FootMove::EyeInWater
+                } else if in_water {
+                    FootMove::InWater
+                } else if climbing {
+                    FootMove::Climbing
+                } else if on_ground {
+                    FootMove::OnGround {
+                        sprinting,
+                        crouching,
                     }
+                } else if gliding {
+                    FootMove::Gliding
+                } else {
+                    FootMove::Airborne
+                };
+                let (stat, exhaustion) = foot_move(kind, horizontal, total, d.y);
+                if let Some((name, cm)) = stat {
+                    self.award_custom_stat(name, cm);
+                }
+                // `checkMovementStatistics` charges the food after the
+                // statistic: swimming, wading and walking on water 0.01 per
+                // metre, a sprint 0.1.
+                if exhaustion > 0.0
+                    && let Some(p) = self.player.as_mut()
+                {
+                    p.cause_food_exhaustion(exhaustion);
                 }
             }
-            None if gliding => self.award_custom_stat("aviate_one_cm", total),
-            // Airborne and not gliding: more than 25 cm sideways per move
-            // (creative flight, or a long jump), not only flying.
-            None if horizontal > 25 => self.award_custom_stat("fly_one_cm", horizontal),
-            None => {}
         }
     }
     /// `PhantomSpawner.tick`: tired players under an open night sky draw
@@ -459,6 +463,60 @@ impl Game<'_> {
             let f = self.res.facts().get(self.world.block(pos[0], y, pos[2]));
             !f.full_collision && f.fluid == horizon_client::blocks::Fluid::None
         })
+    }
+}
+
+/// What a player on foot is doing during one move, as
+/// `ServerPlayer.checkMovementStatistics` splits it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FootMove {
+    Swimming,
+    EyeInWater,
+    InWater,
+    Climbing,
+    OnGround { sprinting: bool, crouching: bool },
+    Gliding,
+    Airborne,
+}
+
+/// `ServerPlayer.checkMovementStatistics` for a player on foot: the statistic
+/// (and its centimetres) it awards, and the food exhaustion it charges.
+/// Swimming, wading and walking on water charge `0.01f * cm * 0.01f` over the
+/// full 3D distance, a sprint `0.1f * cm * 0.01f` over the horizontal one;
+/// climbing, gliding and flying charge nothing, and so do walking and
+/// crouching (`0.0f * cm * 0.01f` in vanilla's two arms).
+fn foot_move(
+    kind: FootMove,
+    horizontal: i32,
+    total: i32,
+    up: f64,
+) -> (Option<(&'static str, i32)>, f32) {
+    let water = |cm: i32| 0.01_f32 * cm as f32 * 0.01_f32;
+    match kind {
+        FootMove::Swimming => (Some(("swim_one_cm", total)), water(total)),
+        FootMove::EyeInWater => (Some(("walk_under_water_one_cm", total)), water(total)),
+        FootMove::InWater if horizontal > 0 => (
+            Some(("walk_on_water_one_cm", horizontal)),
+            water(horizontal),
+        ),
+        FootMove::InWater => (None, 0.0),
+        FootMove::Climbing => (Some(("climb_one_cm", (up * 100.0).round() as i32)), 0.0),
+        FootMove::OnGround {
+            sprinting: true, ..
+        } if horizontal > 0 => (
+            Some(("sprint_one_cm", horizontal)),
+            0.1_f32 * horizontal as f32 * 0.01_f32,
+        ),
+        FootMove::OnGround {
+            crouching: true, ..
+        } if horizontal > 0 => (Some(("crouch_one_cm", horizontal)), 0.0),
+        FootMove::OnGround { .. } if horizontal > 0 => (Some(("walk_one_cm", horizontal)), 0.0),
+        FootMove::OnGround { .. } => (None, 0.0),
+        FootMove::Gliding => (Some(("aviate_one_cm", total)), 0.0),
+        // Airborne and not gliding: more than 25 cm sideways per move
+        // (creative flight, or a long jump), not only flying.
+        FootMove::Airborne if horizontal > 25 => (Some(("fly_one_cm", horizontal)), 0.0),
+        FootMove::Airborne => (None, 0.0),
     }
 }
 
