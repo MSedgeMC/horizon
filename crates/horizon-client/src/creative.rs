@@ -710,10 +710,12 @@ impl Creative {
             && y < Self::SCROLL_Y + Self::SCROLL_HEIGHT
             && !self.tab().inventory
     }
-    /// mouseClicked on the scrollbar: it is held only if the tab can scroll
-    /// (the thumb doesn't move until the mouse does).
-    pub fn press_scrollbar(&mut self, x: f32, y: f32, names: &Names) -> bool {
-        if !self.inside_scrollbar(x, y) {
+    /// `CreativeModeInventoryScreen.mouseClicked` on the scrollbar: only the
+    /// right button presses it, and the click is taken even when the tab has
+    /// nothing to scroll (the thumb doesn't move until the mouse does). A left
+    /// click there is an outside click, which drops the carried stack.
+    pub fn press_scrollbar(&mut self, x: f32, y: f32, right: bool, names: &Names) -> bool {
+        if !right || !self.inside_scrollbar(x, y) {
             return false;
         }
         self.scrolling = self.can_scroll(names);
@@ -1509,7 +1511,7 @@ mod tests {
         };
         c.selected = 1;
         // Pressing the track holds the scrollbar without moving it.
-        assert!(c.press_scrollbar(180.0, 60.0, &names));
+        assert!(c.press_scrollbar(180.0, 60.0, true, &names));
         assert!(c.scrolling);
         assert_eq!(c.scroll, 0.0);
         // Dragging maps the cursor height onto the track (minus half the thumb).
@@ -1529,10 +1531,10 @@ mod tests {
         assert!(!c.drag_scrollbar(400.0));
         assert!((c.scroll - 0.25).abs() < 1e-6);
         // Off the track, or with too few items, it isn't held.
-        assert!(!c.press_scrollbar(170.0, 60.0, &names));
-        assert!(!c.press_scrollbar(180.0, 130.0, &names));
+        assert!(!c.press_scrollbar(170.0, 60.0, true, &names));
+        assert!(!c.press_scrollbar(180.0, 130.0, true, &names));
         c.selected = 0;
-        assert!(c.press_scrollbar(180.0, 60.0, &names));
+        assert!(c.press_scrollbar(180.0, 60.0, true, &names));
         assert!(!c.scrolling);
     }
 

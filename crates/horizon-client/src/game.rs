@@ -15679,11 +15679,13 @@ impl Game<'_> {
         if !right && self.creative_search_click(ox, oy) {
             return;
         }
-        // Holding the scrollbar scrolls as the mouse moves (mouseDragged).
-        if !right
-            && self
-                .creative_screen
-                .press_scrollbar(cx - ox, cy - oy, &self.pack.names)
+        // Holding the scrollbar scrolls as the mouse moves (mouseDragged):
+        // the right button presses it, and a left click there is an outside
+        // click that drops the carried stack, as in
+        // `CreativeModeInventoryScreen.mouseClicked`.
+        if self
+            .creative_screen
+            .press_scrollbar(cx - ox, cy - oy, right, &self.pack.names)
         {
             return;
         }
