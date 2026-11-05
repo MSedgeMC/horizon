@@ -2890,8 +2890,7 @@ pub fn remove_version(tag: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// How many of the newest release and Nightly versions stay installed when the player has not
-/// said.
+/// How many of the newest release versions stay installed when the player has not said.
 const KEEP_NEWEST: usize = 2;
 
 /// The release and dated Nightly versions to delete: all but the `keep` newest of each kind in
@@ -6750,6 +6749,46 @@ pub fn {f}("
             tags(&["v0.2.88", "v0.2.85", "v0.2.80"])
         );
         assert!(stale_versions(&installed, 9, &[]).is_empty());
+    }
+
+    /// A GUI update used to leave every dated Nightly behind: only `is_game_tag` versions
+    /// went to the shared pruning policy, and `nightly::after_update` runs on the CLI path
+    /// alone (#9969). Each kind now keeps its own newest `keep`.
+    #[test]
+    fn pruning_counts_nightlies_and_releases_apart() {
+        let tags = |t: &[&str]| t.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let installed = tags(&[
+            "nightly-2026-11-05-19d81d5",
+            "nightly-2026-11-04-3fb4c31",
+            "nightly-2026-11-03-2944480",
+            "v0.2.91",
+            "v0.2.90",
+            "v0.2.88",
+            // Not a dated Nightly: never pruned by this policy.
+            "nightly",
+            "launcher@0.2.42",
+        ]);
+        // Two of each kind stay; the third Nightly and the third release go.
+        assert_eq!(
+            stale_versions(&installed, 2, &[]),
+            tags(&["nightly-2026-11-03-2944480", "v0.2.88"])
+        );
+        // The newest Nightly costs a release nothing, and the other way round.
+        assert_eq!(
+            stale_versions(&installed[..3], 2, &[]),
+            tags(&["nightly-2026-11-03-2944480"])
+        );
+        assert_eq!(
+            stale_versions(&installed[3..6], 2, &[]),
+            tags(&["v0.2.88"])
+        );
+        // The selected or instance-pinned Nightly stays, however old it is.
+        assert_eq!(
+            stale_versions(&installed, 2, &tags(&["nightly-2026-11-03-2944480"])),
+            tags(&["v0.2.88"])
+        );
+        // Keeping more than there are leaves every kind alone.
+        assert!(stale_versions(&installed, 3, &[]).is_empty());
     }
 
     #[test]
