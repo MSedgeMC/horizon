@@ -544,6 +544,79 @@ mod tests {
         assert_eq!(s.events.len(), 2);
     }
 
+    /// `ServerPlayer.checkMovementStatistics` charges food for exactly the
+    /// moves that travel: `0.01f * cm * 0.01f` over the 3D distance for
+    /// swimming, wading and walking on water, `0.1f * cm * 0.01f` over the
+    /// horizontal one for a sprint, and nothing at all for walking, crouching,
+    /// climbing, gliding or flying.
+    #[test]
+    fn movement_statistics_charge_food_for_the_moves_that_travel() {
+        let charge = |cm: i32| 0.01_f32 * cm as f32 * 0.01_f32;
+        let sprint_charge = |cm: i32| 0.1_f32 * cm as f32 * 0.01_f32;
+        // Swimming and wading read the full 3D distance: 50 cm of a move whose
+        // sideways part is 40.
+        assert_eq!(
+            foot_move(FootMove::Swimming, 40, 50, 0.0),
+            (Some(("swim_one_cm", 50)), charge(50))
+        );
+        assert_eq!(
+            foot_move(FootMove::EyeInWater, 40, 50, 0.0),
+            (Some(("walk_under_water_one_cm", 50)), charge(50))
+        );
+        // On the water only the sideways part counts.
+        assert_eq!(
+            foot_move(FootMove::InWater, 40, 50, 0.0),
+            (Some(("walk_on_water_one_cm", 40)), charge(40))
+        );
+        assert_eq!(foot_move(FootMove::InWater, 0, 50, 0.0), (None, 0.0));
+        // A sprint is the expensive one: 0.1 per metre, 0.01 per metre in water.
+        assert_eq!(
+            foot_move(
+                FootMove::OnGround {
+                    sprinting: true,
+                    crouching: false
+                },
+                100,
+                100,
+                0.0
+            ),
+            (Some(("sprint_one_cm", 100)), sprint_charge(100))
+        );
+        // Walking and crouching award a statistic but cost nothing.
+        for crouching in [false, true] {
+            let (stat, exhaustion) = foot_move(
+                FootMove::OnGround {
+                    sprinting: false,
+                    crouching,
+                },
+                100,
+                100,
+                0.0,
+            );
+            let want = if crouching {
+                "crouch_one_cm"
+            } else {
+                "walk_one_cm"
+            };
+            assert_eq!(stat, Some((want, 100)));
+            assert_eq!(exhaustion, 0.0, "{want} is free");
+        }
+        // Climbing, gliding and flying cost nothing either.
+        assert_eq!(
+            foot_move(FootMove::Climbing, 10, 300, 3.0),
+            (Some(("climb_one_cm", 300)), 0.0)
+        );
+        assert_eq!(
+            foot_move(FootMove::Gliding, 10, 900, 0.0),
+            (Some(("aviate_one_cm", 900)), 0.0)
+        );
+        assert_eq!(
+            foot_move(FootMove::Airborne, 26, 0, 0.0),
+            (Some(("fly_one_cm", 26)), 0.0)
+        );
+        assert_eq!(foot_move(FootMove::Airborne, 25, 0, 0.0), (None, 0.0));
+    }
+
     #[test]
     fn phantom_group_size_follows_difficulty() {
         // Expected from java.util.Random(12345): 1 + nextInt(id + 1), six draws each.
