@@ -2890,20 +2890,34 @@ pub fn remove_version(tag: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// How many of the newest release versions stay installed when the player has not said.
+/// How many of the newest release and Nightly versions stay installed when the player has not
+/// said.
 const KEEP_NEWEST: usize = 2;
 
-/// The release versions to delete: all but the `keep` newest of `installed` (newest first), and
-/// never one of `protected`. Nightly builds are left out: `nightly::after_update` removes the
-/// older ones.
+/// The release and dated Nightly versions to delete: all but the `keep` newest of each kind in
+/// `installed` (newest first), and never one of `protected`. Releases and Nightlies are counted
+/// apart, so a fresh Nightly never costs a release (or the other way round). Dated Nightlies
+/// used to be left to `nightly::after_update`, which only the CLI update path calls, so a GUI
+/// update kept every one of them (#9969).
 fn stale_versions(installed: &[String], keep: usize, protected: &[String]) -> Vec<String> {
-    installed
-        .iter()
-        .filter(|t| is_game_tag(t))
-        .skip(keep)
-        .filter(|t| !protected.contains(t))
-        .cloned()
-        .collect()
+    let mut stale = Vec::new();
+    for nightly in [false, true] {
+        stale.extend(
+            installed
+                .iter()
+                .filter(|t| {
+                    if nightly {
+                        crate::nightly::date_of(t).is_some()
+                    } else {
+                        is_game_tag(t)
+                    }
+                })
+                .skip(keep)
+                .filter(|t| !protected.contains(t))
+                .cloned(),
+        );
+    }
+    stale
 }
 
 /// Whether a running program was started from the version's folder: the game and a server take
@@ -2929,10 +2943,11 @@ pub(crate) fn in_use(_tag: &str) -> bool {
     false
 }
 
-/// Deletes the release versions nothing needs after an install or update, unless the player
-/// turned that off: all but the newest few (`Settings::keep_newest`), the selected version, the
-/// ones instances pin and the ones a program is running from. A version that does not delete
-/// is logged and the rest still go. Returns the versions deleted. They install again from GitHub.
+/// Deletes the release and Nightly versions nothing needs after an install or update, unless the
+/// player turned that off: all but the newest few of each kind (`Settings::keep_newest`), the
+/// selected version, the ones instances pin and the ones a program is running from. A version
+/// that does not delete is logged and the rest still go. Returns the versions deleted. They
+/// install again from GitHub.
 pub fn prune_old_versions() -> Vec<String> {
     let settings = Settings::load();
     if !settings.auto_prune() {
