@@ -136,6 +136,7 @@ CreativeModeInventoryScreen.mouseDragged	port	crates/horizon-client/src/creative
 CreativeModeInventoryScreen.extractRenderState	port	crates/horizon-client/src/game.rs::Game::draw_creative	trash tooltip text is fixed English; no pointing-hand or resize cursor over tabs and the scrollbar
 CreativeModeInventoryScreen.getTooltipFromContainerItem	port	crates/horizon-client/src/game.rs::Game::creative_tooltip_tabs	the containing tabs' names in blue, then a # search's tags in dark purple; none for a category tab's own grid slot
 CreativeModeInventoryScreen.getTabY	port	crates/horizon-client/src/creative.rs::Creative::tab_position	click area uses the drawn tab position, 4 px off vanilla's -32 / image height
+CreativeModeInventoryScreen.mouseClicked	port	crates/horizon-client/src/creative.rs::Creative::press_scrollbar	right-click selects a tab and presses the scrollbar (taken even when the tab has nothing to scroll); a left click on the scrollbar goes on as an outside click, and the rest is AbstractContainerScreen.mouseClicked
 CreativeModeInventoryScreen.checkTabClicked	inline	crates/horizon-client/src/game.rs::Game::click_creative	loop over the tab rectangles
 CreativeModeInventoryScreen.checkTabHovering	inline	crates/horizon-client/src/game.rs::Game::draw_creative	tab title tooltip
 CreativeModeInventoryScreen.extractTabButton	inline	crates/horizon-client/src/game.rs::Game::draw_creative	tab sprite and icon item
