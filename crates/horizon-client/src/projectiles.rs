@@ -133,6 +133,12 @@ impl ProjectileKind {
     pub fn ignores_blast(&self) -> bool {
         matches!(self, Self::WindCharge | Self::BreezeWindCharge)
     }
+    /// `AbstractHurtingProjectile.shouldBurn`: a fireball sets itself alight on every tick
+    /// it runs, a wind charge and a `WitherSkull` never do (`WitherSkull.shouldBurn`
+    /// returns false), so their saves keep no `Fire`.
+    pub fn burns(&self) -> bool {
+        self.is_item_fireball()
+    }
     /// Whether the kind is a `Fireball` proper (`LargeFireball`,
     /// `SmallFireball`): the projectiles that carry an `Item`
     /// (`Fireball.DATA_ITEM_STACK`) and are drawn as it. A `DragonFireball`

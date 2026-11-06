@@ -2637,11 +2637,14 @@ pub fn fireball_to_nbt(
     owner: Option<[i32; 4]>,
     raw: Option<&Tag>,
 ) -> Option<Tag> {
-    let power = match p.kind {
-        ProjectileKind::LargeFireball { power } => Some(power),
+    // `Fireball.addAdditionalSaveData` writes `ExplosionPower`; `WitherSkull`'s writes
+    // `dangerous` over the same `AbstractHurtingProjectile` base.
+    let (power, dangerous) = match p.kind {
+        ProjectileKind::LargeFireball { power } => (Some(power), None),
         ProjectileKind::SmallFireball
         | ProjectileKind::WindCharge
-        | ProjectileKind::BreezeWindCharge => None,
+        | ProjectileKind::BreezeWindCharge => (None, None),
+        ProjectileKind::WitherSkull { dangerous } => (None, Some(dangerous)),
         _ => return None,
     };
     let base = Base {
@@ -2660,9 +2663,14 @@ pub fn fireball_to_nbt(
         Tag::Double(p.acceleration.to_bits()),
     );
     put_projectile(&mut tag, p, owner);
+    // WitherSkull.addAdditionalSaveData: a dangerous (blue) skull breaks the blocks its
+    // blast reaches and hits for 8, a black one for 5.
+    if let Some(dangerous) = dangerous {
+        put(&mut tag, "dangerous", Tag::Byte(i8::from(dangerous)));
+    }
     // AbstractHurtingProjectile.tick: shouldBurn is true for both fireballs, so
     // once ticked they igniteForSeconds(1) every tick.
-    if p.age > 0 && !p.kind.ignores_blast() {
+    if p.age > 0 && p.kind.burns() {
         let fire = number(tag.get("Fire")).unwrap_or(0).max(20);
         put(&mut tag, "Fire", Tag::Short(fire as i16));
     }
@@ -2754,6 +2762,7 @@ pub fn saved_with_chunk(p: &Projectile) -> bool {
         | ProjectileKind::ExperienceBottle
         | ProjectileKind::LlamaSpit
         | ProjectileKind::ShulkerBullet { target: None, .. }
+        | ProjectileKind::WitherSkull { .. }
         | ProjectileKind::Thrown(_) => true,
         ProjectileKind::Arrow { .. } => p.arrow.is_some(),
         // Not written yet: tridents save from their own list, and a bullet
@@ -2761,8 +2770,7 @@ pub fn saved_with_chunk(p: &Projectile) -> bool {
         ProjectileKind::Trident
         | ProjectileKind::ShulkerBullet {
             target: Some(_), ..
-        }
-        | ProjectileKind::WitherSkull { .. } => false,
+        } => false,
     }
 }
 
@@ -2896,6 +2904,11 @@ pub fn fireball_from_nbt(tag: &Tag, player: Option<[i32; 4]>) -> Option<Projecti
         "minecraft:small_fireball" => ProjectileKind::SmallFireball,
         "minecraft:wind_charge" => ProjectileKind::WindCharge,
         "minecraft:breeze_wind_charge" => ProjectileKind::BreezeWindCharge,
+        // `WitherSkull.readAdditionalSaveData`: a save without `dangerous` is a black
+        // skull, which is what a summoned one is too.
+        "minecraft:wither_skull" => ProjectileKind::WitherSkull {
+            dangerous: flag(tag, "dangerous"),
+        },
         _ => return None,
     };
     let owner = uuid_from_tag(tag.get("Owner"));
