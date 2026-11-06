@@ -6597,6 +6597,51 @@ mod fireball_nbt_tests {
         }
     }
 
+    /// `WitherSkull.addAdditionalSaveData` / `readAdditionalSaveData`: a skull in flight
+    /// is its chunk's to save, and a dangerous (blue) one keeps the flag, which decides
+    /// whether its blast breaks the blocks it reaches and whether it hits for 8 or 5.
+    #[test]
+    fn a_wither_skull_keeps_its_colour_in_flight() {
+        for dangerous in [true, false] {
+            let mut p = Projectile::new(
+                ProjectileKind::WitherSkull { dangerous },
+                Vec3::new(4.5, 80.0, 10.5),
+                None,
+            );
+            p.velocity = Vec3::new(0.0, -0.1, 0.3);
+            p.acceleration = 0.1;
+            p.age = 5;
+            assert!(saved_with_chunk(&p), "{dangerous}");
+            let tag = fireball_to_nbt(&p, [1; 4], None, None).unwrap();
+            assert_eq!(kind(&tag).as_deref(), Some("minecraft:wither_skull"));
+            assert_eq!(
+                number(tag.get("dangerous")),
+                Some(i64::from(dangerous)),
+                "{dangerous}"
+            );
+            // `WitherSkull.shouldBurn` is false, where a ticked fireball's save has Fire 20.
+            assert_eq!(number(tag.get("Fire")), Some(0), "{dangerous}");
+            let back = fireball_from_nbt(&tag, None).unwrap();
+            assert_eq!(back.kind, ProjectileKind::WitherSkull { dangerous });
+            assert_eq!((back.velocity.z, back.acceleration), (0.3, 0.1));
+        }
+        // A save without the flag is a black skull, as `readAdditionalSaveData` reads it.
+        let bare = Tag::compound([
+            ("id", Tag::String("minecraft:wither_skull".into())),
+            ("Pos", doubles(&[0.0, 70.0, 0.0])),
+        ]);
+        let p = fireball_from_nbt(&bare, None).unwrap();
+        assert_eq!(p.kind, ProjectileKind::WitherSkull { dangerous: false });
+        assert_eq!(p.acceleration, 0.1);
+        assert!(saved_with_chunk(&p));
+        // The fireballs still take Fire, so the two kinds' saves stay what vanilla writes.
+        let mut fireball = Projectile::new(ProjectileKind::SmallFireball, Vec3::ZERO, None);
+        fireball.age = 1;
+        let tag = fireball_to_nbt(&fireball, [1; 4], None, None).unwrap();
+        assert_eq!(number(tag.get("Fire")), Some(20));
+        assert_eq!(tag.get("dangerous"), None);
+    }
+
     #[test]
     fn a_lingering_potion_keeps_its_type_whatever_item_it_flies_as() {
         // `/summon minecraft:lingering_potion ~ ~ ~ {Item:{id:"minecraft:splash_potion"}}`
