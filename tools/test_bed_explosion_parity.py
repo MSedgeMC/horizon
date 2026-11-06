@@ -36,8 +36,10 @@ NETHERITE = [f'cmd Alice item replace entity @s armor.{s} with minecraft:netheri
 
 # The things that are not the player standing in the blast, by the tag their
 # facts are read back under: an armour stand, one made invisible
-# (`ArmorStand.ignoreExplosion` asks `isInvisible`), an item and a boat.
-VICTIMS = ('stand', 'invisible', 'item', 'boat')
+# (`ArmorStand.ignoreExplosion` asks `isInvisible`), an item and a boat close
+# to the bed, and an armour stand and an item at the edge of the blast, past
+# the damage but inside the push, which are the two that survive it.
+VICTIMS = ('stand', 'invisible', 'item', 'boat', 'edge', 'edge-item')
 
 
 def victim_facts(tag):
@@ -75,11 +77,22 @@ def scene(index, facing, place):
     # them can get is the blast's own.
     def spot(along, side):
         return f'{hx + dx * along + lx * side}.5 200 {hz + dz * along + lz * side}.5'
+    # The edge pair sits past the blast's damage but inside its reach: the
+    # damage falls to nothing around 9.3 blocks of a power-5 blast, and what is
+    # left there is the push, so both survive and their Motion is that push.
+    def ring(along, side):
+        x = hx + dx * along + lx * side
+        z = hz + dz * along + lz * side
+        return f'{x + .5:.1f} 200 {z + .5:.1f}'
     cmds += [f'cmd Alice summon minecraft:armor_stand {spot(2, 0)} {{Tags:["stand"],NoGravity:1b}}',
              f'cmd Alice summon minecraft:armor_stand {spot(3, 0)} {{Tags:["invisible"],Invisible:1b,NoGravity:1b}}',
              f'cmd Alice summon minecraft:item {spot(4, 0)} '
              f'{{Item:{{id:"minecraft:stone",count:1}},Tags:["item"],NoGravity:1b,Age:1s}}',
-             f'cmd Alice summon minecraft:oak_boat {spot(2, -2)} {{Tags:["boat"],NoGravity:1b}}']
+             f'cmd Alice summon minecraft:oak_boat {spot(2, -2)} {{Tags:["boat"],NoGravity:1b}}',
+             f'cmd Alice summon minecraft:armor_stand {ring(9.5, 0)} {{Tags:["edge"],NoGravity:1b}}',
+             f'cmd Alice summon minecraft:item {ring(8.5, -4)} '
+             f'{{Item:{{id:"minecraft:stone",count:1}},Tags:["edge-item"],NoGravity:1b,Age:1s}}',
+]
     pos = f'{at[0]} 200.0 {at[1]}'
     return [*cmds, f'cmd Alice tp Alice {pos} 0 0', f'pos Alice {pos} 0 0 1', 'ticks 20',
             'cmd Alice effect give @s minecraft:instant_health 1 10 true', 'ticks 5',
