@@ -1320,6 +1320,73 @@ mod tests {
             write_network(&Tag::String(JavaString(vec![0; 32768])), Limits::default()).is_err()
         );
     }
+    fn written_keys(tag: &Tag) -> Vec<String> {
+        let root = NamedTag {
+            name: JavaString::default(),
+            tag: tag.clone(),
+        };
+        let bytes = write_named(&root, Limits::default()).unwrap();
+        let mut at = 3; // the compound's header byte and its empty name
+        let mut keys = Vec::new();
+        loop {
+            let id = bytes[at];
+            at += 1;
+            if id == 0 {
+                return keys;
+            }
+            let len = usize::from(u16::from_be_bytes([bytes[at], bytes[at + 1]]));
+            at += 2;
+            keys.push(String::from_utf8(bytes[at..at + len].to_vec()).unwrap());
+            at += len;
+            at += match id {
+                1 => 1, // Byte
+                3 => 4, // Int
+                other => panic!("unexpected tag id {other}"),
+            };
+        }
+    }
+
+    /// `CompoundTag` is a `HashMap`, so its keys serialise in bucket order, not
+    /// the order they were put in. Both lists are `java.util.HashMap`'s own
+    /// iteration order for those keys (JDK 25 `HashMap.keySet()`).
+    #[test]
+    fn a_compound_serialises_in_java_hash_map_order() {
+        let two = Tag::compound([("Z", Tag::Byte(1)), ("a", Tag::Byte(2))]);
+        assert_eq!(
+            write_named(
+                &NamedTag {
+                    name: JavaString::default(),
+                    tag: two
+                },
+                Limits::default()
+            )
+            .unwrap(),
+            [0x0a, 0, 0, 1, 0, 1, b'a', 2, 1, 0, 1, b'Z', 1, 0]
+        );
+        let keys = [
+            "Z", "a", "Name", "id", "x", "y", "z", "Pos", "Rotation", "Motion", "OnGround",
+            "Health", "Air", "Fire",
+        ];
+        let tag = Tag::compound(
+            keys.into_iter()
+                .enumerate()
+                .map(|(i, key)| (key, Tag::Int(i as i32))),
+        );
+        assert_eq!(
+            written_keys(&tag),
+            [
+                "a", "Motion", "Health", "OnGround", "Air", "Rotation", "Name", "Pos", "Fire", "x",
+                "y", "Z", "z", "id"
+            ]
+        );
+        // The text is not: `StringTagVisitor.visitCompound` sorts the entries it
+        // copies out of the map, so SNBT keeps the key order this test's binary
+        // form just lost.
+        assert_eq!(
+            crate::snbt_text::to_snbt(&tag),
+            "{Air:12,Fire:13,Health:11,Motion:9,Name:2,OnGround:10,Pos:7,Rotation:8,Z:0,a:1,id:3,x:4,y:5,z:6}"
+        );
+    }
     #[test]
     fn duplicate_keys_last_wins_and_nan_output_is_canonical_on_disk() {
         let bytes = [10, 1, 0, 1, b'x', 1, 1, 0, 1, b'x', 2, 0];
