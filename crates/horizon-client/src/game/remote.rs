@@ -3503,10 +3503,14 @@ impl Game<'_> {
             C::ForgetLevelChunk(p) => {
                 self.forget_remote_columns(&mut [(p.pos[0], p.pos[1])].into_iter().collect());
             }
-            C::ChunkBatchFinished(_) => {
-                // ChunkBatchSizeCalculator's ceiling; meshing runs on workers.
+            // ChunkBatchSizeCalculator: the answer is the rate the last batches
+            // arrived at, so a slow link or a slow machine asks for fewer and the
+            // server's sender paces itself instead of piling chunks up unread.
+            C::ChunkBatchStart(_) => self.chunk_batches.on_batch_start(),
+            C::ChunkBatchFinished(p) => {
+                self.chunk_batches.on_batch_finished(p.size);
                 self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
-                    chunks_per_tick: 64.0,
+                    chunks_per_tick: self.chunk_batches.desired_chunks_per_tick(),
                 }));
             }
             C::BlockUpdate(p) => self.server_block(p.pos, p.state),

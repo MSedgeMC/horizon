@@ -3232,6 +3232,9 @@ struct Game<'a> {
     entity_attachments: HashMap<[i32; 4], horizon_world::attachments::Attachments>,
     /// Connected to a server: the world comes from the network (game/remote.rs).
     remote: Option<remote::Remote>,
+    /// How many chunks a tick this client asks the server for, from how long its
+    /// batches take to arrive (`ChunkBatchSizeCalculator`).
+    chunk_batches: horizon_client::chunk_batches::ChunkBatchSizeCalculator,
     /// This world is open to the network (game/lan.rs).
     lan: Option<lan::LanHost>,
     /// Single player's server thread, which `remote` is connected to.
@@ -20527,6 +20530,7 @@ impl<'a> Game<'a> {
             persist: Default::default(),
             entity_attachments: Default::default(),
             remote: None,
+            chunk_batches: Default::default(),
             lan: None,
             integrated: None,
             level_shapes: Default::default(),
