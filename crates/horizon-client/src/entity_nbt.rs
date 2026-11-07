@@ -138,8 +138,8 @@ pub fn fill_common_defaults(tag: &mut Tag) {
 
 /// The mobs that save `Age` and `AgeLocked`.
 fn saves_age(s: crate::mobs::Species) -> bool {
-    use crate::mobs::{Species, drops::can_be_baby, finalize::ageable};
-    s == Species::Tadpole || (ageable(s) && can_be_baby(s))
+    use crate::mobs::{Species, finalize::ageable, species::can_be_a_baby};
+    s == Species::Tadpole || (ageable(s) && can_be_a_baby(s))
 }
 /// `LivingEntity` + `Mob` (+ `AgeableMob`, creeper and skeleton specifics).
 /// The mobs whose class extends vanilla's `Animal` (and so save `InLove`):
@@ -643,15 +643,11 @@ pub fn mob_to_nbt(
         if species != crate::mobs::Species::Tadpole {
             map.insert("ForcedAge".into(), Tag::Int(m.extra.forced_age));
         }
-    } else if matches!(
-        species,
-        crate::mobs::Species::Parrot
-            | crate::mobs::Species::Slime
-            | crate::mobs::Species::MagmaCube
-            | crate::mobs::Species::ZombieNautilus
-    ) {
+    } else if crate::mobs::finalize::ageable(species) {
         // AgeableMob.addAdditionalSaveData writes nothing when canBeABaby is
-        // false: drop the ignored values a raw input compound carried.
+        // false — the frog, the parrot, the zombie nautilus, the camel husk,
+        // the slime and the magma cube: drop the ignored values a raw input
+        // compound carried rather than writing them back out.
         for key in ["Age", "ForcedAge", "AgeLocked"] {
             map.remove(&key.into());
         }
@@ -1126,9 +1122,17 @@ pub fn mob_to_nbt(
                 map.insert("anger".into(), Tag::compound(Vec::<(&str, Tag)>::new()));
             }
         }
-        // Armadillo.addAdditionalSaveData: the time left to the next scute.
+        // Armadillo.addAdditionalSaveData: the time left to the next scute, and
+        // the state it is in, which is always written (`idle` when it is not
+        // rolled up).
         "minecraft:armadillo" => {
             map.insert("scute_time".into(), Tag::Int(m.extra.egg_time));
+            map.insert(
+                "state".into(),
+                string(crate::mobs::armadillo::state_name(
+                    crate::mobs::armadillo::state(m),
+                )),
+            );
         }
         "minecraft:ravager" => {
             map.insert("AttackTick".into(), Tag::Int(m.extra.counter));
@@ -2221,11 +2225,18 @@ pub fn mob_from_nbt(
             st.vibration = crate::sculk::Data::from_nbt(listener);
         }
     }
-    // Armadillo.readAdditionalSaveData: keeps the constructor's time when absent.
-    if m.species() == crate::mobs::Species::Armadillo
-        && let Some(t) = number(tag.get("scute_time"))
-    {
-        m.extra.egg_time = t as i32;
+    // Armadillo.readAdditionalSaveData: the saved state through `switchToState`
+    // (`onSyncedDataUpdated` then restarts the time in that state), idle for a
+    // save that names none; then the time to the next scute, the constructor's
+    // when absent.
+    if m.species() == crate::mobs::Species::Armadillo {
+        crate::mobs::armadillo::set_state(
+            &mut m,
+            crate::mobs::armadillo::state_by_name(text(tag.get("state")).as_deref()),
+        );
+        if let Some(t) = number(tag.get("scute_time")) {
+            m.extra.egg_time = t as i32;
+        }
     }
     if m.species() == crate::mobs::Species::Ravager {
         m.extra.counter = number(tag.get("AttackTick")).unwrap_or(0) as i32;
@@ -2357,6 +2368,25 @@ pub fn mob_from_nbt(
 
 /// `ItemEntity`: Health, Age, PickupDelay, Item, Thrower.
 pub fn item_entity_to_nbt(e: &ItemEntity, uuid: [i32; 4], raw: Option<&Tag>) -> Tag {
+    item_entity_to_nbt_saved(e, uuid, raw, item_to_nbt(&e.stack))
+}
+
+/// ItemEntity saved with the actual loaded item prototype, including transfers.
+pub fn item_entity_to_nbt_with_items(
+    e: &ItemEntity,
+    uuid: [i32; 4],
+    raw: Option<&Tag>,
+    items: &crate::items::Items,
+) -> Tag {
+    item_entity_to_nbt_saved(
+        e,
+        uuid,
+        raw,
+        horizon_items::item_nbt::item_to_nbt_with_items(&e.stack, items),
+    )
+}
+
+fn item_entity_to_nbt_saved(e: &ItemEntity, uuid: [i32; 4], raw: Option<&Tag>, item: Tag) -> Tag {
     let base = Base {
         id: "minecraft:item",
         uuid,
@@ -2368,7 +2398,7 @@ pub fn item_entity_to_nbt(e: &ItemEntity, uuid: [i32; 4], raw: Option<&Tag>) -> 
     };
     let mut tag = base.non_mob_tag(raw);
     for (key, value) in [
-        ("Item", item_to_nbt(&e.stack)),
+        ("Item", item),
         ("Health", Tag::Short(e.health as i16)),
         ("Fire", Tag::Short(e.fire_ticks as i16)),
         (
@@ -4048,11 +4078,16 @@ mod tests {
     }
 
     #[test]
-    fn cubes_omit_supplied_age_and_pigs_keep_modeled_age() {
+    fn an_ageable_mob_that_cannot_be_a_baby_saves_no_age() {
         use crate::mobs::Species;
+        // AgeableMob.addAdditionalSaveData writes Age only when canBeABaby is
+        // true, so every ageable class that overrides it to false writes none
+        // of it: a frog and a camel husk keep no raw `Age` either.
         for (species, id) in [
             (Species::Slime, "minecraft:slime"),
             (Species::MagmaCube, "minecraft:magma_cube"),
+            (Species::Frog, "minecraft:frog"),
+            (Species::CamelHusk, "minecraft:camel_husk"),
             (Species::Pig, "minecraft:pig"),
         ] {
             let mut kind = crate::mobs::sensor_scan_tests::kind();
