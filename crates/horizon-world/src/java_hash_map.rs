@@ -183,10 +183,8 @@ impl<K: JavaKey, V> JavaHashMap<K, V> {
         Some(&self.node(i).value)
     }
     pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
-        match self.find(key) {
-            Some(i) => Some(&mut self.node_mut(i).value),
-            None => None,
-        }
+        let (_, i) = self.find(key)?;
+        Some(&mut self.node_mut(i).value)
     }
     /// Every live entry once, in storage order: a walk that edits values in
     /// place does not depend on the traversal order `entries` gives.

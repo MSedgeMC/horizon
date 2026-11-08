@@ -1753,7 +1753,7 @@ mod tests {
                         match *kind {
                             60 | 62 => {
                                 w.varint(r.varint().unwrap());
-                                w.nbt(&r.nbt().unwrap());
+                                w.nbt(&canonical(&r.nbt().unwrap()));
                             }
                             76 | 77 => {
                                 let n = if *kind == 76 {
@@ -1778,12 +1778,12 @@ mod tests {
                                 w.varint(n);
                                 for _ in 0..n {
                                     w.varint(r.varint().unwrap());
-                                    w.nbt(&r.nbt().unwrap());
+                                    w.nbt(&canonical(&r.nbt().unwrap()));
                                     w.varint(r.varint().unwrap());
                                     w.varint(r.varint().unwrap());
                                 }
                             }
-                            _ => w.nbt(&r.nbt().unwrap()),
+                            _ => w.nbt(&canonical(&r.nbt().unwrap())),
                         }
                         assert_eq!(r.remaining(), 0);
                         *data = w.data;
@@ -1796,6 +1796,29 @@ mod tests {
             normalize(stack);
         }
         stack
+    }
+    /// A compound rebuilt with its keys inserted in sorted order, at every
+    /// depth. `normalized` re-encodes NBT, and a `Compound` writes in `HashMap`
+    /// bucket order, which collides differently depending on how many `put`s
+    /// built the map - so two semantically equal tags can encode differently.
+    /// Rebuilding in one fixed order removes that from the comparison.
+    fn canonical(tag: &Tag) -> Tag {
+        match tag {
+            Tag::Compound(c) => {
+                let mut entries: Vec<(horizon_world::nbt::JavaString, Tag)> = c
+                    .iter()
+                    .map(|(k, v)| (k.clone(), canonical(v)))
+                    .collect();
+                entries.sort_by(|a, b| a.0.to_string_lossy().cmp(&b.0.to_string_lossy()));
+                let mut out = horizon_world::nbt::Compound::new();
+                for (k, v) in entries {
+                    out.insert(k, v);
+                }
+                Tag::Compound(out)
+            }
+            Tag::List(items) => Tag::List(items.iter().map(canonical).collect()),
+            other => other.clone(),
+        }
     }
     fn legacy_parts(data: &[u8]) -> Option<(i32, i8, Tag)> {
         let mut r = Reader::new(data);
