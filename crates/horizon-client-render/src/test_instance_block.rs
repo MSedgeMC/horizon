@@ -144,16 +144,29 @@ impl TestInstanceBlock {
             self.data = data;
         }
         self.error_markers.clear();
-        if let Some(Tag::List(markers)) = tag.get("errors") {
-            for m in markers {
-                if let (Some(Tag::IntArray(p)), Some(text)) = (m.get("pos"), m.get("text"))
-                    && p.len() == 3
-                {
-                    self.error_markers.push(ErrorMarker {
+        if let Some(markers) = tag.get("errors") {
+            // `ErrorMarker.LIST_CODEC` reads the whole list: one bad marker
+            // leaves no markers.
+            let Tag::List(markers) = markers else {
+                return;
+            };
+            let parsed = markers
+                .iter()
+                .map(|m| {
+                    let (Some(Tag::IntArray(p)), Some(text)) = (m.get("pos"), m.get("text")) else {
+                        return None;
+                    };
+                    if p.len() != 3 {
+                        return None;
+                    }
+                    Some(ErrorMarker {
                         pos: [p[0], p[1], p[2]],
                         text: text.clone(),
-                    });
-                }
+                    })
+                })
+                .collect::<Option<Vec<_>>>();
+            if let Some(parsed) = parsed {
+                self.error_markers = parsed;
             }
         }
     }
