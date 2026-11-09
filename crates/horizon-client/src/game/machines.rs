@@ -2030,11 +2030,8 @@ mod hopper_cart_transfer_tests {
 #[cfg(test)]
 mod blocked_chest_hopper_tests {
     use super::super::native_machines::tests::server_game;
-    use super::*;
     use horizon_client::containers::BlockEntity;
     use horizon_client::items::ItemStack;
-    use horizon_core::position::BlockPos;
-    use horizon_world::level::LevelAccess;
 
     fn chest_with(slots: usize, slot: usize, stack: ItemStack) -> BlockEntity {
         let mut items = vec![None; slots];
