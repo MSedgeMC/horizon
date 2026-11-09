@@ -1439,4 +1439,26 @@ mod consume_tests {
         let _ = ran;
     }
 
+    /// `Fox.readAdditionalSaveData` clears the trusted list and reads
+    /// `Trusted` with `TRUSTED_LIST_CODEC`: one bad entry fails the whole
+    /// list, which then reads as none, not as the good entries beside it.
+    #[test]
+    fn a_bad_trusted_entry_costs_the_whole_list() {
+        use horizon_world::nbt::Tag;
+        let good = Tag::IntArray(vec![1, 2, 3, 4]);
+        let mut f = fox();
+        let bad = Tag::compound([(
+            "Trusted",
+            Tag::List(vec![good.clone(), Tag::String("no".into())]),
+        )]);
+        read_trusted(&mut f, &bad);
+        assert_eq!(trusted_entities(&f).count(), 0, "one bad entry, no trust");
+        let ok = Tag::compound([("Trusted", Tag::List(vec![good.clone()]))]);
+        read_trusted(&mut f, &ok);
+        assert_eq!(
+            trusted_entities(&f).collect::<Vec<_>>(),
+            vec![[1, 2, 3, 4]],
+            "a good list is trusted"
+        );
+    }
 }
