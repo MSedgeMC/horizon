@@ -1942,3 +1942,26 @@ mod sign_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod pause_tests {
+    use super::BookScreen;
+
+    /// `LecternScreen.isPauseScreen` is false: a book read on a lectern does
+    /// not stop the single-player world, while the book in hand pauses.
+    #[test]
+    fn only_a_book_read_on_a_lectern_leaves_the_world_running() {
+        let in_hand = BookScreen::View {
+            pages: Vec::new(),
+            page: 0,
+            lectern: None,
+        };
+        let on_lectern = BookScreen::View {
+            pages: Vec::new(),
+            page: 0,
+            lectern: Some((1, 2, 3)),
+        };
+        assert!(in_hand.pauses_world());
+        assert!(!on_lectern.pauses_world());
+    }
+}
