@@ -30,6 +30,7 @@ use horizon_world::registry::BlockStateId;
 use std::{collections::HashMap, sync::Arc};
 mod index;
 mod nbt;
+mod tnt;
 pub(super) use index::CartIndex;
 use index::cart_at;
 
@@ -129,6 +130,10 @@ pub(super) struct Minecart {
     /// a landing of three blocks or more and taken by the cart's next tick
     /// step (vanilla explodes inside the move itself).
     fall_blast: Option<f64>,
+    /// `MinecartTNT.explosionPowerBase`, saved off its 4.0 default.
+    explosion_power: f32,
+    /// `MinecartTNT.explosionSpeedFactor`, saved off its 1.0 default.
+    explosion_speed_factor: f32,
     /// `Entity.stuckSpeedMultiplier`: set by a cobweb the cart's box is in,
     /// scaled into its next move.
     stuck: Vec3,
@@ -359,6 +364,8 @@ impl Minecart {
             fuel: 0,
             push: Vec3::ZERO,
             fuse: -1,
+            explosion_power: 4.0,
+            explosion_speed_factor: 1.0,
             enabled: true,
             loot: None,
             first_tick: true,
@@ -1438,7 +1445,7 @@ impl Game<'_> {
             CartKind::Tnt => {
                 // MinecartTNT.causeFallDamage ran inside the move.
                 if let Some(speed_sqr) = c.fall_blast.take() {
-                    self.explode_cart(c, speed_sqr);
+                    tnt::explode_cart(self, c, speed_sqr);
                     return false;
                 }
                 // MinecartTNT.tick: the fuse and the collision check are separate.
@@ -1451,7 +1458,7 @@ impl Game<'_> {
                     // explode(horizontalDistanceSqr()): a rising cart's
                     // vertical speed adds nothing.
                     let speed = c.velocity.x * c.velocity.x + c.velocity.z * c.velocity.z;
-                    self.explode_cart(c, speed);
+                    tnt::explode_cart(self, c, speed);
                     return false;
                 }
                 // MinecartTNT.tick reads the delta left after AbstractMinecart.tick
@@ -1461,7 +1468,7 @@ impl Game<'_> {
                 // the free axis (#11380).
                 let speed = c.velocity.horizontal_distance_squared();
                 if tnt_ignites_by_collision(c.horizontal_collision, speed) {
-                    self.explode_cart(c, speed);
+                    tnt::explode_cart(self, c, speed);
                     return false;
                 }
             }
@@ -1540,42 +1547,6 @@ impl Game<'_> {
         {
             c.fuse = 80;
         }
-    }
-    fn explode_cart(&mut self, c: &mut Minecart, speed_sqr: f64) {
-        if !self.ui.rules.bool("tnt_explodes") {
-            return;
-        }
-        let speed = speed_sqr.sqrt().min(5.0);
-        let r = c.random.next_double();
-        let power = (4.0 + r * 1.5 * speed) as f32;
-        let at = [c.position.x, c.position.y, c.position.z];
-        // The cart is the explosion's source: it is gone before the blast
-        // looks for entities, so it can't hit itself.
-        let silent = self.entity_silent(c.id);
-        if let Some(i) = self.carts.iter().position(|x| x.id == c.id) {
-            self.eject_cart_mobs(i);
-        }
-        self.release_vehicle_container(c.id);
-        self.carts.retain(|x| x.id != c.id);
-        // ExplosionInteraction.TNT: the tnt_explosion_drop_decay rule.
-        let interaction = self.destroy_type("tnt_explosion_drop_decay");
-        // MinecartTNT.isPrimed (fuse > -1): a cart that ran into a wall or
-        // fell unprimed blows rails up like any blast.
-        self.combat.rail_proof_blast = c.fuse >= 0;
-        self.combat.explosion_in_water = self.bounds_in_water(c.bounds());
-        let _ = self.with_hive_emptying_blast(|g| {
-            g.server_explode_from(
-                at,
-                power,
-                interaction,
-                false,
-                super::explosion::ExplosionSource::default()
-                    .with_silence(silent)
-                    .with_entity(c.id, "minecraft:tnt_minecart"),
-            )
-        });
-        self.combat.explosion_in_water = false;
-        self.combat.rail_proof_blast = false;
     }
     /// `AbstractMinecart.push` from each player walking into a cart
     /// (`LivingEntity.pushEntities`): the window's player and every server
@@ -2425,7 +2396,7 @@ impl Game<'_> {
             let id = self.carts[i].id;
             self.release_vehicle_container(id);
             let mut c = self.carts.remove(i);
-            self.explode_cart(&mut c, arrow_velocity.length_squared());
+            tnt::explode_cart(self, &mut c, arrow_velocity.length_squared());
             return;
         }
         self.hurt_cart(i, damage, creative, false);

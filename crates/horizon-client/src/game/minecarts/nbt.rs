@@ -61,7 +61,10 @@ impl Minecart {
                     put("PushZ", Tag::Double(self.push.z.to_bits()));
                     put("Fuel", Tag::Short(self.fuel as i16));
                 }
-                CartKind::Tnt => put("fuse", Tag::Int(self.fuse)),
+                CartKind::Tnt => {
+                    put("fuse", Tag::Int(self.fuse));
+                    super::tnt::write(self, &mut put);
+                }
                 // BaseCommandBlock.save (its CustomName shares the entity's key).
                 CartKind::CommandBlock => {
                     for (key, value) in self.command.save() {
@@ -149,6 +152,9 @@ impl Minecart {
         // readAdditionalSaveData: the saved push has no y.
         c.push = Vec3::new(double("PushX"), 0.0, double("PushZ"));
         c.fuse = int("fuse").unwrap_or(-1);
+        if kind == CartKind::Tnt {
+            super::tnt::read(c, tag);
+        }
         // readAdditionalSaveData: DisplayState, DisplayOffset (default offset when absent).
         c.custom_display = tag.get("DisplayState").cloned();
         c.custom_offset = int("DisplayOffset");
