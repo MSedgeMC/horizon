@@ -275,4 +275,23 @@ mod tests {
         );
         assert_eq!(Status::by_index(7), Status::Cleared);
     }
+
+    #[test]
+    fn a_bad_error_marker_clears_the_list() {
+        let mut block = TestInstanceBlock::default();
+        block.load(&Tag::compound([(
+            "errors",
+            Tag::List(vec![
+                Tag::compound([
+                    ("pos", Tag::IntArray(vec![1, 2, 3])),
+                    ("text", string("boom")),
+                ]),
+                Tag::Int(1),
+            ]),
+        )]));
+        assert!(
+            block.error_markers.is_empty(),
+            "one bad marker leaves no markers"
+        );
+    }
 }
