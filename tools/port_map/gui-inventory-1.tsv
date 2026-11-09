@@ -90,6 +90,7 @@ BookViewScreen.setBookAccess	port	crates/horizon-client/src/game/books.rs::Game:
 BookViewScreen.setPage	port	crates/horizon-client/src/game/books.rs::Game::remote_lectern_page	lectern page changed
 BookViewScreen.getNarrationMessage	skip:ui		narration
 BookViewScreen.createMenuControls	inline	crates/horizon-client/src/game/books.rs::Game::book_click	Done button (Done and Take Book on a lectern)
+BookViewScreen.isPauseScreen	port	crates/horizon-client/src/game/books.rs::BookScreen::pauses_world	the book in hand pauses; only a lectern's view is false (LecternScreen.isPauseScreen)
 BookViewScreen.createPageControlButtons	inline	crates/horizon-client/src/game/books.rs::Game::draw_book	page buttons, hit tests in book_click
 BookViewScreen.pageBack	port	crates/horizon-client/src/game/books.rs::Game::turn_page	
 BookViewScreen.pageForward	port	crates/horizon-client/src/game/books.rs::Game::turn_page	

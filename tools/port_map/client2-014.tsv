@@ -121,6 +121,7 @@ RecoverWorldDataScreen.repositionElements	port	crates/horizon-client/src/title.r
 RecoverWorldDataScreen.getNarrationMessage	port	crates/horizon-client/src/title.rs::Title::narration	Mode::Recover: recover_world.title then recover_world.message with the folder name
 Screen.extractRenderStateWithTooltipAndSubtitles	port	crates/horizon-client/src/game.rs::Game::hud_layers	draws the current screen's layer and tooltips; unsure about subtitles
 Screen.setInitialFocus	skip:ui		keyboard focus starts on the first widget; Horizon draws its own focus
+Screen.isPauseScreen	port	crates/horizon-client/src/game/screens.rs::Screen::is_pause_screen	the class default is true; the false overrides are in each screen's row, and a book (lecterns false) and the win screen answer in Game::pauses_game
 Screen.isInputCaptured	port	crates/horizon-client/src/title.rs::Title::has_caret_field	gap: minor: only the title screen's text fields
 Screen.addWidget	skip:ui		widget list plumbing; Horizon draws each screen from its own state
 Screen.removeWidget	skip:ui		widget list plumbing; Horizon draws each screen from its own state
