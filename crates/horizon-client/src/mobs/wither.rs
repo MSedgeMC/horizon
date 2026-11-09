@@ -16,6 +16,22 @@ use crate::projectiles::{Projectile, ProjectileKind};
 use horizon_core::geometry::trig::Mth;
 use horizon_core::{geometry::Vec3, random::RandomSource};
 
+/// The `checkDespawn` overrides that replace `Mob.checkDespawn` whole: a
+/// mannequin is a `LivingEntity`, which never despawns, and
+/// `WitherBoss.checkDespawn` discards the boss in peaceful (it is not allowed
+/// there) and otherwise only clears its `noActionTime`, so neither the distance
+/// removal nor the 600-tick random one reaches it. False: discard.
+pub fn check_despawn(m: &mut Mob, peaceful: bool) -> bool {
+    if m.species() != Species::Wither {
+        return true;
+    }
+    if peaceful {
+        return false;
+    }
+    m.ai.no_action_time = 0;
+    true
+}
+
 // Wither state: `counter` the invulnerable ticks, `counter2` the block
 // breaking clock, `point` the main target's position. `ints`: the side
 // heads' targets (mob id, -1 the player, 0 none), their next update ticks
