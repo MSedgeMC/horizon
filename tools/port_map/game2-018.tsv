@@ -60,7 +60,7 @@ TrialSpawnerStateData.getOrCreateDisplayEntity	port	crates/horizon-client/src/ga
 TrialSpawnerStateData.getDispensingItems	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::spawn_ominous_item_spawner	rolls the loot once and keeps a non-empty roll
 TrialSpawnerStateData.lowResolutionPosition	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::spawn_ominous_item_spawner	the 30 by 20 by 30 cell of the position plus the level seed
 VaultBlockEntity.saveAdditional	port	crates/horizon-client-render/src/vault.rs::Vault::save	writes config, shared data and server data
-VaultBlockEntity.loadAdditional	port	crates/horizon-client-render/src/vault.rs::Vault::load	reads server data, config and shared data back
+VaultBlockEntity.loadAdditional	port	crates/horizon-client-render/src/vault.rs::Vault::load	reads server data, including the saved ejection total, config and shared data back
 VaultBlockEntity.getServerData	skip:other		accessor that is null on the client; Horizon keeps one Vault struct holding both halves, so there is no server object to return
 VaultBlockEntity.Client.emitDeactivationParticles	inline	crates/horizon-client/src/game/trial_visuals.rs::Game::trial_level_event	the 3016 arm draws 20 flame particles in the cage and plays the deactivate sound
 VaultBlockEntity.Client.emitIdleParticles	inline	crates/horizon-client/src/game/trial_visuals.rs::Game::client_tick_vault	half the ticks: a smoke and a flame particle inside the cage
