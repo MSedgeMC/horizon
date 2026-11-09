@@ -1042,16 +1042,24 @@ pub fn decode_block_entity(tag: &Tag) -> Option<((i32, i32, i32), crate::contain
                 f.speed = speed as f32;
             }
             // A save without it owes nothing: the field is newer than some worlds.
+            // `RecipesUsed.CODEC` reads the map all or nothing, so one bad
+            // count leaves the empty map.
+            f.recipes_used.clear();
             if let Some(Tag::Compound(used)) = tag.get("RecipesUsed") {
-                for (id, count) in used {
-                    let count = match count {
-                        Tag::Int(n) => *n,
-                        _ => continue,
-                    };
-                    // Saves from before the key was namespaced hold both forms of an id.
-                    *f.recipes_used
-                        .entry(crate::containers::recipe_used_key(&id.to_string_lossy()))
-                        .or_insert(0) += count.max(0) as u32;
+                let parsed = used.iter().try_fold(
+                    std::collections::HashMap::new(),
+                    |mut out, (id, count)| {
+                        let Tag::Int(n) = count else {
+                            return None;
+                        };
+                        // Saves from before the key was namespaced hold both forms of an id.
+                        *out.entry(crate::containers::recipe_used_key(&id.to_string_lossy()))
+                            .or_insert(0) += (*n).max(0) as u32;
+                        Some(out)
+                    },
+                );
+                if let Some(parsed) = parsed {
+                    f.recipes_used = parsed;
                 }
             }
         }
