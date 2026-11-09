@@ -2297,6 +2297,15 @@ fn check_despawn(m: &mut Mob, w: &MobWorld) -> bool {
     if m.species() == Species::Mannequin {
         return true;
     }
+    // WitherBoss.checkDespawn: a boss is discarded in peaceful and never for
+    // distance — neither the distance removal nor the 600-tick random one of
+    // `Mob.checkDespawn` is reached — and its action time is cleared every
+    // tick, so a wither is not removed for standing still either.
+    if m.species() == Species::Wither {
+        m.ai.no_action_time = 0;
+        return w.difficulty.effective != 0.0
+            || super::spawn_rules::allowed_in_peaceful(m.species());
+    }
     // Mob.checkDespawn discards disallowed types even when persistent or NoAI.
     if w.difficulty.effective == 0.0 && !super::spawn_rules::allowed_in_peaceful(m.species()) {
         return false;
