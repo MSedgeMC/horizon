@@ -51,6 +51,8 @@ impl Game<'_> {
             let mut consumable = consumable.clone();
             if let Some(sound) = horizon_client::item_sync::consumable_sound(stack) {
                 consumable.sound = sound;
+            }
+            consumable
         };
         self.emit_consume(&consumable, stack, 16);
         // ServerPlayer: the used statistic and the consume_item trigger.
