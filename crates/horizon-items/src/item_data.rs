@@ -368,6 +368,20 @@ impl ItemStack {
         }
         self.tidy();
     }
+    /// `ItemStack.set(ENCHANTMENTS, levels)` (loot's Set Enchantments):
+    /// unlike the update helper, a removal patch is replaced.
+    pub fn set_enchantments(&mut self, levels: Levels) {
+        let book = &*self.item == "minecraft:enchanted_book";
+        let data = self.data_mut();
+        if book {
+            data.set_other("!minecraft:stored_enchantments", None);
+            data.stored_enchantments = levels;
+        } else {
+            data.set_other("!minecraft:enchantments", None);
+            data.enchantments = levels;
+        }
+        self.tidy();
+    }
     /// `ItemStack.enchant`: upgrade to the higher level.
     pub fn enchant(&mut self, id: &str, level: u32) {
         let book = &*self.item == "minecraft:enchanted_book";
@@ -2005,6 +2019,41 @@ mod tests {
     #[test]
     fn fresh_hive_saved_patch_uses_whole_prototype() {
         check_hive_saved_patch(false);
+    }
+
+    #[test]
+    fn set_enchantments_replaces_a_removal() {
+        let mut stack = ItemStack::new("minecraft:diamond_sword", 1);
+        stack.data_mut().set_other(
+            "!minecraft:enchantments",
+            Some(horizon_world::nbt::Tag::compound(Vec::<(
+                &str,
+                horizon_world::nbt::Tag,
+            )>::new())),
+        );
+        stack.set_enchantments(vec![("minecraft:sharpness".into(), 1)]);
+        assert_eq!(stack.enchantment_level("minecraft:sharpness"), 1);
+        assert!(
+            stack
+                .data()
+                .and_then(|d| d.other("!minecraft:enchantments"))
+                .is_none()
+        );
+        let mut book = ItemStack::new("minecraft:enchanted_book", 1);
+        book.data_mut().set_other(
+            "!minecraft:stored_enchantments",
+            Some(horizon_world::nbt::Tag::compound(Vec::<(
+                &str,
+                horizon_world::nbt::Tag,
+            )>::new())),
+        );
+        book.set_enchantments(vec![("minecraft:sharpness".into(), 1)]);
+        assert_eq!(book.stored_enchantments().len(), 1);
+        assert!(
+            book.data()
+                .and_then(|d| d.other("!minecraft:stored_enchantments"))
+                .is_none()
+        );
     }
 
     #[test]

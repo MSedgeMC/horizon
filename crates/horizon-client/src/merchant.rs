@@ -862,7 +862,7 @@ impl Trades {
                         previous.wrapping_add(level).clamp(0, 255) as u32,
                     );
                 }
-                out.set_crafting_enchantments(levels);
+                out.set_enchantments(levels);
                 Some((out, 0))
             }
             "minecraft:enchant_with_levels" => {

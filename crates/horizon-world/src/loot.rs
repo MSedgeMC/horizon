@@ -1601,9 +1601,11 @@ impl<R: RandomSource> Context<'_, R> {
                     if stack.item == "minecraft:book" {
                         stack.item = "minecraft:enchanted_book".into();
                     }
+                    stack.enchantments.clear();
                     for (name, level) in map {
-                        let level = self.int(level);
-                        enchant(&mut stack, name, level);
+                        stack
+                            .enchantments
+                            .push((name.clone(), self.int(level).max(0) as i32));
                     }
                 }
             }
