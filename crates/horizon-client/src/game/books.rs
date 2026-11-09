@@ -71,6 +71,19 @@ pub(super) enum BookScreen {
     },
 }
 impl BookScreen {
+    /// `LecternScreen.isPauseScreen`: a book read on a lectern leaves the
+    /// world running; the book in hand (`BookViewScreen`) and the editor
+    /// pause. `Minecraft.pause` reads this where `Screen.isPauseScreen`
+    /// cannot: the book is not `Game.screen`.
+    pub(super) fn pauses_world(&self) -> bool {
+        !matches!(
+            self,
+            Self::View {
+                lectern: Some(_),
+                ..
+            }
+        )
+    }
     /// `BookSignScreen`'s constructor: its title box opens with the title
     /// kept from the last time, which Cancel stored (`titleValue`).
     fn begin_signing(&mut self) {
