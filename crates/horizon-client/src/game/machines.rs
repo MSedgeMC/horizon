@@ -1472,7 +1472,7 @@ impl Game<'_> {
                 ..stack.clone()
             };
             let face = Some(facing.opposite());
-            let inserted = match self.containers().view(target, false) {
+            let inserted = match self.containers().view(target, true) {
                 Some(into) => Some(self.dropper_insert(&into, one, face)),
                 None => self
                     .entity_container_at([
@@ -2024,5 +2024,79 @@ mod hopper_cart_transfer_tests {
             after_cart, 20,
             "one item a tick, not a stack nor eight ticks"
         );
+    }
+}
+
+#[cfg(test)]
+mod blocked_chest_dropper_tests {
+    use super::super::native_machines::tests::server_game;
+    use super::*;
+    use horizon_client::containers::BlockEntity;
+    use horizon_client::items::ItemStack;
+    use horizon_core::position::BlockPos;
+    use horizon_world::level::LevelAccess;
+
+    fn chest_with(slots: usize, slot: usize, stack: ItemStack) -> BlockEntity {
+        let mut items = vec![None; slots];
+        items[slot] = Some(stack);
+        BlockEntity::Chest(items)
+    }
+
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_dropper_does_not_put_its_item_into_a_blocked_chest() {
+        let mut game = server_game();
+        let dropper = (8, 64, 8);
+        let chest = (9, 64, 8);
+        let base = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:dropper")
+            .unwrap();
+        let dropper_state = game.with_props(base, &[("facing", "east")]).unwrap();
+        let chest_state = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:chest")
+            .unwrap();
+        game.world
+            .set(dropper.0, dropper.1, dropper.2, dropper_state)
+            .unwrap();
+        game.world
+            .set(chest.0, chest.1, chest.2, chest_state)
+            .unwrap();
+        game.world.block_entities.insert(
+            dropper,
+            chest_with(9, 0, ItemStack::new("minecraft:stone", 1)),
+        );
+        game.world
+            .block_entities
+            .insert(chest, BlockEntity::Chest(vec![None; 27]));
+        let conductor = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:stone")
+            .unwrap();
+        game.world.set(9, 65, 8, conductor).unwrap();
+
+        game.dispense_from(
+            BlockPos::new(dropper.0, dropper.1, dropper.2),
+            dropper_state,
+        )
+        .unwrap();
+
+        let chest_slots = match game.world.block_entities.get(&chest) {
+            Some(BlockEntity::Chest(items)) => items.clone(),
+            _ => panic!("chest block entity"),
+        };
+        assert_eq!(chest_slots[0], None, "the blocked chest stays empty");
+        let dropper_slots = match game.world.block_entities.get(&dropper) {
+            Some(BlockEntity::Chest(items)) => items.clone(),
+            _ => panic!("dropper block entity"),
+        };
+        assert_eq!(dropper_slots[0], None, "the dropper gave its item up");
     }
 }
