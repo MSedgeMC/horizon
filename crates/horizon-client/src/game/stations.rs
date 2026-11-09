@@ -5,6 +5,7 @@
 //! `BrewingStandScreen`); item rules live in `horizon_client::stations`.
 
 mod anvil;
+mod input;
 /// Invalid measurements must not reach tooltip positioning or reserve empty space.
 fn tooltip_component_size(size: Option<[f32; 2]>) -> Option<[f32; 2]> {
     size.filter(|size| size.iter().all(|v| v.is_finite() && *v > 0.0))
@@ -1217,22 +1218,6 @@ impl Game<'_> {
         };
         self.menu_click(Some(slot), i32::from(right), input);
         true
-    }
-    /// Recompute after slot changes; the anvil box follows its input item.
-    fn station_after_input(&mut self) {
-        let Some(s) = self.station.as_mut() else {
-            return;
-        };
-        if s.kind == Kind::Anvil && s.inputs[0] != s.anvil_last {
-            // AnvilScreen.slotChanged: the box follows its input item.
-            s.anvil_last = s.inputs[0].clone();
-            let name = s.inputs[0]
-                .as_ref()
-                .map(|i| stations::hover_name(&self.pack.names, i))
-                .unwrap_or_default();
-            anvil::input_changed(s, name);
-        }
-        self.station_changed();
     }
     /// `StonecutterScreen.mouseClicked` on its recipe grid: `clickMenuButton`
     /// with the cell's index (an empty cell's too), and the select sound when

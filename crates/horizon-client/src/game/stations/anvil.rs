@@ -20,6 +20,19 @@ pub(super) fn rename_box() -> horizon_client::ui::EditBox {
     edit
 }
 
+impl Station {
+    /// `AnvilScreen.onNameChanged`: a name the anvil menu takes goes to the
+    /// server only if it differs from the one last sent. `name` is blank when
+    /// the box shows the input item's own name.
+    pub(in crate::game) fn take_anvil_rename(&mut self, name: String) -> Option<String> {
+        if self.anvil_sent.as_deref() == Some(name.as_str()) {
+            return None;
+        }
+        self.anvil_sent = Some(name.clone());
+        Some(name)
+    }
+}
+
 /// `AnvilScreen.slotChanged`: the box shows the input's name, and only an
 /// input item makes it editable (`name.setEditable(!itemStack.isEmpty())`).
 /// A read-only box still keeps the focus, the caret keys and copy.
