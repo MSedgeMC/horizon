@@ -754,6 +754,14 @@ mod tests {
     }
 
     #[test]
+    fn a_bad_display_item_clears_the_shared_data() {
+        let v = Vault::load(&tag(
+            "{shared_data:{display_item:\"not_a_stack\",connected_players:[[I;0,0,0,1]]}}",
+        ));
+        assert!(v.connected_players.is_empty());
+    }
+
+    #[test]
     fn saved_data_round_trips() {
         let v = Vault::load(&tag(
             r#"{server_data:{rewarded_players:[[I;0,0,0,1]],state_updating_resumes_at:40L,items_to_eject:[{id:"minecraft:emerald",count:3}]},shared_data:{display_item:{id:"minecraft:emerald",count:3}}}"#,
