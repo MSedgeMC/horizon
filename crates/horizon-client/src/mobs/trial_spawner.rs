@@ -509,7 +509,6 @@ impl TrialSpawnerExt for TrialSpawner {
             cooldown_ends_at: long("cooldown_ends_at"),
             next_mob_spawns_at: long("next_mob_spawns_at"),
             total_mobs_spawned: spawner::number(tag.get("total_mobs_spawned"))
-                .filter(|v| (0..=i64::from(i32::MAX)).contains(v))
                 .map_or(0, |v| v as i32),
             next_spawn_data: tag.get("spawn_data").and_then(SpawnData::decode),
             ejecting_loot_table: identifier(tag.get("ejecting_loot_table")),
