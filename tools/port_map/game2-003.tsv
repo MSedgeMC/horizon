@@ -130,8 +130,8 @@ Hoglin.checkHoglinSpawnRules	port	crates/horizon-client/src/mobs/spawn_rules.rs:
 Hoglin.finalizeSpawn	port	crates/horizon-client/src/mobs/finalize.rs::Ctx::finalize	20 percent start as babies
 Hoglin.mobInteract	port	crates/horizon-client/src/game/creatures.rs::Game::interact_mob	gap: minor: a fed hoglin does not become persistent
 Hoglin.finishConversion	port	crates/horizon-client/src/mobs/piglin.rs::ai_step	zombification turns it into a zoglin with nausea
-Hoglin.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	gap: minor: CannotBeHunted is not written
-Hoglin.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	gap: minor: CannotBeHunted is not read
+Hoglin.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	IsImmuneToZombification, TimeInOverworld and CannotBeHunted, plus the HoglinAi PACIFIED brain memory with its TTL in extra.ints[0]
+Hoglin.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	the same; an absent PACIFIED memory leaves no ticks
 Hoglin.getBreedOffspring	port	crates/horizon-client/src/game/creatures.rs::Game::breed	gap: minor: the hoglin child is not made persistent
 HoglinAi.initCoreActivity	inline	crates/horizon-client/src/mobs/piglin.rs::register_hoglin	gap: minor: look-at-target and move-to-target sinks are not separate; the goal set stands in for them
 HoglinAi.initIdleActivity	inline	crates/horizon-client/src/mobs/piglin.rs::register_hoglin	gap: player: hoglins do not walk away from adult piglins within 8 blocks; the rest of the idle is there
