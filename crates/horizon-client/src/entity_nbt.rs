@@ -541,50 +541,6 @@ fn is_air(registry: &BlockRegistry, state: BlockStateId) -> bool {
         )
     })
 }
-/// The Mob codec's existing numeric reads, recursively for the same effect.
-fn mob_hidden_effect(tag: &Tag, id: &'static str) -> Option<crate::effects::EffectInstance> {
-    if !matches!(tag, Tag::Compound(_)) {
-        return None;
-    }
-    let visible = number(tag.get("show_particles")).is_none_or(|v| v != 0);
-    Some(crate::effects::EffectInstance {
-        id,
-        duration: number(tag.get("duration")).unwrap_or(0) as i32,
-        amplifier: number(tag.get("amplifier")).unwrap_or(0) as i32,
-        ambient: number(tag.get("ambient")).is_some_and(|v| v != 0),
-        visible,
-        show_icon: number(tag.get("show_icon")).map_or(visible, |v| v != 0),
-        hidden: tag
-            .get("hidden_effect")
-            .and_then(|h| mob_hidden_effect(h, id))
-            .map(Box::new),
-    })
-}
-/// `MobEffectInstance.Details`: the active tuple and its modeled weaker nodes.
-fn mob_effect_tag(e: &crate::effects::EffectInstance, root: bool) -> Tag {
-    let mut fields = Vec::new();
-    if root {
-        fields.push(("id", string(crate::brewing::namespaced(e.id))));
-    }
-    if e.amplifier != 0 {
-        fields.push((
-            "amplifier",
-            Tag::Byte(e.amplifier.clamp(0, 255) as u8 as i8),
-        ));
-    }
-    fields.push(("duration", Tag::Int(e.duration)));
-    if e.ambient {
-        fields.push(("ambient", Tag::Byte(1)));
-    }
-    if !e.visible {
-        fields.push(("show_particles", Tag::Byte(0)));
-    }
-    fields.push(("show_icon", Tag::Byte(i8::from(e.show_icon))));
-    if let Some(hidden) = e.hidden.as_deref() {
-        fields.push(("hidden_effect", mob_effect_tag(hidden, false)));
-    }
-    Tag::compound(fields)
-}
 
 /// The mob's entity compound. `registry` is what writes a field holding a block
 /// state (an enderman's `carriedBlockState`): without one, a caller that has no
@@ -771,15 +727,7 @@ pub fn mob_to_nbt(
             map.remove(&horizon_world::nbt::JavaString::from(key));
         }
     }
-    // LivingEntity.addAdditionalSaveData: `active_effects` only when there are
-    // any (MobEffectInstance.CODEC), including their modeled weaker instances.
-    if m.extra.effects.is_empty() {
-        map.remove(&horizon_world::nbt::JavaString::from("active_effects"));
-    } else {
-        let effects =
-            (0..m.extra.effects.len()).map(|i| mob_effect_tag(&m.effect_instance(i), true));
-        map.insert("active_effects".into(), Tag::List(effects.collect()));
-    }
+    crate::mob_effects_nbt::write_saved(m, map);
     map.insert(
         "Invulnerable".into(),
         Tag::Byte(i8::from(m.invulnerable_flag)),
@@ -2169,48 +2117,8 @@ pub fn mob_from_nbt_with_random(
     m.no_gravity = flag(tag, "NoGravity");
     m.glowing = flag(tag, "Glowing");
     m.ticks_frozen = number(tag.get("TicksFrozen")).unwrap_or(0) as i32;
-    // LivingEntity.readAdditionalSaveData: the saved `active_effects`, the last
-    // entry of an effect winning.
-    if let Some(Tag::List(effects)) = tag.get("active_effects") {
-        for e in effects {
-            let Some(def) = text(e.get("id")).and_then(|id| crate::brewing::effect(&id)) else {
-                continue;
-            };
-            let effect = crate::brewing::namespaced(def.id);
-            let duration = number(e.get("duration")).unwrap_or(0) as i32;
-            // `MobEffectInstance.Details`: Codec.BYTE uses boxed Number.byteValue,
-            // then UNSIGNED_BYTE interprets the resulting byte as 0..255.
-            let amplifier = e
-                .get("amplifier")
-                .and_then(horizon_world::datafix::dynamic::as_number)
-                .map_or(0, |n| i32::from(n.byte_value() as u8));
-            m.extra.effects.retain(|x| x.0 != effect);
-            m.extra.effects.push((effect, duration, amplifier));
-            // Details.CODEC: `show_particles` defaults to true.
-            m.extra.hidden_effects.retain(|h| *h != effect);
-            if number(e.get("show_particles")) == Some(0) {
-                m.extra.hidden_effects.push(effect);
-            }
-            // Details.CODEC: `ambient` defaults to false.
-            m.extra.ambient_effects.retain(|h| *h != effect);
-            if number(e.get("ambient")).is_some_and(|a| a != 0) {
-                m.extra.ambient_effects.push(effect);
-            }
-            m.set_effect_fallback(
-                effect,
-                e.get("hidden_effect")
-                    .and_then(|h| mob_hidden_effect(h, effect))
-                    .map(Box::new),
-            );
-        }
-        if m.extra
-            .effects
-            .iter()
-            .any(|e| e.0 == "minecraft:health_boost")
-        {
-            crate::mobs::finalize::health_boost_changed(&mut m);
-        }
-    }
+    crate::mob_effects_nbt::apply_saved(&mut m, tag);
+
     m.silent = flag(tag, "Silent");
     m.invulnerable_flag = flag(tag, "Invulnerable");
     // Entity.load: `getIntOr("invulnerable_time", 0)`.

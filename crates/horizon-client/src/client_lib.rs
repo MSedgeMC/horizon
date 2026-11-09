@@ -92,6 +92,7 @@ pub mod locator_bar;
 pub mod lod_net;
 pub mod menu;
 pub mod merchant;
+pub mod mob_effects_nbt;
 pub mod mobs;
 pub mod mod_content;
 pub mod mod_registry;
