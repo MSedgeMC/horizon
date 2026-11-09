@@ -30,6 +30,8 @@ LinearInterpolationHandler.create	inline	crates/horizon-client/src/game/remote.r
 LinearInterpolationHandler.startInterpolating	inline	crates/horizon-client/src/game/remote.rs::Game::move_entity	target kept as Lerp with steps 3
 LinearInterpolationHandler.doInterpolate	inline	crates/horizon-client/src/game/remote.rs::Game::tick_remote_entities	gap: minor: position eased by 1/steps; a boat's or minecart's yaw is set at once, not eased
 LivingEntity.<init>	port	crates/horizon-client/src/mobs.rs::Mob::new	box, health, random yaw
+LivingEntity.addAdditionalSaveData	inline	crates/horizon-client/src/mob_effects_nbt.rs::write_saved	active_effects only when any, MobEffectInstance.CODEC, modeled weaker instances included; the rest of LivingEntity's fields are written by entity_nbt::mob_to_nbt
+LivingEntity.readAdditionalSaveData	inline	crates/horizon-client/src/mob_effects_nbt.rs::apply_saved	active_effects decoded as CODEC.listOf: one bad entry clears the whole list; the other LivingEntity fields are read by entity_nbt::mob_from_nbt
 LivingEntity.canBeAffected	port	crates/horizon-client/src/mobs.rs::Mob::can_be_affected	the three tags (immune_to_infested, immune_to_oozing, ignores_poison_and_regen which is #minecraft:undead) then the class overrides below; asked by addEffect before anything is stored
 LivingEntity.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	gap: player: arrow count (12) and stinger count (13) are never kept or sent, so arrows and bee stingers do not stay stuck in a body
 LivingEntity.hasLandedInLiquid	port	crates/horizon-world/src/living_fall.rs::ImpulseContext::landed_in_liquid	water or lava with getDeltaMovement().y below 9.9999997E-6, from the guest move loop; the grace time still defers it
