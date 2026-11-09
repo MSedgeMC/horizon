@@ -740,6 +740,12 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_ejection_total_is_read_back() {
+        let v = Vault::load(&tag("{server_data:{total_ejections_needed:5}}"));
+        assert_eq!(v.total_ejections_needed, 5);
+    }
+
+    #[test]
     fn saved_data_round_trips() {
         let v = Vault::load(&tag(
             r#"{server_data:{rewarded_players:[[I;0,0,0,1]],state_updating_resumes_at:40L,items_to_eject:[{id:"minecraft:emerald",count:3}]},shared_data:{display_item:{id:"minecraft:emerald",count:3}}}"#,
