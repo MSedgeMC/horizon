@@ -83,7 +83,7 @@ VaultServerData.addToRewardedPlayers	inline	crates/horizon-client-render/src/vau
 VaultServerData.setItemsToEject	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	the unlock stores the rolled items as the ejection list
 VaultServerData.getNextItemToEject	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	the display item becomes the last item to eject, also after each ejection in tick_and_get_next
 VaultServerData.popNextItemToEject	inline	crates/horizon-client-render/src/vault.rs::Vault::tick_and_get_next	the ejecting state pops the last item
-VaultSharedData.set	inline	crates/horizon-client-render/src/vault.rs::Vault::load	the display item, connected players and particles range are read straight into the vault on load
+VaultSharedData.set	inline	crates/horizon-client-render/src/vault.rs::Vault::load	the display item, connected players and particles range are read together on load; one bad field leaves every shared field default
 VaultState.ejectResultItem	inline	crates/horizon-client-render/src/vault.rs::Vault::tick_and_get_next	the ejecting branch spawns the item upward, sends level event 3017 and plays the eject sound
 TreeGrower.getConfiguredFeature	inline	crates/horizon-world/src/level/growth.rs::Sim::grow_tree	the flower list is used when a flower is near and the list is not empty, then a weighted pick
 TreeGrower.getSurroundingBlockStates	inline	crates/horizon-world/src/level/growth.rs::Sim::two_by_two	reads the four blocks of the two by two square
