@@ -2342,15 +2342,7 @@ pub fn mob_from_nbt_with_random(
             m.extra.variant = u8::from(text(tag.get("Type")).as_deref() == Some("snow"));
             // Fox.readAdditionalSaveData: clearTrusted, then addTrustedEntity for
             // each of "Trusted".
-            crate::mobs::fox::clear_trusted(&mut m);
-            if let Some(Tag::List(trusted)) = tag.get("Trusted") {
-                for uuid in trusted
-                    .iter()
-                    .filter_map(|t| crate::save::uuid_from_tag(Some(t)))
-                {
-                    crate::mobs::fox::add_trusted_entity(&mut m, uuid);
-                }
-            }
+            crate::mobs::fox::read_trusted(&mut m, tag);
             // Fox.readAdditionalSaveData: the sleeping, sitting and crouching flags.
             for (key, bit) in [
                 ("Sleeping", crate::mobs::fox::SLEEPING),

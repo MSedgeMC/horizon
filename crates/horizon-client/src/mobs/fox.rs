@@ -90,6 +90,25 @@ pub fn add_trusted_entity(m: &mut Mob, uuid: [i32; 4]) {
     let slot = usize::from(m.extra.trusted[0].is_some());
     m.extra.trusted[slot] = Some(uuid);
 }
+/// `Fox.readAdditionalSaveData`'s `Trusted`: `TRUSTED_LIST_CODEC` decodes the
+/// whole list or none of it, and the method clears the old entries first. A
+/// malformed entry leaves the fox trusting nobody, where reading each entry on
+/// its own would keep the good ones.
+pub fn read_trusted(m: &mut Mob, tag: &horizon_world::nbt::Tag) {
+    use horizon_world::nbt::Tag;
+    clear_trusted(m);
+    let Some(Tag::List(trusted)) = tag.get("Trusted") else {
+        return;
+    };
+    let uuids: Option<Vec<[i32; 4]>> = trusted
+        .iter()
+        .map(|t| crate::save::uuid_from_tag(Some(t)))
+        .collect();
+    let Some(uuids) = uuids else { return };
+    for uuid in uuids {
+        add_trusted_entity(m, uuid);
+    }
+}
 /// `Fox.clearTrusted`: forget everyone.
 pub fn clear_trusted(m: &mut Mob) {
     m.extra.trusted = [None; 2];
@@ -1419,4 +1438,5 @@ mod consume_tests {
         // tests) there is no fox to feed: the test has nothing to check.
         let _ = ran;
     }
+
 }
