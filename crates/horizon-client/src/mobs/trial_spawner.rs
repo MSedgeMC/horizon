@@ -503,17 +503,38 @@ impl TrialSpawnerExt for TrialSpawner {
             Some(Tag::Long(v)) => *v,
             t => spawner::number(t).unwrap_or(0),
         };
-        let mut s = Self {
-            detected_players: uuids(tag.get("registered_players")),
-            current_mobs: uuids(tag.get("current_mobs")),
-            cooldown_ends_at: long("cooldown_ends_at"),
-            next_mob_spawns_at: long("next_mob_spawns_at"),
-            total_mobs_spawned: spawner::number(tag.get("total_mobs_spawned"))
-                .filter(|v| (0..=i64::from(i32::MAX)).contains(v))
-                .map_or(0, |v| v as i32),
-            next_spawn_data: tag.get("spawn_data").and_then(SpawnData::decode),
-            ejecting_loot_table: identifier(tag.get("ejecting_loot_table")),
-            ..Self::default()
+        // `TrialSpawnerStateData.Packed.MAP_CODEC` reads the state record all
+        // or nothing: one bad field leaves the default state.
+        let uuid_list_ok = |tag: Option<&Tag>| match tag {
+            None => true,
+            Some(Tag::List(list)) => list
+                .iter()
+                .all(|t| matches!(t, Tag::IntArray(v) if <Uuid>::try_from(v.as_slice()).is_ok())),
+            Some(_) => false,
+        };
+        let state_ok = uuid_list_ok(tag.get("registered_players"))
+            && uuid_list_ok(tag.get("current_mobs"))
+            && tag
+                .get("spawn_data")
+                .is_none_or(|t| SpawnData::decode(t).is_some())
+            && tag
+                .get("ejecting_loot_table")
+                .is_none_or(|t| identifier(Some(t)).is_some());
+        let mut s = if state_ok {
+            Self {
+                detected_players: uuids(tag.get("registered_players")),
+                current_mobs: uuids(tag.get("current_mobs")),
+                cooldown_ends_at: long("cooldown_ends_at"),
+                next_mob_spawns_at: long("next_mob_spawns_at"),
+                total_mobs_spawned: spawner::number(tag.get("total_mobs_spawned"))
+                    .filter(|v| (0..=i64::from(i32::MAX)).contains(v))
+                    .map_or(0, |v| v as i32),
+                next_spawn_data: tag.get("spawn_data").and_then(SpawnData::decode),
+                ejecting_loot_table: identifier(tag.get("ejecting_loot_table")),
+                ..Self::default()
+            }
+        } else {
+            Self::default()
         };
         // FullConfig.MAP_CODEC, partial result kept: a field that fails to
         // decode takes its default.
