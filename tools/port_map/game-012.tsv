@@ -10,7 +10,7 @@ Fox.get	missing		minor: the fox/variant component is not reported (species_varia
 Fox.applyImplicitComponent	port	crates/horizon-client/src/entity_nbt.rs::apply_item_components	the `minecraft:fox/variant` name sets the variant (SNOW over RED)
 Fox.getTrustedEntities	port	crates/horizon-client/src/mobs/fox.rs::trusted_entities	the trusted list decides whom the avoid-player goal leaves alone (`Fox.trusts`); defending a trusted player (`DefendTrustedTargetGoal`) is still missing
 Fox.addTrustedEntity	port	crates/horizon-client/src/mobs/fox.rs::add_trusted_entity	the two DATA_TRUSTED_ID slots, first free then replacing the second; a baby fox made by using a fox spawn egg on a fox trusts that player (`Fox.onOffspringSpawnedFromEgg`)
-Fox.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	Type, Trusted (clearTrusted then addTrustedEntity per UUID), Sleeping, Sitting and Crouching
+Fox.readAdditionalSaveData	port	crates/horizon-client/src/mobs/fox.rs::read_trusted	Type, Trusted (TRUSTED_LIST_CODEC: one bad entry means none, after clearTrusted), Sleeping, Sitting and Crouching
 Fox.clearTrusted	port	crates/horizon-client/src/mobs/fox.rs::clear_trusted	both trusted slots emptied, before a load reads Trusted
 Fox.getFlag	port	crates/horizon-client/src/mobs/fox.rs::flag	flags byte in extra.ints[0]
 Fox.canHoldItem	port	crates/horizon-client/src/mobs/fox.rs::can_hold_item	an empty mouth, or consumable food when the mouth holds something that is not
