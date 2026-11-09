@@ -116,6 +116,7 @@ Mob.asValidTarget	port	crates/horizon-client/src/mobs/monster_brain.rs::can_atta
 Mob.spawnAnim	port	crates/horizon-client/src/game/spawner.rs::Game::poof_particles	the poof of a mob a spawner made (event 20 on a server's client)
 Mob.updateControlFlags	inline	crates/horizon-client/src/mobs/riders.rs::drive	gap: minor: a mob in a boat keeps its JUMP goals
 Mob.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	gap: minor: drop_chances and DeathLootTable survive only from the loaded raw tag
+Mob.readAdditionalSaveData	inline	crates/horizon-client/src/mobs/drops.rs::read_saved	drop_chances decoded as one DropChances.CODEC map: one unknown slot or negative chance keeps every default
 Mob.burnUndead	inline	crates/horizon-client/src/mobs/ai.rs::ai_step	gap: player: a helmeted undead never loses helmet durability in sunlight (vanilla 0 to 1 per burn tick), so the helmet never wears out or breaks
 Mob.pickUpItem	port	crates/horizon-client/src/mobs/equip.rs::Slot::wants_to_pick_up	ticked in #3514; `Mob.pickUpItem` is cited at crates/horizon-client/src/mobs/equip.rs:211
 Mob.attemptToShearEquipment	port	crates/horizon-client/src/game/mounts.rs::Game::shear_saddle	a saddle comes off any saddleable mob before its mobInteract (an occupied mount is skipped); happy ghast harness and llama carpet remain in their adapters; gap: minor: other equipment slots and component overrides are not generalized
