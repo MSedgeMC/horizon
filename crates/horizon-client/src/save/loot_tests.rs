@@ -243,6 +243,8 @@ fn eager_save_edits_reach_disk_during_ticks_and_again_after_cooldown() {
     fs::remove_dir_all(dir).unwrap();
 }
 
+/// `RandomizableContainer.tryLoadLootTable` needs a resource key with a
+/// non-empty path; without one the saved `Items` are what `loadAllItems` reads.
 #[test]
 fn an_empty_loot_table_id_leaves_the_saved_items() {
     let mut items = vec![None; 27];
