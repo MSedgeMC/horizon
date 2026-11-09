@@ -59,7 +59,7 @@ impl Game<'_> {
         self.award_stat("used", &stack.item, 1);
         self.trigger_item("minecraft:consume_item", stack);
         // FoodProperties.onConsume, the player's one ConsumableListener.
-        if let Some((nutrition, saturation)) = horizon_client::item_sync::food(stack, info.food) {
+        if let Some((nutrition, saturation)) = info.food {
             let at = self.feet();
             let pitch = self.world.random.triangle_float(1.0, 0.4);
             self.audio.play(&consumable.sound, at, 1.0, pitch);
@@ -98,11 +98,10 @@ impl Game<'_> {
         // with infinite materials, the hand when emptied, else the inventory
         // (ServerPlayer.handleExtraItemsCreatedOnUse) or a drop.
         self.consume_held();
-        if let Some(remainder) =
-            horizon_client::item_sync::use_remainder(stack, info.use_remainder.clone())
+        if let Some(remainder) = &info.use_remainder
             && !self.creative
         {
-            let remainder = ItemStack::new(&remainder, 1);
+            let remainder = ItemStack::new(remainder, 1);
             if self.held().is_none() {
                 *self.held_mut() = Some(remainder);
             } else if let Some(rest) = self.give(remainder) {
