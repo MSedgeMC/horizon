@@ -78,7 +78,7 @@ VaultBlockEntity.Server.unlock	inline	crates/horizon-client-render/src/vault.rs:
 VaultBlockEntity.Server.resolveItemsToEject	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	rolls the vault loot table when a key is inserted
 VaultBlockEntity.Server.isValidToInsert	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	the stack must match the key item's components and hold at least its count
 VaultBlockEntity.Server.shouldCycleDisplayItem	inline	crates/horizon-client-render/src/vault.rs::Vault::server_tick	cycles the display item every 20 ticks while Active
-VaultConfig.validate	port	crates/horizon-client-render/src/vault.rs::VaultConfig::decode	an activation range above the deactivation range fails the whole config
+VaultConfig.validate	port	crates/horizon-client-render/src/vault.rs::VaultConfig::decode	an activation range above the deactivation range fails the whole config; a bad optional field does too
 VaultServerData.addToRewardedPlayers	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	adds the player and keeps at most 128 rewarded players
 VaultServerData.setItemsToEject	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	the unlock stores the rolled items as the ejection list
 VaultServerData.getNextItemToEject	inline	crates/horizon-client-render/src/vault.rs::Vault::try_insert_key	the display item becomes the last item to eject, also after each ejection in tick_and_get_next
