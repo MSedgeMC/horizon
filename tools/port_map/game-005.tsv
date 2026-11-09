@@ -108,6 +108,7 @@ EntityDimensions.scale	port	crates/horizon-client/src/mobs/living.rs::Mob::dims	
 EntityDimensions.withEyeHeight	skip:data		eye heights come from entity-types.json (MobType.eye_height)
 EntityDimensions.withAttachments	inline	crates/horizon-client/src/mobs/riders.rs::passenger_attachment	attachments are a per species table, not part of a dimensions value
 EntityEquipment.isEmpty	port	crates/horizon-world/src/player_inventory.rs::PlayerInventory::is_empty	
+EntityEquipment.setAll	inline	crates/horizon-client/src/mob_equipment_nbt.rs::read_saved	the map decodes as a whole first; one unknown slot or bad item means no equipment is applied
 EntityEquipment.tick	port	crates/horizon-world/src/inventory_tick.rs::tick_equipment	gap: minor: the player's worn items only; items on mobs never tick
 EntityEquipment.dropAll	port	crates/horizon-client/src/game/item_entities.rs::Game::drop_inventory	the main inventory, armour and off hand are thrown in random directions on death (Inventory.dropAll)
 EntityFluidInteraction.getOrCreateTrackerFor	inline	crates/horizon-world/src/entity_fluid.rs::EntityFluidInteraction::update	a tracker is found or pushed while scanning the box
