@@ -242,3 +242,28 @@ fn eager_save_edits_reach_disk_during_ticks_and_again_after_cooldown() {
     drop(save);
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn a_bad_used_recipe_count_clears_the_furnace_map() {
+    let tag = Tag::compound([
+        ("id", string("minecraft:furnace")),
+        ("x", Tag::Int(1)),
+        ("y", Tag::Int(64)),
+        ("z", Tag::Int(2)),
+        (
+            "RecipesUsed",
+            Tag::compound([
+                ("minecraft:bread", Tag::Int(2)),
+                ("minecraft:cake", string("bad")),
+            ]),
+        ),
+    ]);
+    let (_, model) = decode_block_entity(&tag).unwrap();
+    let crate::containers::BlockEntity::Furnace(furnace) = model else {
+        panic!("furnace");
+    };
+    assert!(
+        furnace.recipes_used.is_empty(),
+        "one bad count leaves `RecipesUsed.EMPTY`"
+    );
+}
