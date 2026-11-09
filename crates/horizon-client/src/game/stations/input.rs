@@ -26,3 +26,25 @@ impl Game<'_> {
         self.remote_anvil_rename();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::{Kind, Station};
+
+    /// `AnvilScreen.onNameChanged` at a slot change: only a name the server
+    /// does not have goes out, and the box's own name goes blank.
+    #[test]
+    fn a_slot_change_sends_only_a_changed_rename() {
+        let mut station = Station::new_kind(Kind::Anvil, [0; 3]);
+        assert_eq!(
+            station.take_anvil_rename("Sword".into()),
+            Some("Sword".into())
+        );
+        assert_eq!(station.take_anvil_rename("Sword".into()), None);
+        assert_eq!(
+            station.take_anvil_rename(String::new()),
+            Some(String::new())
+        );
+        assert_eq!(station.take_anvil_rename(String::new()), None);
+    }
+}
