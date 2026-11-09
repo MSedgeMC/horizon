@@ -465,8 +465,13 @@ impl StructureState {
             .filter_map(|start| {
                 let index = (self.registry.structures.iter()).position(|s| s.name == start.name)?;
                 let def = &self.registry.structures[index];
-                let pieces = self.saved_pieces(&start.pieces);
-                if !pieces.is_empty() {
+                if !start.pieces.is_empty()
+                    && let Some(pieces) = start
+                        .pieces
+                        .iter()
+                        .map(|piece| self.saved_pool_piece(piece))
+                        .collect::<Option<Vec<_>>>()
+                {
                     return Some(Arc::new(StructureStart::new(index, def, chunk, pieces)));
                 }
                 if let Some(bounds) = start.bounds {
@@ -514,15 +519,6 @@ impl StructureState {
             })
             .collect();
         Arc::new(starts)
-    }
-    /// The pieces of a saved start that read back. `PiecesContainer.load` logs a piece whose
-    /// type or tag does not read and keeps the start's other pieces, so one such piece (another
-    /// structure's, a mod's, a corrupt tag) does not take the readable pieces with it; a start
-    /// with none left falls back to its box or rebuild below.
-    fn saved_pieces(&self, pieces: &[crate::nbt::Tag]) -> Vec<Piece> {
-        (pieces.iter())
-            .filter_map(|piece| self.saved_pool_piece(piece))
-            .collect()
     }
     /// A saved `minecraft:jigsaw` piece, or `None` for any other piece or one that does not decode.
     fn saved_pool_piece(&self, piece: &crate::nbt::Tag) -> Option<Piece> {
