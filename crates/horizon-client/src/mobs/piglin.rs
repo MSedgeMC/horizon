@@ -2187,6 +2187,141 @@ pub fn hoglin_anim(m: &Mob, s: &State, p: &mut Poses) {
     p.xrot("left_hind_leg", pos.mcos() * 1.2 * sp);
 }
 
+/// `Piglin`, `PiglinBrute` and `Hoglin.addAdditionalSaveData`: the shared
+/// zombification fields (and the brute's missing `CannotHunt`), the piglin's
+/// guarded anger and inventory, the hoglin's hunt flag and `PACIFIED` memory.
+pub fn write_nbt(m: &Mob, map: &mut horizon_world::nbt::Compound, id: &str) {
+    use horizon_world::nbt::Tag;
+    // Only Piglin.addAdditionalSaveData writes CannotHunt, always.
+    if id == "minecraft:piglin_brute" {
+        map.remove(&"CannotHunt".into());
+    } else if id == "minecraft:piglin" {
+        map.entry("CannotHunt".into()).or_insert(Tag::Byte(0));
+    }
+    map.insert(
+        "IsImmuneToZombification".into(),
+        Tag::Byte(i8::from(m.extra.flag2)),
+    );
+    map.insert("TimeInOverworld".into(), Tag::Int(m.extra.counter2));
+    if id == "minecraft:hoglin" {
+        map.insert(
+            "CannotBeHunted".into(),
+            Tag::Byte(m.extra.cannot_be_hunted as i8),
+        );
+        write_hoglin_memories(m, map);
+    }
+    if id == "minecraft:piglin" {
+        write_guarded_piglin_anger(m, map);
+        // InventoryCarrier.writeInventoryToTag.
+        map.insert(
+            "Inventory".into(),
+            Tag::List(
+                m.extra
+                    .inventory
+                    .iter()
+                    .map(crate::save::item_to_nbt)
+                    .collect(),
+            ),
+        );
+    }
+}
+
+/// The read side of [`write_nbt`].
+pub fn read_nbt(m: &mut Mob, tag: &horizon_world::nbt::Tag) {
+    use horizon_world::nbt::Tag;
+    m.extra.flag2 = crate::entity_nbt::flag(tag, "IsImmuneToZombification");
+    m.extra.counter2 = crate::save::number(tag.get("TimeInOverworld")).unwrap_or(0) as i32;
+    if m.species() == Species::Hoglin {
+        m.extra.cannot_be_hunted = crate::entity_nbt::flag(tag, "CannotBeHunted");
+        // `HoglinAi`'s `PACIFIED` memory: `BecomePassiveIfMemoryPresent`
+        // stores the unit value with the ticks left as its TTL.
+        m.extra.ints[0] = tag
+            .get("Brain")
+            .and_then(|b| b.get("memories"))
+            .and_then(|b| b.get("minecraft:pacified"))
+            .and_then(|m| m.get("ttl"))
+            .and_then(crate::nbt_path::int_value)
+            .unwrap_or(0);
+    }
+    if m.species() == Species::Piglin
+        && let Some(Tag::List(items)) = tag.get("Inventory")
+    {
+        // InventoryCarrier.readInventoryFromTag -> SimpleContainer
+        // .fromItemList (eight slots).
+        m.extra.inventory = crate::mobs::villager::load_container(m, items, 8);
+    }
+}
+
+/// `Brain.Packed`: the guarded-block live ANGRY_AT entry. The existing anger
+/// counter supplies its remaining long TTL, not an absolute timestamp.
+fn write_guarded_piglin_anger(m: &Mob, map: &mut horizon_world::nbt::Compound) {
+    use horizon_world::nbt::{Compound, Tag};
+    let Some(actor) = m.extra.piglin.guarded_angry_at else {
+        return;
+    };
+    let brain = map
+        .entry("Brain".into())
+        .or_insert_with(|| Tag::Compound(Compound::new()));
+    if !matches!(brain, Tag::Compound(_)) {
+        *brain = Tag::Compound(Compound::new());
+    }
+    let Tag::Compound(brain) = brain else { return };
+    let memories = brain
+        .entry("memories".into())
+        .or_insert_with(|| Tag::Compound(Compound::new()));
+    if !matches!(memories, Tag::Compound(_)) {
+        *memories = Tag::Compound(Compound::new());
+    }
+    let Tag::Compound(memories) = memories else {
+        return;
+    };
+    if let Some(uuid) = actor.filter(|_| m.extra.anger > 0) {
+        // ExpirableValue.codec: the UUID value and optional remaining Long TTL.
+        memories.insert(
+            "minecraft:angry_at".into(),
+            Tag::compound([
+                ("value", Tag::IntArray(uuid.to_vec())),
+                ("ttl", Tag::Long(i64::from(m.extra.anger))),
+            ]),
+        );
+    } else {
+        memories.remove(&"minecraft:angry_at".into());
+    }
+}
+
+/// `HoglinAi`'s `PACIFIED` memory: `true`, with the ticks the hoglin stays
+/// passive as its TTL. `read_nbt` puts the TTL back in `ints[0]`.
+fn write_hoglin_memories(m: &Mob, map: &mut horizon_world::nbt::Compound) {
+    use horizon_world::nbt::{Compound, Tag};
+    let brain = map
+        .entry("Brain".into())
+        .or_insert_with(|| Tag::Compound(Compound::new()));
+    if !matches!(brain, Tag::Compound(_)) {
+        *brain = Tag::Compound(Compound::new());
+    }
+    let Tag::Compound(brain) = brain else { return };
+    let memories = brain
+        .entry("memories".into())
+        .or_insert_with(|| Tag::Compound(Compound::new()));
+    if !matches!(memories, Tag::Compound(_)) {
+        *memories = Tag::Compound(Compound::new());
+    }
+    let Tag::Compound(memories) = memories else {
+        return;
+    };
+    if m.extra.ints[0] > 0 {
+        memories.insert(
+            "minecraft:pacified".into(),
+            Tag::compound([
+                ("value", Tag::Byte(1)),
+                ("ttl", Tag::Long(i64::from(m.extra.ints[0]))),
+            ]),
+        );
+    } else {
+        memories.remove(&"minecraft:pacified".into());
+    }
+}
+
 #[cfg(test)]
 mod brute_sound_tests {
     use super::*;
@@ -2636,141 +2771,6 @@ mod brute_home_tests {
             piglin_hurt(&mut piglin, w, &mut lr, &mut events, Who::Mob(999));
             assert_eq!(piglin.extra.home, None, "the piglin drops its celebration");
         });
-    }
-}
-
-/// `Piglin`, `PiglinBrute` and `Hoglin.addAdditionalSaveData`: the shared
-/// zombification fields (and the brute's missing `CannotHunt`), the piglin's
-/// guarded anger and inventory, the hoglin's hunt flag and `PACIFIED` memory.
-pub fn write_nbt(m: &Mob, map: &mut horizon_world::nbt::Compound, id: &str) {
-    use horizon_world::nbt::Tag;
-    // Only Piglin.addAdditionalSaveData writes CannotHunt, always.
-    if id == "minecraft:piglin_brute" {
-        map.remove(&"CannotHunt".into());
-    } else if id == "minecraft:piglin" {
-        map.entry("CannotHunt".into()).or_insert(Tag::Byte(0));
-    }
-    map.insert(
-        "IsImmuneToZombification".into(),
-        Tag::Byte(i8::from(m.extra.flag2)),
-    );
-    map.insert("TimeInOverworld".into(), Tag::Int(m.extra.counter2));
-    if id == "minecraft:hoglin" {
-        map.insert(
-            "CannotBeHunted".into(),
-            Tag::Byte(m.extra.cannot_be_hunted as i8),
-        );
-        write_hoglin_memories(m, map);
-    }
-    if id == "minecraft:piglin" {
-        write_guarded_piglin_anger(m, map);
-        // InventoryCarrier.writeInventoryToTag.
-        map.insert(
-            "Inventory".into(),
-            Tag::List(
-                m.extra
-                    .inventory
-                    .iter()
-                    .map(crate::save::item_to_nbt)
-                    .collect(),
-            ),
-        );
-    }
-}
-
-/// The read side of [`write_nbt`].
-pub fn read_nbt(m: &mut Mob, tag: &horizon_world::nbt::Tag) {
-    use horizon_world::nbt::Tag;
-    m.extra.flag2 = crate::entity_nbt::flag(tag, "IsImmuneToZombification");
-    m.extra.counter2 = crate::save::number(tag.get("TimeInOverworld")).unwrap_or(0) as i32;
-    if m.species() == Species::Hoglin {
-        m.extra.cannot_be_hunted = crate::entity_nbt::flag(tag, "CannotBeHunted");
-        // `HoglinAi`'s `PACIFIED` memory: `BecomePassiveIfMemoryPresent`
-        // stores the unit value with the ticks left as its TTL.
-        m.extra.ints[0] = tag
-            .get("Brain")
-            .and_then(|b| b.get("memories"))
-            .and_then(|b| b.get("minecraft:pacified"))
-            .and_then(|m| m.get("ttl"))
-            .and_then(crate::nbt_path::int_value)
-            .unwrap_or(0);
-    }
-    if m.species() == Species::Piglin
-        && let Some(Tag::List(items)) = tag.get("Inventory")
-    {
-        // InventoryCarrier.readInventoryFromTag -> SimpleContainer
-        // .fromItemList (eight slots).
-        m.extra.inventory = crate::mobs::villager::load_container(m, items, 8);
-    }
-}
-
-/// `Brain.Packed`: the guarded-block live ANGRY_AT entry. The existing anger
-/// counter supplies its remaining long TTL, not an absolute timestamp.
-fn write_guarded_piglin_anger(m: &Mob, map: &mut horizon_world::nbt::Compound) {
-    use horizon_world::nbt::{Compound, Tag};
-    let Some(actor) = m.extra.piglin.guarded_angry_at else {
-        return;
-    };
-    let brain = map
-        .entry("Brain".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(brain, Tag::Compound(_)) {
-        *brain = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(brain) = brain else { return };
-    let memories = brain
-        .entry("memories".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(memories, Tag::Compound(_)) {
-        *memories = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(memories) = memories else {
-        return;
-    };
-    if let Some(uuid) = actor.filter(|_| m.extra.anger > 0) {
-        // ExpirableValue.codec: the UUID value and optional remaining Long TTL.
-        memories.insert(
-            "minecraft:angry_at".into(),
-            Tag::compound([
-                ("value", Tag::IntArray(uuid.to_vec())),
-                ("ttl", Tag::Long(i64::from(m.extra.anger))),
-            ]),
-        );
-    } else {
-        memories.remove(&"minecraft:angry_at".into());
-    }
-}
-
-/// `HoglinAi`'s `PACIFIED` memory: `true`, with the ticks the hoglin stays
-/// passive as its TTL. `read_nbt` puts the TTL back in `ints[0]`.
-fn write_hoglin_memories(m: &Mob, map: &mut horizon_world::nbt::Compound) {
-    use horizon_world::nbt::{Compound, Tag};
-    let brain = map
-        .entry("Brain".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(brain, Tag::Compound(_)) {
-        *brain = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(brain) = brain else { return };
-    let memories = brain
-        .entry("memories".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(memories, Tag::Compound(_)) {
-        *memories = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(memories) = memories else {
-        return;
-    };
-    if m.extra.ints[0] > 0 {
-        memories.insert(
-            "minecraft:pacified".into(),
-            Tag::compound([
-                ("value", Tag::Byte(1)),
-                ("ttl", Tag::Long(i64::from(m.extra.ints[0]))),
-            ]),
-        );
-    } else {
-        memories.remove(&"minecraft:pacified".into());
     }
 }
 
