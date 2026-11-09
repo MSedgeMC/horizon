@@ -2145,15 +2145,7 @@ pub fn mob_from_nbt_with_random(
     m.custom_name = custom_name(tag);
     m.custom_name_text = tag.get("CustomName").map(name_text);
     m.extra.left_handed = flag(tag, "LeftHanded");
-    if let Some(Tag::Compound(c)) = tag.get("drop_chances") {
-        let mut chances = [crate::mobs::drops::DEFAULT_DROP_CHANCE; 8];
-        for (chance, slot) in chances.iter_mut().zip(crate::mobs::drops::SLOTS) {
-            if let Some(Tag::Float(v)) = c.get(&slot.into()) {
-                *chance = f32::from_bits(*v);
-            }
-        }
-        m.extra.drop_chances = Some(Box::new(chances));
-    }
+    crate::mobs::drops::read_saved(&mut m, tag);
     if saves_age(m.species()) {
         m.extra.age = tag.get("Age").and_then(int_value).unwrap_or(0);
         m.extra.forced_age = tag.get("ForcedAge").and_then(int_value).unwrap_or(0);

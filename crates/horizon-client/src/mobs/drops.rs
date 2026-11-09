@@ -675,6 +675,34 @@ pub fn base_experience(m: &mut Mob) -> i32 {
     }
 }
 
+/// `Mob.readAdditionalSaveData`'s `drop_chances`: `DropChances.CODEC` is an
+/// unbounded map from `EquipmentSlot.CODEC` to `NON_NEGATIVE_FLOAT`. One
+/// unknown slot or negative value fails the whole map, and the
+/// `orElse(DEFAULT)` leaves every slot at `DEFAULT_DROP_CHANCE`; the old read
+/// kept the good slots beside the bad one.
+pub fn read_saved(m: &mut Mob, tag: &horizon_world::nbt::Tag) {
+    use horizon_world::nbt::Tag;
+    let Some(Tag::Compound(c)) = tag.get("drop_chances") else {
+        return;
+    };
+    let slots_ok = c
+        .keys()
+        .all(|key| SLOTS.iter().any(|slot| key.to_string_lossy() == *slot));
+    let values_ok = c
+        .values()
+        .all(|value| matches!(value, Tag::Float(bits) if f32::from_bits(*bits) >= 0.0));
+    if !slots_ok || !values_ok {
+        return;
+    }
+    let mut chances = [DEFAULT_DROP_CHANCE; 8];
+    for (chance, slot) in chances.iter_mut().zip(SLOTS) {
+        if let Some(Tag::Float(v)) = c.get(&slot.into()) {
+            *chance = f32::from_bits(*v);
+        }
+    }
+    m.extra.drop_chances = Some(Box::new(chances));
+}
+
 #[cfg(test)]
 mod death_loot_table_tests {
     use super::*;
