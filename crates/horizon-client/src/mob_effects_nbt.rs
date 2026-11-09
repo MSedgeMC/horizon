@@ -109,3 +109,41 @@ fn effect_tag(e: &EffectInstance, root: bool) -> Tag {
     }
     Tag::compound(fields)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn one_bad_entry_takes_the_whole_list_down() {
+        let tag = Tag::compound([(
+            "active_effects",
+            Tag::List(vec![
+                Tag::compound([
+                    ("id", Tag::String("minecraft:speed".into())),
+                    ("duration", Tag::Int(40)),
+                ]),
+                Tag::compound([
+                    ("id", Tag::String("minecraft:not_an_effect".into())),
+                    ("duration", Tag::Int(40)),
+                ]),
+            ]),
+        )]);
+        let mut kind = crate::mobs::sensor_scan_tests::kind();
+        let k = std::sync::Arc::make_mut(&mut kind);
+        k.id = "minecraft:pig".into();
+        k.species = crate::mobs::Species::Pig;
+        let mut m = Mob::new(1, kind, horizon_core::geometry::Vec3::ZERO, 0.0);
+        apply_saved(&mut m, &tag);
+        assert!(m.extra.effects.is_empty(), "the list failed as a whole");
+        let good = Tag::compound([(
+            "active_effects",
+            Tag::List(vec![Tag::compound([
+                ("id", Tag::String("minecraft:speed".into())),
+                ("duration", Tag::Int(40)),
+            ])]),
+        )]);
+        apply_saved(&mut m, &good);
+        assert_eq!(m.extra.effects.len(), 1);
+    }
+}
