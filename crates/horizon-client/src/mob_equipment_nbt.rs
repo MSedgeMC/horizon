@@ -86,3 +86,51 @@ fn apply(m: &mut Mob, eq: &Compound) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pig() -> Mob {
+        let mut kind = crate::mobs::sensor_scan_tests::kind();
+        let k = std::sync::Arc::make_mut(&mut kind);
+        k.id = "minecraft:pig".into();
+        k.species = crate::mobs::Species::Pig;
+        Mob::new(1, kind, horizon_core::geometry::Vec3::ZERO, 0.0)
+    }
+
+    fn sword() -> Tag {
+        Tag::compound([
+            ("id", Tag::String("minecraft:stone_sword".into())),
+            ("count", Tag::Int(1)),
+        ])
+    }
+
+    #[test]
+    fn an_unknown_slot_takes_the_whole_map_down() {
+        let good = Tag::compound([("mainhand", sword())]);
+        let mut m = pig();
+        read_saved(&mut m, &Tag::compound([("equipment", good.clone())]));
+        assert_eq!(m.extra.main_hand.as_deref(), Some("minecraft:stone_sword"));
+        let mut m = pig();
+        let with_hat = Tag::compound([
+            ("mainhand", sword()),
+            (
+                "hat",
+                Tag::compound([("id", Tag::String("minecraft:stone".into()))]),
+            ),
+        ]);
+        read_saved(&mut m, &Tag::compound([("equipment", with_hat)]));
+        assert_eq!(m.extra.main_hand, None, "no slot, no equipment");
+    }
+
+    #[test]
+    fn a_missing_equipment_leaves_the_registration_defaults_dropped() {
+        let mut m = pig();
+        read_saved(
+            &mut m,
+            &Tag::compound([("id", Tag::String("minecraft:pig".into()))]),
+        );
+        assert_eq!(m.extra.main_hand, None);
+    }
+}
