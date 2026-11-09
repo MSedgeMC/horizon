@@ -2035,43 +2035,8 @@ pub fn mob_from_nbt_with_random(
         m.health = m.health.min(m.attrs.max_health);
     }
     m.hurt_time = number(tag.get("HurtTime")).unwrap_or(0) as i32;
-    // What it holds (equipment.mainhand / offhand), when saved.
-    if let Some(eq) = tag.get("equipment") {
-        m.extra
-            .set_main_hand_stack(eq.get("mainhand").and_then(crate::save::item_from_nbt));
-        m.extra.off_hand = eq
-            .get("offhand")
-            .and_then(|i| text(i.get("id")))
-            .map(Into::into);
-        if !crate::mobs::equine::is_equine(m.species()) {
-            let slot = |key| eq.get(key).and_then(|i| text(i.get("id"))).map(Into::into);
-            m.extra.head = slot("head");
-            // A happy ghast wears its harness in the body slot (and a
-            // nautilus its armour, a sulfur cube its swallowed block).
-            if crate::mobs::species::body_slot(m.species()) {
-                m.extra.body = slot("body");
-            }
-            m.extra.chest = slot("chest");
-            m.extra.legs = slot("legs");
-            m.extra.feet = slot("feet");
-        }
-        // Their enchantments and trims.
-        for (index, key) in crate::mobs::gear::KEYS.iter().enumerate() {
-            if let Some(stack) = eq.get(key).and_then(crate::save::item_from_nbt) {
-                crate::mobs::gear::set(&mut m, index, stack.enchantments().to_vec());
-                let trim = stack.data().and_then(|d| d.trim.clone());
-                crate::mobs::gear::set_trim(&mut m, index, trim);
-                // The damage, name and components stay with the slot.
-                if index != crate::mobs::gear::MAIN {
-                    crate::mobs::gear::set_stack(&mut m, index, stack);
-                }
-            }
-        }
-    } else {
-        // Registration hands out default weapons (finalizeSpawn does in
-        // vanilla); a loaded mob holds only what its file lists.
-        m.extra.set_main_hand(None);
-    }
+    crate::mob_equipment_nbt::read_saved(&mut m, tag);
+
     m.death_time = number(tag.get("DeathTime")).unwrap_or(0) as i32;
     m.impulse_grace_time =
         number(tag.get("current_impulse_context_reset_grace_time")).unwrap_or(0) as i32;
