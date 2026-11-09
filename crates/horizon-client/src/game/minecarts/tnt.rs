@@ -69,3 +69,47 @@ pub(super) fn explode_cart(game: &mut Game<'_>, c: &mut Minecart, speed_sqr: f64
     game.combat.explosion_in_water = false;
     game.combat.rail_proof_blast = false;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use horizon_world::nbt::Tag;
+
+    fn cart(power: Option<f32>, factor: Option<f32>) -> Minecart {
+        let mut fields = vec![(
+            "Pos",
+            Tag::List([0.0f64; 3].map(|v| Tag::Double(v.to_bits())).to_vec()),
+        )];
+        if let Some(power) = power {
+            fields.push(("explosion_power", Tag::Float(power.to_bits())));
+        }
+        if let Some(factor) = factor {
+            fields.push(("explosion_speed_factor", Tag::Float(factor.to_bits())));
+        }
+        Minecart::from_nbt(&Tag::compound(fields), 1, super::super::CartKind::Tnt).unwrap()
+    }
+
+    /// Vanilla clamps both saved floats to 0..=128. A default cart omits both
+    /// keys on the next save; a clamped one writes the clamped value.
+    #[test]
+    fn saved_blast_settings_are_clamped_and_written_back() {
+        let c = cart(Some(200.0), Some(-1.0));
+        assert_eq!(c.explosion_power, 128.0);
+        assert_eq!(c.explosion_speed_factor, 0.0);
+        let saved = c.to_nbt([1, 2, 3, 4], None);
+        assert_eq!(
+            saved.get("explosion_power"),
+            Some(&Tag::Float(128.0f32.to_bits()))
+        );
+        assert_eq!(
+            saved.get("explosion_speed_factor"),
+            Some(&Tag::Float(0.0f32.to_bits()))
+        );
+        let c = cart(None, None);
+        assert_eq!(c.explosion_power, 4.0);
+        assert_eq!(c.explosion_speed_factor, 1.0);
+        let saved = c.to_nbt([5, 6, 7, 8], None);
+        assert_eq!(saved.get("explosion_power"), None);
+        assert_eq!(saved.get("explosion_speed_factor"), None);
+    }
+}
