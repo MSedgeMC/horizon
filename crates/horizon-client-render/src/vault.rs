@@ -267,18 +267,29 @@ impl Vault {
         if let Some(Tag::Compound(_)) = tag.get("server_data") {
             let server = tag.get("server_data");
             let get = |k: &str| server.and_then(|s| s.get(k));
-            v.rewarded_players = uuids(get("rewarded_players")).unwrap_or_default();
-            v.state_updating_resumes_at =
-                horizon_client_core::nbt_value::number(get("state_updating_resumes_at"))
-                    .unwrap_or(0);
-            v.items_to_eject = match get("items_to_eject") {
-                Some(Tag::List(list)) => list
-                    .iter()
-                    .map(stack)
-                    .collect::<Option<_>>()
-                    .unwrap_or_default(),
-                _ => Vec::new(),
-            };
+            // `VaultServerData.CODEC` reads the whole record: one bad UUID,
+            // item list or timestamp leaves every server field default.
+            let parsed = (|| {
+                let rewarded_players = match get("rewarded_players") {
+                    Some(list) => uuids(Some(list))?,
+                    None => Vec::new(),
+                };
+                let resumes_at = match get("state_updating_resumes_at") {
+                    Some(time) => horizon_client_core::nbt_value::number(Some(time))?,
+                    None => 0,
+                };
+                let items_to_eject = match get("items_to_eject") {
+                    Some(Tag::List(list)) => list.iter().map(stack).collect::<Option<Vec<_>>>()?,
+                    Some(_) => return None,
+                    None => Vec::new(),
+                };
+                Some((rewarded_players, resumes_at, items_to_eject))
+            })();
+            if let Some((rewarded_players, resumes_at, items_to_eject)) = parsed {
+                v.rewarded_players = rewarded_players;
+                v.state_updating_resumes_at = resumes_at;
+                v.items_to_eject = items_to_eject;
+            }
         }
         if let Some(Tag::Compound(_)) = tag.get("shared_data") {
             let shared = tag.get("shared_data");
