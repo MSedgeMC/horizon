@@ -1117,7 +1117,7 @@ impl Game<'_> {
     /// (`getSourceContainerOrHandler`). `None` when there is no container.
     fn suck_from_container(&mut self, above: Pos, at: [f64; 3], hopper: &View) -> Option<bool> {
         let c = self.containers();
-        let Some(source) = c.view(above, false) else {
+        let Some(source) = c.view(above, true) else {
             let id = self.entity_container_at(at)?;
             self.native_hopper_inventory_search(
                 [
@@ -2024,5 +2024,78 @@ mod hopper_cart_transfer_tests {
             after_cart, 20,
             "one item a tick, not a stack nor eight ticks"
         );
+    }
+}
+
+#[cfg(test)]
+mod blocked_chest_hopper_tests {
+    use super::super::native_machines::tests::server_game;
+    use super::*;
+    use horizon_client::containers::BlockEntity;
+    use horizon_client::items::ItemStack;
+    use horizon_core::position::BlockPos;
+    use horizon_world::level::LevelAccess;
+
+    fn chest_with(slots: usize, slot: usize, stack: ItemStack) -> BlockEntity {
+        let mut items = vec![None; slots];
+        items[slot] = Some(stack);
+        BlockEntity::Chest(items)
+    }
+
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_hopper_does_not_take_from_a_blocked_chest() {
+        let mut game = server_game();
+        let hopper = (8, 64, 8);
+        let chest = (8, 65, 8);
+        let hopper_state = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:hopper")
+            .unwrap();
+        let chest_state = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:chest")
+            .unwrap();
+        game.world
+            .set(hopper.0, hopper.1, hopper.2, hopper_state)
+            .unwrap();
+        game.world
+            .set(chest.0, chest.1, chest.2, chest_state)
+            .unwrap();
+        game.world.block_entities.insert(
+            chest,
+            chest_with(27, 0, ItemStack::new("minecraft:stone", 1)),
+        );
+        game.world
+            .block_entities
+            .insert(hopper, BlockEntity::Chest(vec![None; 5]));
+        let conductor = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:stone")
+            .unwrap();
+        game.world.set(8, 66, 8, conductor).unwrap();
+
+        game.hopper_try_move_items(hopper);
+
+        let chest_slots = match game.world.block_entities.get(&chest) {
+            Some(BlockEntity::Chest(items)) => items.clone(),
+            _ => panic!("chest block entity"),
+        };
+        assert_eq!(
+            chest_slots[0].as_ref().map(|s| s.count),
+            Some(1),
+            "a blocked chest keeps its item"
+        );
+        let hopper_slots = match game.world.block_entities.get(&hopper) {
+            Some(BlockEntity::Chest(items)) => items.clone(),
+            _ => panic!("hopper block entity"),
+        };
+        assert_eq!(hopper_slots[0], None, "the hopper stays empty");
     }
 }
