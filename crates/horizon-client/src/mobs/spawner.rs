@@ -321,20 +321,26 @@ impl SpawnerExt for Spawner {
             .get("SpawnData")
             .and_then(SpawnData::decode)
             .map(Next::Own);
-        s.potentials = match tag.get("SpawnPotentials") {
+        // `SpawnData.LIST_CODEC` reads the whole list: one potential it
+        // rejects leaves the one `WeightedList.of(nextSpawnData)` fallback.
+        let potentials = match tag.get("SpawnPotentials") {
             Some(Tag::List(list)) => list
                 .iter()
-                .filter_map(|e| {
+                .map(|e| {
                     let weight = match e.get("weight") {
                         Some(Tag::Int(w)) if *w >= 0 => *w,
                         _ => return None,
                     };
                     Some((SpawnData::decode(e.get("data")?)?, weight))
                 })
-                .collect(),
+                .collect::<Option<Vec<_>>>(),
+            _ => None,
+        };
+        s.potentials = match potentials {
+            Some(potentials) => potentials,
             // WeightedList.of(nextSpawnData), the same object, when the
-            // potentials are missing or not a list.
-            _ => {
+            // potentials are missing or one of them is not valid.
+            None => {
                 let data = match s.next.take() {
                     Some(Next::Own(d)) => d,
                     _ => SpawnData::default(),
@@ -842,5 +848,41 @@ mod tests {
     fn read_pos_accepts_integer_numeric_tags() {
         assert_eq!(read_pos(Some(&tag("[1, 2, 3]"))), Some([1.0, 2.0, 3.0]));
         assert_eq!(read_pos(Some(&tag("[1b, 2s, 3L]"))), Some([1.0, 2.0, 3.0]));
+    }
+}
+
+#[cfg(test)]
+mod potential_codec_tests {
+    use super::*;
+
+    #[test]
+    fn a_bad_potential_falls_back_to_the_spawn_data() {
+        let tag = Tag::compound([(
+            "SpawnPotentials",
+            Tag::List(vec![
+                Tag::compound([
+                    ("weight", Tag::Int(1)),
+                    (
+                        "data",
+                        Tag::compound([(
+                            "entity",
+                            Tag::compound([("id", Tag::String("minecraft:cow".into()))]),
+                        )]),
+                    ),
+                ]),
+                Tag::Int(1),
+            ]),
+        )]);
+        let spawner = Spawner::load(&tag);
+        assert_eq!(
+            spawner.potentials.len(),
+            1,
+            "one bad potential replaces the list with the fallback"
+        );
+        assert_eq!(
+            spawner.potentials[0].0.id(),
+            None,
+            "the fallback is the default SpawnData, not the valid cow"
+        );
     }
 }
