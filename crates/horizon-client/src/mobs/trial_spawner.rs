@@ -1163,6 +1163,12 @@ mod tests {
     }
 
     #[test]
+    fn a_negative_saved_total_is_kept() {
+        let s = TrialSpawner::load_with(&tag("{total_mobs_spawned:-2}"), &|_| None);
+        assert_eq!(s.total_mobs_spawned, -2);
+    }
+
+    #[test]
     fn defaults_load_and_save_to_nothing() {
         let s = TrialSpawner::load_with(&tag("{}"), &|_| None);
         assert_eq!(s, TrialSpawner::default());
