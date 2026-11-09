@@ -1185,6 +1185,12 @@ mod tests {
     }
 
     #[test]
+    fn one_bad_state_field_leaves_the_default_state() {
+        let s = TrialSpawner::load_with(&tag("{next_mob_spawns_at:100L,spawn_data:1}"), &|_| None);
+        assert_eq!(s, TrialSpawner::default());
+    }
+
+    #[test]
     fn defaults_load_and_save_to_nothing() {
         let s = TrialSpawner::load_with(&tag("{}"), &|_| None);
         assert_eq!(s, TrialSpawner::default());
