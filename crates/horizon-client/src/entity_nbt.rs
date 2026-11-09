@@ -1007,38 +1007,7 @@ pub fn mob_to_nbt(
             }
         }
         "minecraft:piglin" | "minecraft:piglin_brute" | "minecraft:hoglin" => {
-            // Only Piglin.addAdditionalSaveData writes CannotHunt, always.
-            if id == "minecraft:piglin_brute" {
-                map.remove(&"CannotHunt".into());
-            } else if id == "minecraft:piglin" {
-                map.entry("CannotHunt".into()).or_insert(Tag::Byte(0));
-            }
-            map.insert(
-                "IsImmuneToZombification".into(),
-                Tag::Byte(i8::from(m.extra.flag2)),
-            );
-            map.insert("TimeInOverworld".into(), Tag::Int(m.extra.counter2));
-            if id == "minecraft:hoglin" {
-                map.insert(
-                    "CannotBeHunted".into(),
-                    Tag::Byte(m.extra.cannot_be_hunted as i8),
-                );
-                write_hoglin_memories(m, map);
-            }
-            if id == "minecraft:piglin" {
-                write_guarded_piglin_anger(m, map);
-                // InventoryCarrier.writeInventoryToTag.
-                map.insert(
-                    "Inventory".into(),
-                    Tag::List(
-                        m.extra
-                            .inventory
-                            .iter()
-                            .map(crate::save::item_to_nbt)
-                            .collect(),
-                    ),
-                );
-            }
+            crate::mobs::piglin::write_nbt(m, map, id)
         }
         "minecraft:horse"
         | "minecraft:donkey"
@@ -2324,27 +2293,7 @@ pub fn mob_from_nbt_with_random(
             | crate::mobs::Species::PiglinBrute
             | crate::mobs::Species::Hoglin
     ) {
-        m.extra.flag2 = flag(tag, "IsImmuneToZombification");
-        m.extra.counter2 = number(tag.get("TimeInOverworld")).unwrap_or(0) as i32;
-        if m.species() == crate::mobs::Species::Hoglin {
-            m.extra.cannot_be_hunted = flag(tag, "CannotBeHunted");
-            // `HoglinAi`'s `PACIFIED` memory: `BecomePassiveIfMemoryPresent`
-            // stores the unit value with the ticks left as its TTL.
-            m.extra.ints[0] = tag
-                .get("Brain")
-                .and_then(|b| b.get("memories"))
-                .and_then(|b| b.get("minecraft:pacified"))
-                .and_then(|m| m.get("ttl"))
-                .and_then(int_value)
-                .unwrap_or(0);
-        }
-        if m.species() == crate::mobs::Species::Piglin
-            && let Some(Tag::List(items)) = tag.get("Inventory")
-        {
-            // InventoryCarrier.readInventoryFromTag -> SimpleContainer
-            // .fromItemList (eight slots).
-            m.extra.inventory = crate::mobs::villager::load_container(&m, items, 8);
-        }
+        crate::mobs::piglin::read_nbt(&mut m, tag);
     }
     if matches!(
         m.species(),
@@ -6386,42 +6335,6 @@ mod tests {
     }
 }
 
-/// `Brain.Packed`: the guarded-block live ANGRY_AT entry. The existing
-/// anger counter supplies its remaining long TTL, not an absolute timestamp.
-fn write_guarded_piglin_anger(m: &Mob, map: &mut Compound) {
-    let Some(actor) = m.extra.piglin.guarded_angry_at else {
-        return;
-    };
-    let brain = map
-        .entry("Brain".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(brain, Tag::Compound(_)) {
-        *brain = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(brain) = brain else { return };
-    let memories = brain
-        .entry("memories".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(memories, Tag::Compound(_)) {
-        *memories = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(memories) = memories else {
-        return;
-    };
-    if let Some(uuid) = actor.filter(|_| m.extra.anger > 0) {
-        // ExpirableValue.codec: the UUID value and optional remaining Long TTL.
-        memories.insert(
-            "minecraft:angry_at".into(),
-            Tag::compound([
-                ("value", Tag::IntArray(uuid.to_vec())),
-                ("ttl", Tag::Long(i64::from(m.extra.anger))),
-            ]),
-        );
-    } else {
-        memories.remove(&"minecraft:angry_at".into());
-    }
-}
-
 /// `Brain`'s two measured Warden Unit memories, using actual existing slots.
 fn write_warden_owned_memories(m: &Mob, map: &mut Compound) {
     let brain = map
@@ -6526,37 +6439,6 @@ fn write_axolotl_memories(m: &Mob, map: &mut Compound) {
         } else {
             memories.remove(&key.into());
         }
-    }
-}
-/// `HoglinAi`'s `PACIFIED` memory: `true`, with the ticks the hoglin stays
-/// passive as its TTL. `mob_from_nbt` puts the TTL back in `ints[0]`.
-fn write_hoglin_memories(m: &Mob, map: &mut Compound) {
-    let brain = map
-        .entry("Brain".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(brain, Tag::Compound(_)) {
-        *brain = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(brain) = brain else { return };
-    let memories = brain
-        .entry("memories".into())
-        .or_insert_with(|| Tag::Compound(Compound::new()));
-    if !matches!(memories, Tag::Compound(_)) {
-        *memories = Tag::Compound(Compound::new());
-    }
-    let Tag::Compound(memories) = memories else {
-        return;
-    };
-    if m.extra.ints[0] > 0 {
-        memories.insert(
-            "minecraft:pacified".into(),
-            Tag::compound([
-                ("value", Tag::Byte(1)),
-                ("ttl", Tag::Long(i64::from(m.extra.ints[0]))),
-            ]),
-        );
-    } else {
-        memories.remove(&"minecraft:pacified".into());
     }
 }
 /// Saved variants and fish/axolotl bucket flags. Missing variants use a
