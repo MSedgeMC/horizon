@@ -3449,6 +3449,48 @@ mod despawn_tests {
             assert!(!feline_removed_when_far(s, false, 12000), "{s:?}");
         }
     }
+    /// `WitherBoss.checkDespawn`: the boss is discarded in peaceful and nothing
+    /// else removes it — not the 128-block distance a monster loses (the zombie
+    /// beside it does), not the 600-tick random removal — and its action time is
+    /// cleared every tick.
+    #[test]
+    fn a_wither_is_only_discarded_in_peaceful() {
+        crate::mobs::world::with_test_world(&[], |w, types| {
+            let mob = |id: &str| {
+                let kind = std::sync::Arc::new(types.types[id].clone());
+                // 200 blocks from the player below: past a monster's 128.
+                Mob::new(1, kind, Vec3::new(0.0, 64.0, 0.0), 0.0)
+            };
+            let far = MobWorld {
+                nearest_player: Some(Vec3::new(200.0, 64.0, 0.0)),
+                ..w.clone()
+            };
+            let mut wither = mob("minecraft:wither");
+            wither.ai.no_action_time = 1000;
+            assert!(
+                despawn_check(&mut wither, &far),
+                "a wither 200 blocks out stays"
+            );
+            assert!(!wither.removed);
+            assert_eq!(wither.ai.no_action_time, 0, "its action time is cleared");
+            let mut zombie = mob("minecraft:zombie");
+            assert!(
+                !despawn_check(&mut zombie, &far),
+                "a zombie 200 blocks out is removed"
+            );
+            assert!(zombie.removed);
+            // Difficulty.PEACEFUL discards it: the wither's own check is that
+            // discard and nothing more.
+            let peaceful = MobWorld {
+                difficulty: crate::mobs::spawning::LocalDifficulty::new(0, 18000, 0, 0.0),
+                nearest_player: Some(Vec3::new(200.0, 64.0, 0.0)),
+                ..w.clone()
+            };
+            let mut wither = mob("minecraft:wither");
+            assert!(!despawn_check(&mut wither, &peaceful), "peaceful discards it");
+            assert!(wither.removed);
+        });
+    }
 }
 
 #[cfg(test)]
