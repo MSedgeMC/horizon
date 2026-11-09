@@ -2638,3 +2638,59 @@ mod brute_home_tests {
         });
     }
 }
+
+#[cfg(test)]
+mod hoglin_save_tests {
+    use super::*;
+    use crate::entity_nbt::{mob_from_nbt, mob_to_nbt};
+    use crate::mobs::sensor_scan_tests::kind;
+    use horizon_world::nbt::Tag;
+    use std::sync::Arc;
+
+    fn hoglin() -> Mob {
+        let mut kind = kind();
+        let k = Arc::make_mut(&mut kind);
+        k.id = "minecraft:hoglin".into();
+        k.species = Species::Hoglin;
+        Mob::new(9, kind, Vec3::new(0.5, 0.0, 0.5), 0.0)
+    }
+
+    /// `HoglinAi`'s `PACIFIED` memory, set by
+    /// `BecomePassiveIfMemoryPresent(NEAREST_REPELLENT, 200)`: a unit value
+    /// whose TTL is the ticks the hoglin stays passive. `Brain.Packed` saves
+    /// it and `mob_to_nbt`/`mob_from_nbt` are the pair `Game::mob_tree_nbt`
+    /// and `Game::load_mob` go through. Horizon counted the pacified time in
+    /// `extra.ints[0]` and wrote no `Brain`, so a pacified hoglin came back
+    /// hostile after a reload and charged the player who lit the repellent.
+    #[test]
+    fn a_pacified_hoglin_keeps_its_ttl_through_a_save() {
+        let mut m = hoglin();
+        m.extra.ints[0] = 173;
+        let saved = mob_to_nbt(&m, [1, 2, 3, 4], None, None, |_| None);
+        assert_eq!(
+            saved
+                .get("Brain")
+                .and_then(|b| b.get("memories"))
+                .and_then(|b| b.get("minecraft:pacified")),
+            Some(&Tag::compound([
+                ("value", Tag::Byte(1)),
+                ("ttl", Tag::Long(173)),
+            ])),
+            "the save names the ticks left"
+        );
+        let types = std::collections::HashMap::from([(m.kind.id.clone(), m.kind.clone())]);
+        let back = mob_from_nbt(&saved, &types, 2, None).unwrap();
+        assert_eq!(back.extra.ints[0], 173, "the reloaded pacified time");
+        // No time left writes no memory, even over a compound that names one.
+        m.extra.ints[0] = 0;
+        let saved = mob_to_nbt(&m, [1, 2, 3, 4], Some(&saved), None, |_| None);
+        assert_eq!(
+            saved
+                .get("Brain")
+                .and_then(|b| b.get("memories"))
+                .and_then(|b| b.get("minecraft:pacified")),
+            None,
+            "not pacified, no key"
+        );
+    }
+}
