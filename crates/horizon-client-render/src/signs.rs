@@ -204,9 +204,12 @@ impl SignData {
             }
             if let Some(Tag::String(c)) = t.get("color") {
                 let name = c.to_string_lossy();
-                if let Some(i) = DYE_TEXT.iter().position(|(n, _)| *n == name) {
-                    out.color = i as u8;
-                }
+                let Some(i) = DYE_TEXT.iter().position(|(n, _)| *n == name) else {
+                    // An unknown colour fails `DyeColor.CODEC`, and with it
+                    // the side's text: vanilla loads an empty side.
+                    return SignText::default();
+                };
+                out.color = i as u8;
             }
             out.glowing = nbt_flag(t, "has_glowing_text");
             out
@@ -307,6 +310,24 @@ pub fn editor_sprite(folder: &str, wood: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn an_unknown_text_colour_loads_an_empty_side() {
+        let tag = Tag::compound([(
+            "front_text",
+            Tag::compound([
+                ("messages", Tag::List(vec![Tag::String("hello".into())])),
+                ("color", Tag::String("not_a_color".into())),
+            ]),
+        )]);
+        let mut decoded = SignData::default();
+        decoded.decode(&tag);
+        assert_eq!(
+            decoded.front,
+            SignText::default(),
+            "an unknown colour fails the side's codec"
+        );
+    }
+
     #[test]
     fn waxed_and_glowing_text_take_any_number() {
         let tag = Tag::compound([
