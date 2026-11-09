@@ -1439,6 +1439,14 @@ mod consume_tests {
         let _ = ran;
     }
 
+    fn fox() -> Mob {
+        let mut kind = crate::mobs::sensor_scan_tests::kind();
+        let k = std::sync::Arc::make_mut(&mut kind);
+        k.id = "minecraft:fox".into();
+        k.species = Species::Fox;
+        Mob::new(1, kind, Vec3::ZERO, 0.0)
+    }
+
     /// `Fox.readAdditionalSaveData` clears the trusted list and reads
     /// `Trusted` with `TRUSTED_LIST_CODEC`: one bad entry fails the whole
     /// list, which then reads as none, not as the good entries beside it.
