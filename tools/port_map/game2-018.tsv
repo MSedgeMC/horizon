@@ -48,7 +48,7 @@ TrialSpawnerState.calculatePositionToSpawnSpawner	port	crates/horizon-client/src
 TrialSpawnerState.calculatePositionAbove	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::item_spawner_position	the clip two to five blocks above the chosen entity and the drop point under it
 TrialSpawnerState.selectEntityToSpawnItemAbove	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::item_spawner_position	picks a mob or a player at random, as vanilla does
 TrialSpawnerState.ParticleEmission.addParticle	inline	crates/horizon-client/src/game/trial_visuals.rs::Game::client_tick_trial_spawner	each state's particle is emitted by this fn; the Game::particle helper sends it
-TrialSpawnerStateData.pack	skip:java		immutable snapshot copy of the data for save and sync; no behaviour of its own
+TrialSpawnerStateData.pack	skip:java		immutable snapshot copy of the data for save and sync; TrialSpawner::load keeps the saved total sign
 TrialSpawnerStateData.isReadyToSpawnNextMob	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::tick_and_get_next	the Active spawn branch checks the spawn time and the simultaneous-mob target
 TrialSpawnerStateData.countAdditionalPlayers	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::tick_and_get_next	additional players are detected players minus one, floored at zero
 TrialSpawnerStateData.findPlayerWithOminousEffect	inline	crates/horizon-client/src/mobs/trial_spawner.rs::TrialSpawner::try_detect_players	Trial Omen wins, else the last Bad Omen player; folded into the detect step
