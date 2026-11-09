@@ -30,6 +30,6 @@ pub fn normalize_id(s: &str) -> Option<String> {
             || matches!(c, '_' | '-' | '.')
             || slash && c == '/'
     };
-    (ns.chars().all(|c| ok(c, false)) && path.chars().all(|c| ok(c, true)))
+    (ns.chars().all(|c| ok(c, false)) && !path.is_empty() && path.chars().all(|c| ok(c, true)))
         .then(|| format!("{ns}:{path}"))
 }

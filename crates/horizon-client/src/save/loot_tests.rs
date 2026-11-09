@@ -242,3 +242,26 @@ fn eager_save_edits_reach_disk_during_ticks_and_again_after_cooldown() {
     drop(save);
     fs::remove_dir_all(dir).unwrap();
 }
+
+#[test]
+fn an_empty_loot_table_id_leaves_the_saved_items() {
+    let mut items = vec![None; 27];
+    items[0] = Some(crate::items::ItemStack::new("minecraft:stone", 1));
+    let tag = Tag::compound([
+        ("id", string("minecraft:chest")),
+        ("x", Tag::Int(1)),
+        ("y", Tag::Int(64)),
+        ("z", Tag::Int(2)),
+        ("LootTable", string("minecraft:")),
+        ("Items", encode_items(&items)),
+    ]);
+    let (_, model) = decode_block_entity(&tag).unwrap();
+    let crate::containers::BlockEntity::Chest(slots) = model else {
+        panic!("chest");
+    };
+    assert_eq!(
+        slots[0].as_ref().map(|s| s.count),
+        Some(1),
+        "an unparsable table keeps the items `loadAllItems` read"
+    );
+}
