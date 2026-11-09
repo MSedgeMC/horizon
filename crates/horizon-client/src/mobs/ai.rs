@@ -4115,6 +4115,35 @@ mod same_vehicle_push_tests {
         )));
     }
 
+    /// `Parrot.doPush`: a parrot shoves every mob it walks into except a player,
+    /// which it never moves, while a chicken standing in the same place pushes
+    /// one.
+    #[test]
+    fn a_parrot_never_pushes_a_player() {
+        let pushes_player = |id: &str| {
+            let mut out = None;
+            crate::mobs::world::with_test_world(&[], |w, types| {
+                let mut w = w.clone();
+                w.player = Some(crate::mobs::world::test_player(Vec3::new(0.6, 64.0, 0.5)));
+                let kind = std::sync::Arc::new(types.types[id].clone());
+                let mut m = Mob::new(1, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+                let mut events = Vec::new();
+                push_entities(&mut m, &w, &mut events);
+                out = Some(events.iter().any(|e| {
+                    matches!(
+                        e,
+                        MobEvent::Push {
+                            target: Who::Player,
+                            ..
+                        }
+                    )
+                }));
+            });
+            out
+        };
+        assert_eq!(pushes_player("minecraft:parrot"), Some(false));
+        assert_eq!(pushes_player("minecraft:chicken"), Some(true));
+    }
     #[test]
     fn a_ridden_horse_is_not_pushed_but_still_pushes() {
         let pair = |ridden: bool| {
