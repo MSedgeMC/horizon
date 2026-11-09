@@ -1892,6 +1892,11 @@ mod tests {
                 Tag::List(vec![Tag::String("minecraft:stick".into())]),
             )])),
         );
+        // The table here is `tags_only`, so the sword has no item data to take
+        // its max damage from; patch it the way the component would arrive.
+        repairable
+            .data_mut()
+            .set_other("minecraft:max_damage", Some(Tag::Int(1561)));
         let r = anvil_result(
             e,
             &items,
