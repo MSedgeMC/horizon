@@ -888,3 +888,41 @@ mod slot_tests {
         assert_eq!(m.extra.head, None);
     }
 }
+
+#[cfg(test)]
+mod drop_chances_save_tests {
+    use super::*;
+    use horizon_world::nbt::Tag;
+
+    /// `Mob.readAdditionalSaveData` decodes `drop_chances` as one
+    /// `DropChances.CODEC` map; one unknown slot fails it, and the defaults
+    /// stay. The per-slot read kept the mainhand chance.
+    #[test]
+    fn an_unknown_drop_chance_slot_keeps_the_defaults() {
+        let mut kind = crate::mobs::sensor_scan_tests::kind();
+        let k = std::sync::Arc::make_mut(&mut kind);
+        k.id = "minecraft:pig".into();
+        k.species = Species::Pig;
+        let types = [("minecraft:pig".into(), kind)].into();
+        let tag = Tag::compound([
+            ("id", Tag::String("minecraft:pig".into())),
+            (
+                "Pos",
+                Tag::List(vec![
+                    Tag::Double(0.0f64.to_bits()),
+                    Tag::Double(64.0f64.to_bits()),
+                    Tag::Double(0.0f64.to_bits()),
+                ]),
+            ),
+            (
+                "drop_chances",
+                Tag::compound([
+                    ("mainhand", Tag::Float(0.5f32.to_bits())),
+                    ("hat", Tag::Float(0.5f32.to_bits())),
+                ]),
+            ),
+        ]);
+        let m = crate::entity_nbt::mob_from_nbt(&tag, &types, 1, None).unwrap();
+        assert_eq!(drop_chance(&m, "mainhand"), DEFAULT_DROP_CHANCE);
+    }
+}
