@@ -279,6 +279,9 @@ impl Vault {
                     .unwrap_or_default(),
                 _ => Vec::new(),
             };
+            v.total_ejections_needed =
+                horizon_client_core::nbt_value::number(get("total_ejections_needed")).unwrap_or(0)
+                    as i32;
         }
         if let Some(Tag::Compound(_)) = tag.get("shared_data") {
             let shared = tag.get("shared_data");
