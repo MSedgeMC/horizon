@@ -3478,7 +3478,10 @@ mod despawn_tests {
                 ..w.clone()
             };
             let mut wither = mob("minecraft:wither");
-            assert!(!despawn_check(&mut wither, &peaceful), "peaceful discards it");
+            assert!(
+                !despawn_check(&mut wither, &peaceful),
+                "peaceful discards it"
+            );
             assert!(wither.removed);
         });
     }
