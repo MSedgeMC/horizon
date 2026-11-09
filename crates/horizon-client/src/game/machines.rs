@@ -2,7 +2,7 @@
 //! transfer cooldowns), `DispenserBlock` / `DropperBlock.dispenseFrom` with
 //! the vanilla dispense behaviours Horizon has entities for, and container
 //! comparator signals (`AbstractContainerMenu.getRedstoneSignalFromContainer`).
-use super::{Game, spill, storage::is_shulker_box};
+use super::{Game, decorated_pot, spill, storage::is_shulker_box};
 
 mod crafter;
 pub(in crate::game) mod native_energy;
@@ -1273,6 +1273,9 @@ impl Game<'_> {
     /// there, from a container entity whose box meets the one around `at`
     /// (`getSourceContainerOrHandler`). `None` when there is no container.
     fn suck_from_container(&mut self, above: Pos, at: [f64; 3], hopper: &View) -> Option<bool> {
+        if let Some(took) = self.suck_from_pot(above, hopper) {
+            return Some(took);
+        }
         let c = self.containers();
         let Some(source) = c.view(above, false) else {
             let id = self.entity_container_at(at)?;
@@ -1328,6 +1331,75 @@ impl Game<'_> {
         }
         let source_hopper = (source.kind == Kind::Hopper).then_some(above);
         Some(self.suck_from_slots(source_hopper, &source, hopper))
+    }
+    /// `HopperBlockEntity.getSourceContainer` over a decorated pot:
+    /// `DecoratedPotBlockEntity` is a `ContainerSingleItem`, so a hopper
+    /// directly above it takes one item per move through
+    /// `ContainerSingleItem.removeItem(1)` (`splitTheItem`), and the pot keeps
+    /// the rest of the stack. `None` when the block above is not a pot.
+    fn suck_from_pot(&mut self, above: Pos, hopper: &View) -> Option<bool> {
+        let state = self.world.block(above.0, above.1, above.2);
+        if self.res.facts().get(state).name.as_ref() != "minecraft:decorated_pot" {
+            return None;
+        }
+        let pos = [above.0, above.1, above.2];
+        let mut tag = spill::saved_entity(&self.world, pos).unwrap_or_else(|| {
+            Tag::compound([
+                ("id", Tag::String("minecraft:decorated_pot".into())),
+                ("x", Tag::Int(above.0)),
+                ("y", Tag::Int(above.1)),
+                ("z", Tag::Int(above.2)),
+            ])
+        });
+        // `DecoratedPotBlockEntity.splitTheItem` unpacks the loot table first.
+        if matches!(tag.get("LootTable"), Some(Tag::String(_))) {
+            let loot = horizon_client::structure_blocks::loot_data(
+                &self.options.resources,
+                &self.pack_files(),
+            );
+            decorated_pot::unpack_loot(
+                &mut tag,
+                loot.as_deref(),
+                &mut self.world.random,
+                &mut self.rand_sequences,
+                self.level.seed,
+            );
+        }
+        let Some(item) = tag
+            .get("item")
+            .and_then(save::item_from_nbt)
+            .filter(|stack| stack.count > 0)
+        else {
+            return Some(false);
+        };
+        let pot = View {
+            parts: vec![(above, 1)],
+            kind: Kind::Pot,
+            container: None,
+        };
+        let (x, y, z) = hopper.parts[0].0;
+        self.native_hopper_inventory_search([x, y, z], Some(pos), None);
+        if self.hopper_move_canceled(&pot, 0, &pot, hopper) {
+            return Some(false);
+        }
+        // `ContainerSingleItem.splitTheItem(1)`: one item, the rest stays.
+        let mut one = item.clone();
+        one.count = 1;
+        if self.add_item(None, hopper, one, None).is_some() {
+            return Some(false);
+        }
+        let mut rest = item;
+        rest.count -= 1;
+        if let Tag::Compound(map) = &mut tag {
+            if rest.count == 0 {
+                map.remove(&"item".into());
+            } else {
+                map.insert("item".into(), save::item_to_nbt(&rest));
+            }
+        }
+        spill::put_saved_entity(&mut self.world, pos, tag);
+        self.mark_block_entity_updated(above);
+        Some(true)
     }
     /// `HopperBlockEntity.tryTakeInItemFromSlot` over the `DOWN` face of `source`.
     fn suck_from_slots(
