@@ -545,7 +545,7 @@ pub(super) fn container_signal(
         brewing: None,
         bone_meal: bone_meal(),
     };
-    c.view((pos.x, pos.y, pos.z), true)
+    c.view((pos.x, pos.y, pos.z), false)
         .filter(|v| !matches!(v.kind, Kind::Composter(_)))
         .map_or(0, |v| c.signal(&v))
 }
@@ -2023,6 +2023,54 @@ mod hopper_cart_transfer_tests {
         assert_eq!(
             after_cart, 20,
             "one item a tick, not a stack nor eight ticks"
+        );
+    }
+}
+
+#[cfg(test)]
+mod blocked_chest_comparator_tests {
+    use super::super::native_machines::tests::server_game;
+    use super::*;
+    use horizon_client::containers::BlockEntity;
+    use horizon_client::items::ItemStack;
+    use horizon_core::position::BlockPos;
+    use horizon_world::level::LevelAccess;
+
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_blocked_chest_still_feeds_a_comparator() {
+        let mut game = server_game();
+        let pos = (8, 64, 8);
+        let state = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:chest")
+            .unwrap();
+        game.world.set(pos.0, pos.1, pos.2, state).unwrap();
+        let mut items = vec![None; 27];
+        items[0] = Some(ItemStack::new("minecraft:stone", 1));
+        game.world
+            .block_entities
+            .insert(pos, BlockEntity::Chest(items));
+        let conductor = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:stone")
+            .unwrap();
+        game.world.set(8, 65, 8, conductor).unwrap();
+
+        let signal = game.with_level(|_, level, _| {
+            level.block_entity_analog_signal(
+                BlockPos::new(pos.0, pos.1, pos.2),
+                state,
+                Direction::North,
+            )
+        });
+        assert_eq!(
+            signal, 1,
+            "a chest under a conductor still fills its comparator"
         );
     }
 }
