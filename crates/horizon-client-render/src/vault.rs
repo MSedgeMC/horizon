@@ -52,12 +52,20 @@ impl VaultConfig {
             horizon_client_core::nbt_value::float(tag.get(k)).unwrap_or(default)
         };
         let config = Self {
-            loot_table: identifier(tag.get("loot_table"))
-                .unwrap_or_else(|| DEFAULT_LOOT_TABLE.into()),
+            loot_table: match tag.get("loot_table") {
+                Some(table) => identifier(Some(table))?,
+                None => DEFAULT_LOOT_TABLE.into(),
+            },
             activation_range: range("activation_range", DEFAULT_ACTIVATION_RANGE),
             deactivation_range: range("deactivation_range", DEFAULT_DEACTIVATION_RANGE),
-            key_item: tag.get("key_item").and_then(stack),
-            override_loot_table_to_display: identifier(tag.get("override_loot_table_to_display")),
+            key_item: match tag.get("key_item") {
+                Some(item) => Some(stack(item)?),
+                None => None,
+            },
+            override_loot_table_to_display: match tag.get("override_loot_table_to_display") {
+                Some(table) => Some(identifier(Some(table))?),
+                None => None,
+            },
         };
         (config.activation_range <= config.deactivation_range).then_some(config)
     }
