@@ -283,11 +283,28 @@ impl Vault {
         if let Some(Tag::Compound(_)) = tag.get("shared_data") {
             let shared = tag.get("shared_data");
             let get = |k: &str| shared.and_then(|s| s.get(k));
-            v.display_item = get("display_item").and_then(stack);
-            v.connected_players = uuids(get("connected_players")).unwrap_or_default();
-            v.connected_particles_range =
-                horizon_client_core::nbt_value::float(get("connected_particles_range"))
-                    .unwrap_or(DEFAULT_DEACTIVATION_RANGE);
+            // `VaultSharedData.CODEC` reads the whole record: a bad display
+            // item, UUID list or range leaves every shared field default.
+            let parsed = (|| {
+                let display_item = match get("display_item") {
+                    Some(item) => Some(stack(item)?),
+                    None => None,
+                };
+                let connected_players = match get("connected_players") {
+                    Some(list) => uuids(Some(list))?,
+                    None => Vec::new(),
+                };
+                let range = match get("connected_particles_range") {
+                    Some(range) => horizon_client_core::nbt_value::float(Some(range))?,
+                    None => DEFAULT_DEACTIVATION_RANGE,
+                };
+                Some((display_item, connected_players, range))
+            })();
+            if let Some((display_item, connected_players, range)) = parsed {
+                v.display_item = display_item;
+                v.connected_players = connected_players;
+                v.connected_particles_range = range;
+            }
         }
         v
     }
