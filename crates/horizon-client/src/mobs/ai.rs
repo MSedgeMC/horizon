@@ -1923,6 +1923,8 @@ fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     if let Some(p) = &w.player
         // Entity.push: passengers of the same vehicle never push each other.
         && m.rider.is_none()
+        // Parrot.doPush: a parrot presses into a player without moving them.
+        && m.species() != Species::Parrot
         && p.alive
         && !p.spectator
         && p.bounds.intersects(bounds)
