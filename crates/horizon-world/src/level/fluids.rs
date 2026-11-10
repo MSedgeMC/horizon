@@ -296,6 +296,9 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                     volume: 1.0,
                     pitch: 1.0,
                 });
+                // `AbstractCandleBlock.extinguish`: the put-out candle is a
+                // block change the sculk sensors hear.
+                self.game_event(pos, "minecraft:block_change");
             }
         }
         self.set_block_and_update(pos, next);
