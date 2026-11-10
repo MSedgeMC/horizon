@@ -715,7 +715,12 @@ impl Game<'_> {
                 Some(BlockEntity::Shelf(_))
             ) {
                 let state = self.world.block(pos.0, pos.1, pos.2);
-                self.post_block_game_event("minecraft:block_activate", pos, None, Some(state));
+                self.post_block_game_event(
+                    "minecraft:block_activate",
+                    [pos.0, pos.1, pos.2],
+                    None,
+                    Some(state),
+                );
             }
         }
     }
