@@ -86,6 +86,13 @@ pub fn sort_entries(entries: &mut [Entry]) {
         (!e.local, !plain, e.name.to_lowercase())
     });
 }
+/// `AbstractContainerEventHandler.mouseScrolled`: the wheel goes to the child
+/// under the pointer. `SocialInteractionsPlayerList` is the whole band under
+/// the tabs (`width`, from 88 to `listEnd()`); the tabs, the search box and
+/// the footer do not scroll it.
+pub fn list_hovered(size: (f32, f32), cursor: (f32, f32)) -> bool {
+    cursor.0 >= 0.0 && cursor.0 < size.0 && cursor.1 >= LIST_START && cursor.1 < list_end(size.1)
+}
 /// The most the list scrolls: its rows less its height.
 pub fn max_scroll(h: f32, rows: usize) -> f32 {
     // `AbstractSelectionList.contentHeight`: the rows and 4px.
