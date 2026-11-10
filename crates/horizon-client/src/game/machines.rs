@@ -1004,6 +1004,14 @@ impl Game<'_> {
                 .registry
                 .state(self.world.block(above.0, above.1, above.2))
                 .is_none_or(|s| s.name != "minecraft:composter")
+            // A decorated pot is a `ContainerSingleItem` too, with no modelled
+            // block entity: `suck_from_pot` still has to look at it.
+            && self
+                .pack
+                .assets
+                .registry
+                .state(self.world.block(above.0, above.1, above.2))
+                .is_none_or(|s| s.name != "minecraft:decorated_pot")
         {
             return;
         }
@@ -2415,7 +2423,7 @@ mod pot_hopper_extraction_tests {
         for tick in 1..=41u32 {
             game.tick_hopper((5, 199, 4));
             // One item every eight ticks, starting with the first move.
-            let moved = tick.div_ceil(8) as u32;
+            let moved = tick.div_ceil(8);
             let in_pot = 5u32.saturating_sub(moved);
             let in_hopper = moved.min(5);
             if pot(&game, 4).map_or(0, |s| s.count) != in_pot
