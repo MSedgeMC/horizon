@@ -4173,3 +4173,34 @@ fn fresh_chunk_block_events_do_not_wait_for_ticking_readiness() {
 
 mod barrel;
 mod trigger_tests;
+
+/// `AbstractCandleBlock.extinguish` through `CandleBlock.placeLiquid`: water
+/// reaching a lit candle puts it out with its sound and a `block_change` the
+/// sculk sensors hear.
+#[test]
+fn water_into_a_lit_candle_posts_block_change() {
+    let Some(f) = fixture() else { return };
+    let mut w = World::new(f);
+    let pos = BlockPos::new(3, 4, 5);
+    let candle = w.id("candle", &[("lit", "true"), ("waterlogged", "false")]);
+    w.set(pos, candle);
+    let mut sim = w.b().sim(&mut w.level, &mut w.ticks);
+    assert!(sim.place_liquid(
+        pos,
+        candle,
+        crate::fluid::FluidState::new(crate::fluid::FluidKind::Water, 8, false),
+        false
+    ));
+    assert_eq!(w.prop(pos, "lit"), "false");
+    assert_eq!(w.prop(pos, "waterlogged"), "true");
+    let events = w
+        .level
+        .events
+        .iter()
+        .filter(|e| {
+            matches!(e, LevelEvent::GameEvent { event, pos: p, .. }
+                if *event == "minecraft:block_change" && *p == pos)
+        })
+        .count();
+    assert_eq!(events, 1, "the extinguished candle posts block_change");
+}
