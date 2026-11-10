@@ -1,6 +1,6 @@
 //! `AnvilScreen`'s rename box: the 50-character `EditBox`, read-only while
 //! the input slot is empty (`AnvilScreen.slotChanged`).
-use super::Station;
+use super::{Kind, Station};
 
 /// `AnvilScreen`: `name.setMaxLength(50)`.
 pub(super) const NAME_CHARS: usize = 50;
@@ -36,6 +36,24 @@ impl Station {
 /// `AnvilScreen.slotChanged`: the box shows the input's name, and only an
 /// input item makes it editable (`name.setEditable(!itemStack.isEmpty())`).
 /// A read-only box still keeps the focus, the caret keys and copy.
+impl Station {
+    /// `AnvilScreen.slotChanged` as the game runs it: the box follows the input
+    /// item, and the name it now shows is the one to send. `None` when this is
+    /// not an anvil, the input slot is empty, or the name is the one already
+    /// sent (the menu's `itemName`).
+    pub(in crate::game) fn after_input(&mut self, name: String) -> Option<String> {
+        if self.kind != Kind::Anvil {
+            return None;
+        }
+        if self.inputs[0] != self.anvil_last {
+            self.anvil_last = self.inputs[0].clone();
+            input_changed(self, name.clone());
+        }
+        self.inputs[0].as_ref()?;
+        self.take_anvil_rename(name)
+    }
+}
+
 pub(super) fn input_changed(station: &mut Station, name: String) {
     station.name = name;
     let value = station.name.clone();
