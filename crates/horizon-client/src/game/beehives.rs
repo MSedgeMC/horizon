@@ -80,6 +80,15 @@ impl HiveHost for GameHive<'_, '_> {
     fn set_changed(&mut self, at: [i32; 3]) {
         self.game.world.modified.insert((at[0] >> 4, at[2] >> 4));
     }
+    fn game_event(&mut self, at: [i32; 3], bee: u32) {
+        let state = self.game.world.block(at[0], at[1], at[2]);
+        self.game.post_block_game_event(
+            "minecraft:block_change",
+            at,
+            Some(Who::Mob(bee)),
+            Some(state),
+        );
+    }
 }
 
 impl Game<'_> {
