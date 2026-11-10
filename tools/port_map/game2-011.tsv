@@ -84,7 +84,7 @@ AbstractBedBlock.getSeed	skip:other		model seed of a random block variant; beds 
 AbstractBedBlock.bedSurroundStandUpOffsets	inline	crates/horizon-client/src/game/respawn_anchor.rs::Game::bed_stand_up	the ten cells around the bed, built inside bed_stand_up
 AbstractBedBlock.bedAboveStandUpOffsets	inline	crates/horizon-client/src/game/respawn_anchor.rs::Game::bed_stand_up	the two cells on the bed, built inside bed_stand_up
 AbstractCandleBlock.onProjectileHit	port	crates/horizon-client/src/arrows.rs::Ticker::block_reaction	a fire arrow lights an unlit, dry candle or candle cake
-AbstractCandleBlock.extinguish	inline	crates/horizon-world/src/level/fluids.rs::Sim::place_liquid	gap: minor: water flow turns a lit candle off with its sound; the smoke particles and game event are not here (the candle cake click is CandleCakeBlock's)
+AbstractCandleBlock.extinguish	port	crates/horizon-world/src/level/fluids.rs::Sim::place_liquid	water flow writes `lit=false` with flag 11, plays block.candle.extinguish and posts `minecraft:block_change` (the smoke particles are the client's, as in the empty-hand path)ck is CandleCakeBlock's)
 AbstractCandleBlock.setLit	inline	crates/horizon-client/src/arrows.rs::Ticker::block_reaction	the lit=true write for a fire arrow; the lit=false write is in place_liquid
 AbstractCandleBlock.onExplosionHit	port	crates/horizon-client/src/game/wind.rs::Game::wind_trigger_block	a wind burst puts out a lit candle; only trigger blasts do this, as in vanilla
 AbstractCauldronBlock.useItemOn	port	crates/horizon-client/src/game/cauldrons.rs::Game::use_on_cauldron	held item interaction with a cauldron
