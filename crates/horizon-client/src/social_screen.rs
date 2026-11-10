@@ -604,4 +604,16 @@ mod tests {
         assert_eq!(delay.shown(Some(tip), at(1505)), None);
         assert_eq!(delay.shown(Some(tip), at(1506)), Some(tip));
     }
+
+    /// `AbstractContainerEventHandler.mouseScrolled`: only the player list's
+    /// band under the pointer takes the wheel.
+    #[test]
+    fn only_the_player_list_under_the_pointer_takes_the_wheel() {
+        let size = (427.0, 360.0);
+        assert!(list_hovered(size, (10.0, 100.0)));
+        assert!(list_hovered(size, (426.0, 287.0)));
+        assert!(!list_hovered(size, (10.0, 87.0)));
+        assert!(!list_hovered(size, (10.0, 288.0)));
+        assert!(!list_hovered(size, (-1.0, 100.0)));
+    }
 }
