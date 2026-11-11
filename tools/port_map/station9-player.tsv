@@ -1,0 +1,1 @@
+Equippable.equipSound	port	crates/horizon-client/src/game/player_equip.rs::stack_equippable	Player equip sound comes from the stack's equippable component read from the stack
