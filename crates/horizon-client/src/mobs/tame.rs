@@ -127,9 +127,18 @@ impl Goal for LandOnOwnersShoulder {
         0
     }
     fn can_use(&mut self, m: &mut Mob, cx: &mut Cx) -> bool {
+        let Some((at, _, spectator)) = owner(m, cx.w) else {
+            return false;
+        };
+        let (x, y, z) = (
+            at.x.floor() as i32,
+            at.y.floor() as i32,
+            at.z.floor() as i32,
+        );
         // ShoulderRidingEntity.canSitOnShoulder: rideCooldownCounter > 100.
-        is_owner(m, cx.w)
-            && owner(m, cx.w).is_some_and(|(_, _, spectator)| !spectator)
+        !spectator
+            && cx.w.fluid(x, y, z) != crate::blocks::Fluid::Water
+            && cx.w.block_name(x, y, z) != "minecraft:powder_snow"
             && !m.extra.sitting
             && m.age > 100
     }
