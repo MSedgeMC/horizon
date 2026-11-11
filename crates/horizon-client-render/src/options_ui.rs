@@ -6,6 +6,8 @@ use std::time::Instant;
 
 pub use crate::settings::Opt;
 
+#[path = "options_ui_widgets.rs"]
+mod widgets;
 use crate::{
     gamepad::{self, GlyphStyle},
     hdr_calibration::Picture,
@@ -17,6 +19,7 @@ use crate::{
     text::{self, Style, Text},
     ui,
 };
+pub(crate) use widgets::{button, chat_delay_label, inactive};
 
 mod shell_pages;
 
@@ -507,7 +510,7 @@ impl Opt {
     pub fn label(self, s: &Settings) -> Text {
         let c = self.caption();
         match self {
-            Opt::ChatDelay => tr("options.chat.delay_none"),
+            Opt::ChatDelay => chat_delay_label(s),
             Opt::FovEffects
             | Opt::DarknessPulsing
             | Opt::DistortionEffects
@@ -712,7 +715,7 @@ impl Opt {
             } else {
                 "options.narrator.notavailable"
             }),
-            Opt::ChatDelay => tr("options.chat.delay_none"),
+            Opt::ChatDelay => chat_delay_label(s),
             Opt::HideLightningFlashes => on_off(s.file.bool("hideLightningFlashes")),
             Opt::MonochromeLogo => on_off(s.file.bool("darkMojangStudiosBackground")),
             Opt::HideSplashTexts => on_off(s.file.bool("hideSplashTexts")),
@@ -1388,7 +1391,7 @@ pub enum Page {
     Music,
 }
 #[derive(Clone, Debug, PartialEq)]
-enum Act {
+pub(crate) enum Act {
     None,
     Push(Page),
     Done,
@@ -1453,7 +1456,7 @@ enum WKind {
         code: String,
     },
 }
-struct Widget {
+pub(crate) struct Widget {
     x: f32,
     y: f32,
     w: f32,
@@ -1805,27 +1808,6 @@ impl Default for OptionsUi {
             wide_extras: Vec::new(),
         }
     }
-}
-fn button(x: f32, y: f32, w: f32, label: Text, act: Act) -> Widget {
-    Widget {
-        x,
-        y,
-        w,
-        h: 20.0,
-        kind: WKind::Button {
-            label,
-            active: true,
-            act,
-        },
-        list: false,
-        row: 0,
-    }
-}
-fn inactive(mut w: Widget) -> Widget {
-    if let WKind::Button { active, .. } = &mut w.kind {
-        *active = false;
-    }
-    w
 }
 fn option_widget(s: &Settings, opt: Opt, x: f32, y: f32, w: f32) -> Widget {
     // OptionsSubScreen.addContents: the narrator button is active only while
