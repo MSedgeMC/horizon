@@ -351,7 +351,13 @@ fn gift_candidate(m: &mut Mob, w: &MobWorld) -> Option<u32> {
             continue;
         }
         let d = s.position.distance_squared(m.position);
-        if d > 36.0 || best.is_some_and(|(b, _)| d >= b) || !m.sees(w, Who::Mob(s.id)) {
+        // `forNonCombat().range(6)`: the range is scaled by visibility, floor 2.
+        let range = if s.has_effect("invisibility") {
+            2.0
+        } else {
+            6.0
+        };
+        if d > range * range || best.is_some_and(|(b, _)| d >= b) || !m.sees(w, Who::Mob(s.id)) {
             continue;
         }
         best = Some((d, s.id));
