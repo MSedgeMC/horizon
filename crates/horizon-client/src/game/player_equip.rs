@@ -20,6 +20,32 @@ fn same(a: Option<&ItemStack>, b: Option<&ItemStack>) -> bool {
     }
 }
 
+/// `ItemStack.get(EQUIPPABLE)`: the stack's slot and equip sound, else the
+/// item's own. A present component without `equip_sound` is the generic
+/// armour sound (None).
+fn stack_equippable(
+    stack: &ItemStack,
+    default_slot: Option<&str>,
+    default_sound: Option<String>,
+) -> Option<(String, Option<String>)> {
+    let data = stack.data();
+    if data.is_some_and(|d| d.other("!minecraft:equippable").is_some()) {
+        return None;
+    }
+    if let Some(equippable) = data.and_then(|d| d.other("minecraft:equippable")) {
+        let slot = match equippable.get("slot") {
+            Some(horizon_world::nbt::Tag::String(slot)) => slot.to_string_lossy(),
+            _ => return None,
+        };
+        let sound = match equippable.get("equip_sound") {
+            Some(horizon_world::nbt::Tag::String(sound)) => Some(sound.to_string_lossy()),
+            _ => None,
+        };
+        return Some((slot, sound));
+    }
+    Some((default_slot?.to_owned(), default_sound))
+}
+
 impl Game<'_> {
     /// The armour (head first) and the off hand, in `EquipmentSlot` order of
     /// the inventory menu's slots.
@@ -65,12 +91,12 @@ impl Game<'_> {
             return;
         };
         let at = [at.x, at.y, at.z];
-        let equippable = new
-            .and_then(|s| self.items().get(&s.item))
-            .and_then(|info| {
-                let own = info.equip_slot.as_deref()?;
-                Some((own == slot, info.equip_sound.clone()))
-            });
+        let equippable = new.and_then(|stack| {
+            let info = self.items().get(&stack.item)?;
+            let (own, sound) =
+                stack_equippable(stack, info.equip_slot.as_deref(), info.equip_sound.clone())?;
+            Some((own == slot, sound))
+        });
         if let Some((true, sound)) = &equippable {
             let sound = sound
                 .as_deref()
