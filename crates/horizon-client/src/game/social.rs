@@ -210,7 +210,7 @@ impl Game<'_> {
     }
     /// `AbstractSelectionList.mouseScrolled`: a row's height and a bit a notch.
     pub(super) fn social_scroll(&mut self, delta: f32) {
-        // `AbstractContainerEventHandler.mouseScrolled`: only the child under
+        // `ContainerEventHandler.mouseScrolled`: only the child under
         // the pointer takes the wheel; the tabs and the search box do not
         // scroll the player list.
         if !social_screen::list_hovered(self.gui_size(), self.cursor) {

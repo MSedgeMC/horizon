@@ -152,4 +152,4 @@ AbstractWidget.nextFocusPath	port	crates/horizon-client/src/game/key_focus.rs::a
 AbstractWidget.isMouseOver	port	crates/horizon-client-render/src/screen_draw.rs::inside	gap: minor: isActive is checked by the caller
 AbstractWidget.narrationPriority	skip:other		narration only
 AbstractWidget.defaultButtonNarrationText	skip:other		narration only
-AbstractContainerEventHandler.mouseScrolled	port	crates/horizon-client/src/social_screen.rs::list_hovered	the wheel goes to the child under the pointer; the social list takes it only inside its band (game/social.rs::social_scroll)
+ContainerEventHandler.mouseScrolled	port	crates/horizon-client/src/social_screen.rs::list_hovered	social screen: the first child under the pointer takes the wheel; the search box wins its overlap with the list (game/social.rs::social_scroll); pack screens are mapped in client2-012.tsv
