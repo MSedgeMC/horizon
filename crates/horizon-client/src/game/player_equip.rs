@@ -157,3 +157,40 @@ impl Game<'_> {
         self.apply_enchantment_attributes();
     }
 }
+
+#[cfg(test)]
+mod equippable_tests {
+    use super::stack_equippable;
+    use horizon_client::items::ItemStack;
+
+    #[test]
+    fn equip_sound_comes_from_the_stack() {
+        let mut helmet = ItemStack::new("minecraft:golden_helmet", 1);
+        assert_eq!(
+            stack_equippable(&helmet, Some("head"), Some("gold".into())),
+            Some(("head".into(), Some("gold".into())))
+        );
+        helmet.data_mut().set_other(
+            "minecraft:equippable",
+            Some(horizon_world::nbt::Tag::compound([(
+                "slot",
+                horizon_world::nbt::Tag::String("head".into()),
+            )])),
+        );
+        assert_eq!(
+            stack_equippable(&helmet, Some("head"), Some("gold".into())),
+            Some(("head".into(), None))
+        );
+        helmet.data_mut().set_other(
+            "!minecraft:equippable",
+            Some(horizon_world::nbt::Tag::compound(Vec::<(
+                &str,
+                horizon_world::nbt::Tag,
+            )>::new())),
+        );
+        assert_eq!(
+            stack_equippable(&helmet, Some("head"), Some("gold".into())),
+            None
+        );
+    }
+}
