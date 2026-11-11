@@ -689,16 +689,7 @@ impl Game<'_> {
     }
     /// The anvil name the menu works with (`AnvilScreen.onNameChanged`).
     pub(super) fn anvil_item_name(&self, s: &Station) -> String {
-        match &s.inputs[0] {
-            Some(input)
-                if input.custom_name().is_none()
-                    && s.name == self.pack.names.display_item(&input.item) =>
-            {
-                String::new()
-            }
-            Some(_) => s.name.clone(),
-            None => String::new(),
-        }
+        s.anvil_item_name(&self.pack.names)
     }
     /// NeoForge's `AnvilUpdateEvent` (`CommonHooks.onAnvilUpdate`) about
     /// `result`, vanilla's for `left`, `right` and the rename box's
