@@ -8280,6 +8280,9 @@ mod tests {
 }
 
 #[cfg(test)]
+#[path = "options_ui_chat_tests.rs"]
+mod chat_tests;
+#[cfg(test)]
 #[path = "options_ui_graphics_tests.rs"]
 mod graphics_tests;
 #[path = "options_ui_pages.rs"]
