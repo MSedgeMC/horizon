@@ -26,8 +26,6 @@ pub(super) fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent
     if let Some(p) = &w.player
         // Entity.push: passengers of the same vehicle never push each other.
         && m.rider.is_none()
-        // Parrot.doPush: a parrot presses into a player without moving them.
-        && m.species() != Species::Parrot
         && p.alive
         && !p.spectator
         && p.bounds.intersects(bounds)
@@ -55,6 +53,10 @@ pub(super) fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent
         hurt(m, w, events, 6.0, Damage::of(DamageKind::Cramming));
     }
     for (who, at, _, same, vehicle) in targets {
+        // Parrot.doPush: a player is counted for cramming but never pushed.
+        if matches!(who, Who::Player) && m.species() == Species::Parrot {
+            continue;
+        }
         // Warden.doPush: touching it angers it, then the push itself.
         if m.species() == Species::Warden {
             crate::mobs::warden::do_push(m, w, who, events);
