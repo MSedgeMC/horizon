@@ -1032,7 +1032,9 @@ mod tests {
                 loop {
                     let mut r = horizon_core::random::LegacyRandom::new(seed);
                     if r.next_int_bound(8000) == Ok(0) {
-                        golem.random = horizon_core::random::LegacyRandom::new(seed);
+                        golem.random = horizon_core::random::EntityRandom::own(
+                            horizon_core::random::LegacyRandom::new(seed),
+                        );
                         break;
                     }
                     seed += 1;
