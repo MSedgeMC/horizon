@@ -1042,8 +1042,12 @@ pub fn register_cat(m: &mut Mob) {
     // in insertion order, so it comes last.
     g.add(
         4,
-        super::goals::AvoidEntity::new(super::goals::Avoid::Player, 16.0, 0.8, 1.33)
-            .when(|m| !m.extra.tame),
+        CatAvoid(super::goals::AvoidEntity::new(
+            super::goals::Avoid::Player,
+            16.0,
+            0.8,
+            1.33,
+        )),
     );
     m.ai.targets.add(
         1,
@@ -1247,6 +1251,30 @@ fn empty_above(w: &MobWorld, p: [i32; 3]) -> bool {
 /// belongs to whoever it sees).
 pub fn is_owner_of(m: &Mob, p: &super::PlayerView) -> bool {
     m.extra.owner.is_none_or(|o| o == p.uuid)
+}
+/// `Cat.CatAvoidEntityGoal`: the player avoidance only while untamed.
+#[derive(Clone, Debug)]
+struct CatAvoid(super::goals::AvoidEntity);
+impl Goal for CatAvoid {
+    goal_clone!();
+    fn flags(&self) -> u8 {
+        self.0.flags()
+    }
+    fn can_use(&mut self, m: &mut Mob, cx: &mut Cx) -> bool {
+        !m.extra.tame && self.0.can_use(m, cx)
+    }
+    fn can_continue(&mut self, m: &mut Mob, cx: &mut Cx) -> bool {
+        !m.extra.tame && self.0.can_continue(m, cx)
+    }
+    fn start(&mut self, m: &mut Mob, cx: &mut Cx) {
+        self.0.start(m, cx)
+    }
+    fn stop(&mut self, m: &mut Mob, cx: &mut Cx) {
+        self.0.stop(m, cx)
+    }
+    fn tick(&mut self, m: &mut Mob, cx: &mut Cx) {
+        self.0.tick(m, cx)
+    }
 }
 /// `Cat.CatRelaxOnOwnerGoal`: while the owner sleeps, the cat lies down beside
 /// them, and may leave a morning gift when they wake up.
@@ -2130,6 +2158,78 @@ mod tests {
         m
     }
 
+    /// `LandOnOwnersShoulderGoal.canUse` refuses an owner who is in water or
+    /// powder snow. The test puts the owner in water: the parrot must not
+    /// start to land.
+    #[test]
+    fn a_parrot_does_not_land_on_an_owner_in_water() {
+        use crate::mobs::goals::Cx;
+        use crate::mobs::world::{test_player, with_built_test_world};
+        use horizon_core::random::LegacyRandom;
+        use std::sync::Arc;
+        let mut outcomes = Vec::new();
+        if !with_built_test_world(
+            &[],
+            |world, registry| {
+                for (cx, cz) in [
+                    (-1, -1),
+                    (-1, 0),
+                    (-1, 1),
+                    (0, -1),
+                    (0, 0),
+                    (0, 1),
+                    (1, -1),
+                    (1, 0),
+                    (1, 1),
+                ] {
+                    world
+                        .chunks
+                        .insert((cx, cz), Arc::new(crate::chunk::Chunk::empty(cx, cz)));
+                }
+                let stone = registry.default_state("minecraft:stone").unwrap();
+                let water = registry.default_state("minecraft:water").unwrap();
+                for x in -4..5 {
+                    for z in -4..5 {
+                        world.set(x, 63, z, stone).unwrap();
+                    }
+                }
+                world.set(3, 64, 0, water).unwrap();
+            },
+            |w, _| {
+                for wet in [false, true] {
+                    let mut world = w.clone();
+                    let x = if wet { 3.5 } else { 0.5 };
+                    let p = test_player(Vec3::new(x, 64.0, 0.5));
+                    world.player = Some(p.clone());
+                    let mut kind = (*kind()).clone();
+                    kind.species = Species::Parrot;
+                    let mut parrot = Mob::new(1, Arc::new(kind), Vec3::new(x, 64.0, 0.5), 0.0);
+                    parrot.extra.owner = Some(p.uuid);
+                    parrot.extra.tame = true;
+                    parrot.age = 200;
+                    parrot.ai.goals.add(1, LandOnOwnersShoulder);
+                    let mut lr = LegacyRandom::new(0);
+                    let mut events = Vec::new();
+                    let mut cx = Cx {
+                        w: &world,
+                        lr: &mut lr,
+                        events: &mut events,
+                    };
+                    let mut goals = std::mem::take(&mut parrot.ai.goals);
+                    goals.tick(&mut parrot, &mut cx);
+                    outcomes.push(goals.is_running("LandOnOwnersShoulder"));
+                    parrot.ai.goals = goals;
+                }
+            },
+        ) {
+            return;
+        }
+        assert_eq!(
+            outcomes,
+            vec![true, false],
+            "a dry owner can be landed on; one in water cannot"
+        );
+    }
     #[test]
     fn a_hit_stands_a_sitting_wolf_or_parrot_up() {
         // Wolf.hurtServer and Parrot.hurtServer call setOrderedToSit(false)
@@ -2310,76 +2410,64 @@ mod tests {
             "an alive attacker is avenged; a dead one is not"
         );
     }
-    /// `LandOnOwnersShoulderGoal.canUse` refuses an owner who is in water or
-    /// powder snow. The test puts the owner in water: the parrot must not
-    /// start to land.
+    /// `Cat.CatAvoidEntityGoal.canContinueToUse` is `!cat.isTame()
+    /// && super.canContinueToUse()`: taming a fleeing cat stops the flight.
     #[test]
-    fn a_parrot_does_not_land_on_an_owner_in_water() {
+    fn a_cat_stops_fleeing_when_it_is_tamed() {
         use crate::mobs::goals::Cx;
-        use crate::mobs::world::{test_player, with_built_test_world};
+        use crate::mobs::path::{Path, PathNode, PathType};
+        use crate::mobs::world::with_test_world;
         use horizon_core::random::LegacyRandom;
         use std::sync::Arc;
         let mut outcomes = Vec::new();
-        if !with_built_test_world(
-            &[],
-            |world, registry| {
-                for (cx, cz) in [
-                    (-1, -1),
-                    (-1, 0),
-                    (-1, 1),
-                    (0, -1),
-                    (0, 0),
-                    (0, 1),
-                    (1, -1),
-                    (1, 0),
-                    (1, 1),
-                ] {
-                    world
-                        .chunks
-                        .insert((cx, cz), Arc::new(crate::chunk::Chunk::empty(cx, cz)));
-                }
-                let stone = registry.default_state("minecraft:stone").unwrap();
-                let water = registry.default_state("minecraft:water").unwrap();
-                for x in -4..5 {
-                    for z in -4..5 {
-                        world.set(x, 63, z, stone).unwrap();
-                    }
-                }
-                world.set(3, 64, 0, water).unwrap();
-            },
-            |w, _| {
-                for wet in [false, true] {
-                    let mut world = w.clone();
-                    let x = if wet { 3.5 } else { 0.5 };
-                    let p = test_player(Vec3::new(x, 64.0, 0.5));
-                    world.player = Some(p.clone());
-                    let mut kind = (*kind()).clone();
-                    kind.species = Species::Parrot;
-                    let mut parrot = Mob::new(1, Arc::new(kind), Vec3::new(x, 64.0, 0.5), 0.0);
-                    parrot.extra.owner = Some(p.uuid);
-                    parrot.extra.tame = true;
-                    parrot.age = 200;
-                    parrot.ai.goals.add(1, LandOnOwnersShoulder);
-                    let mut lr = LegacyRandom::new(0);
-                    let mut events = Vec::new();
-                    let mut cx = Cx {
-                        w: &world,
-                        lr: &mut lr,
-                        events: &mut events,
-                    };
-                    let mut goals = std::mem::take(&mut parrot.ai.goals);
-                    goals.tick(&mut parrot, &mut cx);
-                    outcomes.push(goals.is_running("LandOnOwnersShoulder"));
-                    parrot.ai.goals = goals;
-                }
-            },
-        ) {
+        if !with_test_world(&[], |w, _| {
+            for tame in [false, true] {
+                let mut kind = (*kind()).clone();
+                kind.species = Species::Cat;
+                let mut m = Mob::new(1, Arc::new(kind), Vec3::new(0.5, 65.0, 0.5), 0.0);
+                m.extra.tame = tame;
+                m.ai.nav.path = Some(Path {
+                    nodes: vec![
+                        PathNode {
+                            x: 0,
+                            y: 65,
+                            z: 0,
+                            kind: PathType::Walkable,
+                        },
+                        PathNode {
+                            x: 2,
+                            y: 65,
+                            z: 0,
+                            kind: PathType::Walkable,
+                        },
+                    ],
+                    next: 0,
+                    target: [2, 65, 0],
+                    dist_to_target: 0.0,
+                    reached: true,
+                });
+                let mut goal = CatAvoid(super::super::goals::AvoidEntity::new(
+                    super::super::goals::Avoid::Player,
+                    16.0,
+                    0.8,
+                    1.33,
+                ));
+                let mut lr = LegacyRandom::new(0);
+                let mut events = Vec::new();
+                let mut cx = Cx {
+                    w,
+                    lr: &mut lr,
+                    events: &mut events,
+                };
+                outcomes.push(goal.can_continue(&mut m, &mut cx));
+            }
+        }) {
             return;
         }
         assert_eq!(
             outcomes,
             vec![true, false],
-            "a dry owner can be landed on; one in water cannot"
+            "an untamed cat flees; a tamed one stops"
         );
     }
 }
