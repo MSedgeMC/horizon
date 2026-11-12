@@ -80,7 +80,7 @@ impl Game<'_> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Kind {
     Generic,
-    /// The saved decorated-pot slot, exposed only to hopper insertion.
+    /// The saved decorated-pot slot: hopper insertion and the comparator signal.
     Pot,
     /// `AbstractFurnaceBlockEntity` (a `WorldlyContainer`).
     Furnace,
@@ -362,23 +362,27 @@ impl Containers<'_> {
             container: None,
         })
     }
-    /// `HopperBlockEntity.getBlockContainer` at its insertion target only.
-    /// Pots keep their authoritative slot in the chunk's saved tag. Pending
-    /// loot is deliberately left to its existing path, without unpacking it.
-    fn hopper_insertion_view(&self, pos: Pos) -> Option<View> {
-        self.view(pos, false).or_else(|| {
-            if self.name(self.world.block(pos.0, pos.1, pos.2)) != "minecraft:decorated_pot"
-                || spill::saved_entity(self.world, [pos.0, pos.1, pos.2])
-                    .is_some_and(|tag| matches!(tag.get("LootTable"), Some(Tag::String(_))))
-            {
-                return None;
-            }
-            Some(View {
-                parts: vec![(pos, 1)],
-                kind: Kind::Pot,
-                container: None,
-            })
+    /// The saved decorated-pot slot as a container: `DecoratedPotBlockEntity`
+    /// is a `ContainerSingleItem`, but Horizon keeps pots out of generic
+    /// container discovery (`world.block_entities`), so this is built on demand.
+    /// A pot with pending loot is left to its existing unpacking path.
+    fn saved_pot_view(&self, pos: Pos) -> Option<View> {
+        if self.name(self.world.block(pos.0, pos.1, pos.2)) != "minecraft:decorated_pot"
+            || spill::saved_entity(self.world, [pos.0, pos.1, pos.2])
+                .is_some_and(|tag| matches!(tag.get("LootTable"), Some(Tag::String(_))))
+        {
+            return None;
+        }
+        Some(View {
+            parts: vec![(pos, 1)],
+            kind: Kind::Pot,
+            container: None,
         })
+    }
+    /// `HopperBlockEntity.getBlockContainer` at its insertion target only.
+    /// Pots keep their authoritative slot in the chunk's saved tag.
+    fn hopper_insertion_view(&self, pos: Pos) -> Option<View> {
+        self.view(pos, false).or_else(|| self.saved_pot_view(pos))
     }
     /// The `ContainerSingleItem` slot for hopper insertion: only a saved pot
     /// needs an owned decode. Existing modeled containers stay borrowed.
@@ -519,8 +523,9 @@ impl Containers<'_> {
         }
         let mut total = 0.0f32;
         for i in 0..view.len() {
-            if let Some(s) = self.get(view, i) {
-                total += s.count as f32 / self.max_stack(s) as f32;
+            // `insertion_item` decodes a saved pot's slot; every other kind is `get`.
+            if let Some(s) = self.insertion_item(view, i) {
+                total += s.count as f32 / self.max_stack(&s) as f32;
             }
         }
         total /= view.len().max(1) as f32;
@@ -653,6 +658,7 @@ pub(super) fn container_signal(level: &super::GameLevel<'_>, pos: BlockPos) -> i
     };
     c.view((pos.x, pos.y, pos.z), true)
         .filter(|v| !matches!(v.kind, Kind::Composter(_)))
+        .or_else(|| c.saved_pot_view((pos.x, pos.y, pos.z)))
         .map_or(0, |v| c.signal(&v))
 }
 
@@ -2361,6 +2367,85 @@ mod hopper_cart_transfer_tests {
 }
 
 #[cfg(test)]
+mod pot_hopper_extraction_tests {
+    use super::super::{native_machines::tests::server_game, spill};
+    use super::*;
+    use horizon_client::save;
+    use horizon_world::nbt::Tag;
+
+    fn count(game: &Game<'_>, pos: Pos, slot: usize) -> u32 {
+        let Some(BlockEntity::Chest(slots)) = game.world.block_entities.get(&pos) else {
+            panic!("hopper inventory missing at {pos:?}");
+        };
+        slots[slot].as_ref().map_or(0, |item| item.count)
+    }
+    fn pot(game: &Game<'_>, z: i32) -> Option<ItemStack> {
+        spill::saved_entity(&game.world, [5, 200, z])
+            .and_then(|tag| tag.get("item").and_then(save::item_from_nbt))
+    }
+
+    /// `HopperBlockEntity.getSourceContainer` finds a decorated pot (a
+    /// `ContainerSingleItem`), and `ContainerSingleItem.removeItem(1)` splits
+    /// the pot's stack: one item per hopper move, the rest stays in the pot
+    /// until the last item leaves and the `item` tag goes away.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES and scratch homes/cwd"]
+    fn actual_hopper_under_a_pot_takes_one_item_at_a_time() {
+        let mut game = server_game();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.block_ticks
+            .add_empty_chunk(BlockPos::new(0, 0, 0).chunk())
+            .unwrap();
+        assert!(game.run_command("fill 0 199 0 15 199 15 stone"));
+        assert!(game.run_command(
+            "setblock 5 200 4 decorated_pot{item:{id:\"minecraft:stone\",count:5,components:{\"minecraft:custom_data\":{h71:1}}}}"
+        ));
+        assert!(
+            game.run_command(
+                "setblock 5 199 4 hopper[facing=down,enabled=true]{TransferCooldown:0}"
+            )
+        );
+        assert_eq!(pot(&game, 4).expect("saved pot item").count, 5);
+        assert_eq!(count(&game, (5, 199, 4), 0), 0);
+        let mut failures = Vec::new();
+        for tick in 1..=41u32 {
+            game.tick_hopper((5, 199, 4));
+            // One item every eight ticks, starting with the first move.
+            let moved = tick.div_ceil(8);
+            let in_pot = 5u32.saturating_sub(moved);
+            let in_hopper = moved.min(5);
+            if pot(&game, 4).map_or(0, |s| s.count) != in_pot
+                || count(&game, (5, 199, 4), 0) != in_hopper
+            {
+                failures.push((
+                    tick,
+                    pot(&game, 4).map_or(0, |s| s.count),
+                    count(&game, (5, 199, 4), 0),
+                ));
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "actual hopper/pot extraction wrong: {failures:?}"
+        );
+        assert!(pot(&game, 4).is_none(), "the last item leaves no item tag");
+        let tag = spill::saved_entity(&game.world, [5, 200, 4]).expect("saved pot tag");
+        assert!(
+            tag.get("item").is_none(),
+            "an emptied pot writes no item tag: {tag:?}"
+        );
+        // The rest of the pot's saved data is untouched.
+        assert!(
+            matches!(tag.get("id"), Some(Tag::String(id)) if id.to_string_lossy() == "minecraft:decorated_pot")
+        );
+        for slot in 1..5 {
+            assert_eq!(count(&game, (5, 199, 4), slot), 0, "one slot only");
+        }
+    }
+}
+
+#[cfg(test)]
 mod pot_hopper_insertion_tests {
     use super::super::{native_machines::tests::server_game, spill};
     use super::*;
@@ -2498,80 +2583,53 @@ mod pot_hopper_insertion_tests {
 }
 
 #[cfg(test)]
-mod pot_hopper_extraction_tests {
-    use super::super::{native_machines::tests::server_game, spill};
+#[path = "machines_pot_signal_tests.rs"]
+mod pot_signal_tests;
+
+#[cfg(test)]
+mod tests {
     use super::*;
-    use horizon_client::save;
-    use horizon_world::nbt::Tag;
+    use crate::game::native_machines::tests::server_game;
 
-    fn count(game: &Game<'_>, pos: Pos, slot: usize) -> u32 {
-        let Some(BlockEntity::Chest(slots)) = game.world.block_entities.get(&pos) else {
-            panic!("hopper inventory missing at {pos:?}");
-        };
-        slots[slot].as_ref().map_or(0, |item| item.count)
-    }
-    fn pot(game: &Game<'_>, z: i32) -> Option<ItemStack> {
-        spill::saved_entity(&game.world, [5, 200, z])
-            .and_then(|tag| tag.get("item").and_then(save::item_from_nbt))
-    }
-
-    /// `HopperBlockEntity.getSourceContainer` finds a decorated pot (a
-    /// `ContainerSingleItem`), and `ContainerSingleItem.removeItem(1)` splits
-    /// the pot's stack: one item per hopper move, the rest stays in the pot
-    /// until the last item leaves and the `item` tag goes away.
+    /// `ShelfBlockEntity.setChanged` (no arguments) posts `BLOCK_ACTIVATE`:
+    /// a container writing a shelf's slot is a block activation.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES and scratch homes/cwd"]
-    fn actual_hopper_under_a_pot_takes_one_item_at_a_time() {
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_container_writing_a_shelf_posts_block_activate() {
         let mut game = server_game();
-        game.build_registries();
-        game.set_allow_commands(true);
-        game.block_ticks
-            .add_empty_chunk(BlockPos::new(0, 0, 0).chunk())
+        let key = (2, 4, 3);
+        let state = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:oak_shelf")
             .unwrap();
-        assert!(game.run_command("fill 0 199 0 15 199 15 stone"));
-        assert!(game.run_command(
-            "setblock 5 200 4 decorated_pot{item:{id:\"minecraft:stone\",count:5,components:{\"minecraft:custom_data\":{h71:1}}}}"
-        ));
-        assert!(
-            game.run_command(
-                "setblock 5 199 4 hopper[facing=down,enabled=true]{TransferCooldown:0}"
-            )
-        );
-        assert_eq!(pot(&game, 4).expect("saved pot item").count, 5);
-        assert_eq!(count(&game, (5, 199, 4), 0), 0);
-        let mut failures = Vec::new();
-        for tick in 1..=41u32 {
-            game.tick_hopper((5, 199, 4));
-            // One item every eight ticks, starting with the first move.
-            let moved = tick.div_ceil(8);
-            let in_pot = 5u32.saturating_sub(moved);
-            let in_hopper = moved.min(5);
-            if pot(&game, 4).map_or(0, |s| s.count) != in_pot
-                || count(&game, (5, 199, 4), 0) != in_hopper
-            {
-                failures.push((
-                    tick,
-                    pot(&game, 4).map_or(0, |s| s.count),
-                    count(&game, (5, 199, 4), 0),
-                ));
-            }
-        }
-        assert!(
-            failures.is_empty(),
-            "actual hopper/pot extraction wrong: {failures:?}"
-        );
-        assert!(pot(&game, 4).is_none(), "the last item leaves no item tag");
-        let tag = spill::saved_entity(&game.world, [5, 200, 4]).expect("saved pot tag");
-        assert!(
-            tag.get("item").is_none(),
-            "an emptied pot writes no item tag: {tag:?}"
-        );
-        // The rest of the pot's saved data is untouched.
-        assert!(
-            matches!(tag.get("id"), Some(Tag::String(id)) if id.to_string_lossy() == "minecraft:decorated_pot")
-        );
-        for slot in 1..5 {
-            assert_eq!(count(&game, (5, 199, 4), slot), 0, "one slot only");
-        }
+        game.world.set(key.0, key.1, key.2, state).unwrap();
+        game.world
+            .block_entities
+            .put(key, BlockEntity::Shelf(Box::default()));
+        let view = game
+            .containers()
+            .view(key, false)
+            .expect("the shelf's view");
+        super::super::sculk::TEST_POSTED_EVENTS.with(|e| *e.borrow_mut() = Some(Vec::new()));
+
+        game.view_changed(&view);
+
+        super::super::sculk::TEST_POSTED_EVENTS.with(|e| {
+            assert!(
+                e.borrow().as_ref().unwrap().contains(&(
+                    "minecraft:block_activate",
+                    [2.5, 4.5, 3.5],
+                    None
+                )),
+                "{:?}",
+                e.borrow()
+            );
+        });
     }
 }
+
+#[cfg(test)]
+#[path = "machines_chest_cat_tests.rs"]
+mod machines_chest_cat_tests;
