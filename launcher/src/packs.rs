@@ -182,7 +182,7 @@ fn read(path: &Path, kind: Kind, on: &[String]) -> Option<Pack> {
     let (title, description, icon) = match kind {
         Kind::Resource => {
             let meta = entry(path, "pack.mcmeta")?;
-            let meta: serde_json::Value = serde_json::from_slice(&meta).ok()?;
+            let meta: serde_json::Value = first_json(&meta).ok()?;
             (
                 file.clone(),
                 plain(&meta["pack"]["description"]),
@@ -214,6 +214,21 @@ fn read(path: &Path, kind: Kind, on: &[String]) -> Option<Pack> {
         description,
         icon,
     })
+}
+
+/// The first JSON value of a `pack.mcmeta`, as `ResourceMetadata.fromJsonStream` reads it:
+/// `GsonHelper.parse` reads one value through Gson's `JsonReader`, which skips a UTF-8 byte
+/// order mark and stops after the value, so a pack's notes after the closing brace are never
+/// read.
+pub(crate) fn first_json<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> serde_json::Result<T> {
+    let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
+    match serde_json::Deserializer::from_slice(bytes)
+        .into_iter()
+        .next()
+    {
+        Some(value) => value,
+        None => Err(serde::de::Error::custom("empty pack.mcmeta")),
+    }
 }
 
 /// A file at the root of a pack folder or zip, at most 4 MB.

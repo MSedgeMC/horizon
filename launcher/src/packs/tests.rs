@@ -285,3 +285,59 @@ fn invalid_native_manifest_does_not_hide_a_valid_duplicate() {
     );
     fs::remove_dir_all(home).unwrap();
 }
+
+/// `ResourceMetadata.fromJsonStream` reads the first JSON value after an optional UTF-8 BOM and
+/// stops there, so a BOM or a `//` note after the closing brace does not hide a pack, while JSON
+/// that breaks before its first value still does.
+#[test]
+fn a_bom_or_a_note_after_the_metadata_does_not_hide_a_pack() {
+    let home = scratch("lenient-meta");
+    let rp = home.join("resourcepacks");
+    for (name, meta) in [
+        (
+            "Bom",
+            &b"\xEF\xBB\xBF \n{\"pack\":{\"description\":\"BOM\"}}"[..],
+        ),
+        (
+            "Notes",
+            &b"{\"pack\":{\"description\":\"Notes\"}}\n// a note after the value\n"[..],
+        ),
+        ("Broken", &b"{\"pack\": }"[..]),
+    ] {
+        fs::create_dir_all(rp.join(name)).unwrap();
+        fs::write(rp.join(name).join("pack.mcmeta"), meta).unwrap();
+    }
+    let listed = list(&home, Kind::Resource);
+    let resources: Vec<(&str, &str)> = listed
+        .iter()
+        .map(|p| (p.file.as_str(), p.description.as_str()))
+        .collect();
+    assert_eq!(
+        resources,
+        [("Bom", "BOM"), ("Notes", "Notes")],
+        "a BOM and text after the value are ignored; malformed metadata is still rejected"
+    );
+
+    let world = home.join("saves/W");
+    for (name, meta) in [
+        (
+            "Bom",
+            &b"\xEF\xBB\xBF \n{\"pack\":{\"description\":\"BOM\"}}"[..],
+        ),
+        (
+            "Notes",
+            &b"{\"pack\":{\"description\":\"Notes\"}}\n// a note after the value\n"[..],
+        ),
+        ("Broken", &b"{\"pack\": }"[..]),
+    ] {
+        fs::create_dir_all(world.join("datapacks").join(name)).unwrap();
+        fs::write(world.join(format!("datapacks/{name}/pack.mcmeta")), meta).unwrap();
+    }
+    let listed = crate::datapacks::list(&world);
+    let datapacks: Vec<(&str, &str)> = listed
+        .iter()
+        .map(|p| (p.file.as_str(), p.description.as_str()))
+        .collect();
+    assert_eq!(datapacks, [("Bom", "BOM"), ("Notes", "Notes")]);
+    fs::remove_dir_all(home).unwrap();
+}
