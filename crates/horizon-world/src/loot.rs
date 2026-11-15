@@ -2792,8 +2792,14 @@ mod namespace_tests {
         assert_eq!(component.len(), 1, "{:?}", sword.components);
         let entries = component[0].1.as_array().expect("a modifier list");
         assert_eq!(entries.len(), 3, "{entries:?}");
-        assert_eq!(entries[0]["id"].as_str(), Some("minecraft:base_attack_damage"));
-        assert_eq!(entries[1]["id"].as_str(), Some("minecraft:base_attack_speed"));
+        assert_eq!(
+            entries[0]["id"].as_str(),
+            Some("minecraft:base_attack_damage")
+        );
+        assert_eq!(
+            entries[1]["id"].as_str(),
+            Some("minecraft:base_attack_speed")
+        );
         assert_eq!(entries[2]["id"].as_str(), Some("minecraft:reach_bonus"));
         assert_eq!(entries[0]["amount"].as_f64(), Some(6.0));
         let _ = fs::remove_dir_all(&root);
