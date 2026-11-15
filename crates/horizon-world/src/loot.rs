@@ -2807,7 +2807,8 @@ mod namespace_tests {
     }
 
     /// SetContainerContents: an entry's stack, split at its max size, fills
-    /// the next container slots in order, with the entry's weight ignored;
+    /// the next container slots in order, with the entry's weight ignored
+    /// (a weight 0 or negative entry still expands, unlike a pool draw);
     /// the component is the same minecraft:container list block entity items
     /// carry. An empty stack is returned untouched.
     #[test]
@@ -2824,7 +2825,8 @@ mod namespace_tests {
                 {"type": "minecraft:item", "name": "minecraft:apple", "weight": 3,
                  "condition": {"type": "minecraft:random_chance", "chance": 1.0},
                  "modifier": [{"type": "minecraft:set_count", "count": 2}]},
-                {"type": "minecraft:item", "name": "minecraft:brick", "weight": 0}
+                {"type": "minecraft:item", "name": "minecraft:brick", "weight": 0},
+                {"type": "minecraft:item", "name": "minecraft:stick", "weight": -1}
             ]
         });
         let table = serde_json::json!({
@@ -2854,7 +2856,8 @@ mod namespace_tests {
                 {"slot": 0, "item": {"id": "minecraft:diamond", "count": 64}},
                 {"slot": 1, "item": {"id": "minecraft:diamond", "count": 6}},
                 {"slot": 2, "item": {"id": "minecraft:apple", "count": 2}},
-                {"slot": 3, "item": {"id": "minecraft:brick"}}
+                {"slot": 3, "item": {"id": "minecraft:brick"}},
+                {"slot": 4, "item": {"id": "minecraft:stick"}}
             ])
         );
         // An empty stack keeps no component, even with the same function.
