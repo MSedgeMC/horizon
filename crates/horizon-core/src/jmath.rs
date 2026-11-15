@@ -20,7 +20,8 @@
 //!   ([`fdlibm`]).
 //!
 //! So these functions return what vanilla returns on the same machine, on
-//! Linux and on an Apple silicon Mac alike.
+//! Linux and on an Apple silicon Mac alike. They are JVM methods, not ports of
+//! a vanilla class, so the comments below name the Java function they compute.
 
 pub mod fdlibm;
 
