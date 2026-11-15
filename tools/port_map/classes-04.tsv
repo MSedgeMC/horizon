@@ -104,7 +104,7 @@ WallHangingSignBlock.isHittingEditableSide	inline	crates/horizon-world/src/level
 WallHangingSignBlock.rotate	port	crates/horizon-world/src/worldgen/structure.rs::StateTransforms::rotate	
 WallHangingSignBlock.shouldTryToChainAnotherHangingSign	port	crates/horizon-client/src/game/sign_edit.rs::Game::chains_hanging_sign	the HangingSignItem class, the free side and the faced side's run_command click event (sign_can_execute_click_commands): a waxed sign whose faced side carries a click command does not chain
 WallHangingSignBlock.updateShape	port	crates/horizon-world/src/level/shapes.rs::Sim::update_shape_class	
-WallHangingSignBlock.useItemOn	port	crates/horizon-world/src/level/interact.rs::Sim::block_use_item_on	gap: player: chaining is there; the click-command condition of shouldTryToChainAnotherHangingSign is not, see that row
+WallHangingSignBlock.useItemOn	port	crates/horizon-client/src/game/sign_edit.rs::Game::chains_hanging_sign	chaining is there, including the click-command condition of shouldTryToChainAnotherHangingSign (sign_can_execute_click_commands), see that row
 WallSignBlock.canSurvive	port	crates/horizon-world/src/level/survive.rs::Sim::can_survive_class	
 WallSignBlock.createBlockStateDefinition	skip:data		states come from the generated block state table
 WallSignBlock.getStateForPlacement	port	crates/horizon-world/src/level/place.rs::Sim::placement_class	
@@ -142,7 +142,7 @@ BlockEntityTicker	skip:java		ticker combinator; Horizon ticks each block entity 
 BlockEntityType.getBlockEntity	skip:java		factory that makes the block entity object for a state
 BlockEntityTypes	skip:data		registry
 BoundingBoxRenderable.RenderableBox	skip:debug		test box outline renderer
-CopperGolemStatueBlockEntity.createStatue	port	crates/horizon-client/src/game/copper_golems.rs::Game::golem_turn_to_statue	gap: minor: the golem's custom name is not copied onto the statue
+CopperGolemStatueBlockEntity.createStatue	port	crates/horizon-client/src/game/copper_golems.rs::Game::golem_turn_to_statue	createStatue copies the golem's custom name onto the statue as minecraft:custom_name (golem_name_tag)
 CopperGolemStatueBlockEntity.getItem	port	crates/horizon-client/src/game/block_items.rs::Game::picked_stack	statue pose on the picked item
 CopperGolemStatueBlockEntity.initCopperGolem	port	crates/horizon-client/src/game/copper_golems.rs::Game::use_golem_statue	axe on an unaffected statue brings the golem back
 DecoratedPotPatterns	skip:data		bootstrap and asset registration
@@ -165,7 +165,7 @@ PotentSulfurBlockEntity.spawnNoxiousGasCloudParticle	port	crates/horizon-client/
 RandomizableContainerBlockEntity.applyImplicitComponents	port	crates/horizon-client/src/block_entity_item.rs::place	the item's minecraft:container_loot hands the block its LootTable and LootTableSeed
 RandomizableContainerBlockEntity.canOpen	inline	crates/horizon-client/src/game/advancements.rs::Game::container_locked_for	the negative of it: a spectator opens any container, and otherwise the lock decides (LockCode.canUnlock)
 RandomizableContainerBlockEntity.collectImplicitComponents	port	crates/horizon-client/src/block_entity_item.rs::collect	the block's LootTable and LootTableSeed leave on the item as minecraft:container_loot
-RandomizableContainerBlockEntity.createMenu	port	crates/horizon-client/src/game.rs::Game::open_menu	gap: minor: the spectator and loot-table checks are not ported here
+RandomizableContainerBlockEntity.createMenu	port	crates/horizon-client/src/game.rs::Game::open_menu	opening the menu unpacks the container's loot table first (unpack_opened_loot); a spectator's menu is not refused here
 SculkSensorBlockEntity.loadAdditional	port	crates/horizon-client-render/src/sculk.rs::SculkEntity::load	
 SculkSensorBlockEntity.saveAdditional	port	crates/horizon-client-render/src/sculk.rs::SculkEntity::to_nbt	
 SculkSensorBlockEntity.VibrationUser.canReceiveVibration	port	crates/horizon-client-render/src/sculk.rs::valid_vibration	
