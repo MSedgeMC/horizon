@@ -15,10 +15,10 @@ DebugCrosshairRenderer.<init>	skip:debug		F3 3D axis gizmo at the view; Horizon 
 DynamicGpuData.reset	skip:other		GPU per-frame ring reset; wgpu staging in Horizon's Uploads belt
 DynamicGpuData.close	skip:other		GPU buffer release; Rust drops the wgpu buffers
 DynamicGpuData.writeTransform	skip:other		per-draw uniform staging; Horizon writes its uniforms directly with queue writes
-DynamicGpuData.writeChunkSections	port	crates/horizon-client-render/src/gfx/section_fade.rs::section_instance	gap: player: section fade-in (vanilla default 0.75 s) is not sent; Horizon writes a fixed fourth value
-DynamicGpuData.writeChunkSectionsInstanced	port	crates/horizon-client-render/src/gfx/section_fade.rs::section_instance	gap: player: section fade-in (vanilla default 0.75 s) is not sent; same instance record as writeChunkSections
+DynamicGpuData.writeChunkSections	port	crates/horizon-client-render/src/gfx/section_fade.rs::section_instance	the instance step's mantissa carries 1 - visibility while the fade code is 0, read back by terrain.wgsl's instance_visibility; a section fades in over the chunk fade-in (vanilla default 0.75 s)
+DynamicGpuData.writeChunkSectionsInstanced	port	crates/horizon-client-render/src/gfx/section_fade.rs::section_instance	the same instance record as writeChunkSections: origin, fade code and the fade-in visibility packed into the step
 DynamicGpuData.writeChunkSectionCommands	port	crates/horizon-client-render/src/gfx.rs::Renderer::draw_frame	IndexedDraw records built and uploaded into the indirect buffer
-DynamicGpuData.ChunkSectionInfo.write	port	crates/horizon-client-render/src/gfx/section_fade.rs::section_instance	gap: player: packs origin only; the fade-in visibility float (default 0.75 s) is not in the record
+DynamicGpuData.ChunkSectionInfo.write	port	crates/horizon-client-render/src/gfx/section_fade.rs::section_instance	packs the origin, the fade code and the fade-in visibility (1 - visibility in the step's low bits while the fade code is 0)
 DynamicGpuData.IndexedDraw.write	skip:other		indirect draw args; Horizon keeps them as [u32;5] words uploaded in one copy
 DynamicGpuData.TerrainTransform.write	skip:other		terrain UBO layout; Horizon's terrain pass uses its own uniforms
 DynamicGpuData.Transform.write	skip:other		std140 layout of the transform UBO; wgpu bindings in Horizon
@@ -41,7 +41,7 @@ FaceInfo.VertexInfo.select	skip:data		corner selection; Horizon's unit-cube corn
 FirstPersonHandsAndItemsRenderer.calculateMapTilt	inline	crates/horizon-client/src/game/maps.rs::Game::two_handed_map_geometry	tilt computed inline with the calculateMapTilt comment
 FirstPersonHandsAndItemsRenderer.renderPlayerHand	port	crates/horizon-client/src/game/frame_geometry.rs::Game::hand_geometry	empty main hand's arm model with the player skin
 FirstPersonHandsAndItemsRenderer.renderMapHand	port	crates/horizon-client/src/first_person.rs::map_arm_poses	both arms behind a two-handed map, at the jar's rotations and offsets
-FirstPersonHandsAndItemsRenderer.renderOneHandedMap	port	crates/horizon-client/src/first_person.rs::one_handed_map_pose	gap: player: the arm holding a map is not drawn; the map hand branch skips the arm
+FirstPersonHandsAndItemsRenderer.renderOneHandedMap	port	crates/horizon-client/src/first_person.rs::one_handed_map_pose	the hand's pose; the arm under it is drawn from map_arm_poses in frame_geometry.rs::Game::hand_geometry
 FirstPersonHandsAndItemsRenderer.renderTwoHandedMap	port	crates/horizon-client/src/game/maps.rs::Game::two_handed_map_geometry	gap: player: the arms that hold a two-handed map are not drawn
 FirstPersonHandsAndItemsRenderer.renderMap	port	crates/horizon-client/src/game/maps.rs::Game::held_map	map background with its 7-pixel border, then the map contents
 FirstPersonHandsAndItemsRenderer.applyEatTransform	port	crates/horizon-client/src/first_person.rs::item_pose	ItemPose::Eat: bob and jiggle while eating or drinking
