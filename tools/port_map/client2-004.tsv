@@ -15,7 +15,7 @@ ItemFeatureRenderer.prepareOutlineSubmit	port	crates/horizon-client/src/game/glo
 ItemFeatureRenderer.computeFoilDecalPose	missing		minor: unsure: the 0.5 GUI and 0.75 first-person foil decal scale is not found; glint scale is per context in item_render.rs Glint
 ItemFeatureRenderer.getLayerColorSafe	port	crates/horizon-client/src/item_render.rs::submit_quads	tint index past the tints draws white, both overloads
 LeashFeatureRenderer.buildGroup	port	crates/horizon-client/src/game/leads.rs::Game::leash_geometry	loop over leash submits
-LeashFeatureRenderer.prepare	port	crates/horizon-client/src/game/leads.rs::Game::leash_geometry	gap: player: rope never sags when slack (vanilla droops the rope); no slack state in the leash render
+LeashFeatureRenderer.prepare	port	crates/horizon-client/src/game/leads.rs::Game::leash_geometry	a slack lead droops (the quad's y is a quadratic in the slope), while a happy ghast's quad lead stays straight (LeashFeatureRenderer.addVertexPair)
 LeashFeatureRenderer.addVertexPair	inline	crates/horizon-client/src/game/leads.rs::Game::leash_geometry	vertex pair with block and sky light lerp folded into leash_geometry
 ModelFeatureRenderer.buildGroup	port	crates/horizon-client/src/mobs.rs::render_model	loop over model submits
 ModelFeatureRenderer.prepareModel	port	crates/horizon-client/src/mobs.rs::render_model	gap: minor: setupAnim is done by the mob code, and the sheeted decal and uv wrap are not checked
@@ -44,7 +44,7 @@ AtmosphericFogEnvironment.getBaseColor	port	crates/horizon-client-render/src/fog
 AtmosphericFogEnvironment.applyWeatherDarken	inline	crates/horizon-client-render/src/fog.rs::setup_fog	rain and thunder darkening folded into the atmospheric colour
 BlindnessFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	blindness distance and sky/cloud ends
 BlindnessFogEnvironment.getModifiedDarkness	inline	crates/horizon-client-render/src/fog.rs::setup_fog	blindness darkness folded into setup_fog
-LavaFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: player: spectator (-8 start, half render distance) and fire resistance (0 to 5) are not applied in lava
+LavaFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	the lava fog's own starts: spectator (-8 start, half render distance), fire resistance (0 to 5), else (0.25, 1.0)
 MobEffectFogEnvironment.isApplicable	inline	crates/horizon-client/src/game/render_tick.rs::Game::frame_fog	effect gate is where frame_fog builds the blindness and darkness inputs
 PowderedSnowFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: player: spectator case (-8 start, half render distance) is not applied
 WaterFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: minor: water fog start is fixed at -8; vanilla reads the WATER_FOG_START_DISTANCE attribute
