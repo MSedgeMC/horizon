@@ -285,3 +285,31 @@ fn invalid_native_manifest_does_not_hide_a_valid_duplicate() {
     );
     fs::remove_dir_all(home).unwrap();
 }
+
+/// `Pack.readPackMetadata`: the metadata section must hold a description that
+/// `ComponentSerialization.CODEC` reads, else the pack is not in the repository. Checked against
+/// the 26.3 client jar: `PackMetadataSection.FALLBACK_TYPE` refuses a missing, empty, number or
+/// empty-list description, and reads a string or a `text` object.
+#[test]
+fn a_resource_pack_without_a_readable_description_is_no_pack() {
+    let home = scratch("description");
+    let rp = home.join("resourcepacks");
+    for (name, meta) in [
+        ("NoPack.zip", r#"{"pack":{"pack_format":15}}"#),
+        ("EmptyDescription.zip", r#"{"pack":{"description":{}}}"#),
+        ("NumberDescription.zip", r#"{"pack":{"description":5}}"#),
+        ("EmptyList.zip", r#"{"pack":{"description":[]}}"#),
+        ("TextNumber.zip", r#"{"pack":{"description":{"text":5}}}"#),
+        ("Text.zip", r#"{"pack":{"description":{"text":"Shiny"}}}"#),
+        (
+            "Plain.zip",
+            r#"{"pack":{"pack_format":15,"description":"Plain"}}"#,
+        ),
+    ] {
+        zip_file(&rp.join(name), &[("pack.mcmeta", meta.as_bytes())]);
+    }
+    let packs = list(&home, Kind::Resource);
+    let names: Vec<&str> = packs.iter().map(|p| p.file.as_str()).collect();
+    assert_eq!(names, ["Plain.zip", "Text.zip"]);
+    fs::remove_dir_all(&home).unwrap();
+}

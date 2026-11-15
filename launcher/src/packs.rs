@@ -183,11 +183,14 @@ fn read(path: &Path, kind: Kind, on: &[String]) -> Option<Pack> {
         Kind::Resource => {
             let meta = entry(path, "pack.mcmeta")?;
             let meta: serde_json::Value = serde_json::from_slice(&meta).ok()?;
-            (
-                file.clone(),
-                plain(&meta["pack"]["description"]),
-                entry(path, "pack.png"),
-            )
+            // `Pack.readPackMetadata` lists a pack only when its metadata section holds a
+            // description the component codec reads; one without it is "Missing metadata in
+            // pack" and stays out of the repository, so the screen does not show it.
+            let description = meta.get("pack")?.get("description")?;
+            if !component(description) {
+                return None;
+            }
+            (file.clone(), plain(description), entry(path, "pack.png"))
         }
         Kind::Shader if path.join(SHADER_MANIFEST).is_file() || ext(SHADER_PACKAGE) => {
             let name = entry(path, SHADER_MANIFEST)
@@ -231,6 +234,23 @@ pub(crate) fn entry(path: &Path, name: &str) -> Option<Vec<u8>> {
         entry.take(4 << 20).read_to_end(&mut out).ok()?;
     }
     Some(out)
+}
+
+/// The shapes `ComponentSerialization.CODEC` reads: a string, a non-empty list of components,
+/// or an object with a content field (`text`, `translate`, `keybind`, `selector`, `nbt`, or a
+/// `score` object). `PackMetadataSection` needs such a description, or the pack is not read.
+fn component(v: &serde_json::Value) -> bool {
+    match v {
+        serde_json::Value::String(_) => true,
+        serde_json::Value::Array(items) => !items.is_empty() && items.iter().all(component),
+        serde_json::Value::Object(o) => {
+            ["text", "translate", "keybind", "selector", "nbt"]
+                .iter()
+                .any(|k| o.get(*k).is_some_and(serde_json::Value::is_string))
+                || o.get("score").is_some_and(serde_json::Value::is_object)
+        }
+        _ => false,
+    }
 }
 
 /// A text component as plain text: its strings, without `§` formatting codes.
