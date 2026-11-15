@@ -1,7 +1,7 @@
 HappyGhast.canBreatheUnderwater	port	crates/horizon-client/src/mobs/ai/air.rs::can_breathe_under_water	a baby answers true, an adult takes the tag
 WorldGenRegion.getChunk	port	crates/horizon-world/src/worldgen/feature_region.rs::TerrainRegion::chunk	gap: minor: returns the resident chunk without the generating-step status check
 GossipContainer.getReputation	port	crates/horizon-client/src/gossip.rs::Gossips::reputation	Villager calls it with all types only; the type predicate is fixed to all
-Frog.travelInWater	missing		minor: frog water travel (getSpeed() move, 0.9 drag on all axes) absent; generic fluid travel used instead
+Frog.travelInWater	port	crates/horizon-client/src/mobs/frog.rs::travel	in water: `move_relative(m.ai.speed, input)`, the move, then the whole velocity scaled by 0.9; out of water it returns false so the usual travel runs
 HappyGhast.HappyGhastBodyRotationControl.clientTick	port	crates/horizon-client/src/mobs/happy_ghast.rs::ridden	gap: minor: vehicle yaw sync only; the super.clientTick step is Mob::body_rotation_tick in control.rs
 SnifferAi.initCoreActivity	inline	crates/horizon-client/src/mobs/animal_brain.rs::sniffer_package	core behaviour list (Swim, panic, sink, cooldown) built here
 SnifferAi.initSniffingActivity	inline	crates/horizon-client/src/mobs/animal_brain.rs::sniffer_package	Searching entry here; memory gates in update_activity
@@ -89,7 +89,7 @@ WitherBoss.isPowered	port	crates/horizon-client/src/mobs/wither.rs::powered
 ArmorStand.refreshDimensions	skip:other		no cached dimensions: bounds are computed from position, small and marker
 ArmorStand.defineSynchedData	port	crates/horizon-client/src/game/lan_entities.rs::Game::lan_object_states	flag and pose values sent to clients; defaults are the DEFAULT_POSE table
 ArmorStand.canUseSlot	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	hand slots gated by show_arms; gap: minor: body and saddle are never offered and disabled bits are not read
-ArmorStand.pushEntities	missing		minor: armour stands do not push nearby minecarts
+ArmorStand.pushEntities	port	crates/horizon-client/src/game/armor_stands.rs::Game::push_rideable_minecarts	a plain rideable minecart whose box meets the stand's and is within `distanceToSqr` 0.2 is shoved; the stand takes a quarter of the push, and a marker, no-gravity or riding stand does not shove
 ArmorStand.interact	port	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	
 ArmorStand.getClickedSlot	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	click height picks feet, chest, legs, head or offhand
 ArmorStand.isDisabled	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	gap: minor: disabled-slot bits are not read; hands gated by show_arms only
@@ -111,7 +111,7 @@ ArmorStand.showBasePlate	skip:other		accessor; reads the no_base_plate field
 ArmorStand.setMarker	port	crates/horizon-client/src/entity_nbt.rs::armor_stand_from_nbt	Marker tag
 ArmorStand.isMarker	skip:other		accessor; reads the marker field
 ArmorStand.setBit	skip:other		packed-flag helper; Horizon keeps separate bools and packs them when sent
-ArmorStand.skipAttackInteraction	missing		minor: adventure-mode protection on stand hits is not checked
+ArmorStand.skipAttackInteraction	inline	crates/horizon-client/src/game/armor_stands.rs::Game::attack_armor_stand	`may_interact_at` at the stand's block refuses the hit before any damage, and a refused hit still returns true (the attack is consumed)
 ArmorStand.onSyncedDataUpdated	skip:other		client refresh when flags sync; bounds are computed on demand
 ArmorStand.getDimensionsMarker	inline	crates/horizon-client/src/game/armor_stands.rs::Game::armor_stand_hit	marker stands are skipped, so they have no box
 ArmorStand.getLightProbePosition	port	crates/horizon-client/src/entities.rs::ArmorStand::light_probe	a marker walks the cells of its non-marker box (BlockPos.betweenClosed, x fastest) for a brightness-15 cell, else the brightest; any other stand is lit from its eye (eyeHeight 1.7775, 0.9875 small)
@@ -125,7 +125,7 @@ BlockAttachedEntity.push	missing		minor: a push from a blast or piston does not 
 BlockAttachedEntity.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::cushion_from_nbt	gap: minor: no 16-block check on block_pos; the stored block is used as is
 Cushion.isBreakingDeniedFor	inline	crates/horizon-client/src/game/cushions.rs::Game::attack_cushion	the may_build gate
 Cushion.isBreakingDeniedAtPosFor	inline	crates/horizon-client/src/game/cushions.rs::Game::attack_cushion	the mayInteract gate, folded into the one may_build check
-Cushion.tickAtCheckInterval	inline	crates/horizon-client/src/game/cushions.rs::Game::tick_cushions	gap: minor: fluid effects not applied; fire and survival checked every 100 ticks
+Cushion.tickAtCheckInterval	inline	crates/horizon-client/src/game/cushions.rs::Game::check_cushion	every 100 ticks: lava in the cushion's block breaks it with the lava-hurt sound, fire breaks it, and a missing support discards it and drops its item
 Cushion.thunderHit	port	crates/horizon-client/src/game/lightning.rs::Game::thunder_hit	a cushion in the bolt's box breaks and drops its item, last first
 Cushion.setPos	skip:other		position field write; the block position is kept apart in cushion.pos
 Cushion.canBePlacedAt	port	crates/horizon-client/src/cushion.rs::can_place	
