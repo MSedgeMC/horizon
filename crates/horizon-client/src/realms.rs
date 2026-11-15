@@ -9910,7 +9910,7 @@ impl Screen {
                     total,
                     scroll.amount,
                 );
-                // `ObjectSelectionList.extractListItems`: what the list draws is clipped to
+                // `AbstractSelectionList.extractListItems`: what the list draws is clipped to
                 // its rectangle, so text never leaves the border.
                 let first = batch.vertices.len();
                 let mut y = top - scroll.amount;

@@ -1593,7 +1593,7 @@ pub fn cape(
         m.previous.z + (m.position.z - m.previous.z) * a,
     ];
     let body = anim::body_rot(m, alpha);
-    // LivingEntityRenderState.fallFlyingScale.
+    // AvatarRenderState.fallFlyingScale.
     let ticks = m.extra.fall_fly_ticks as f32 + alpha;
     let gliding = (ticks * ticks / 100.0).clamp(0.0, 1.0);
     let [flap, lean, lean2] = m.extra.avatar.cape(alpha, at, body, gliding);

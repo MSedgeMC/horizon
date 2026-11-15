@@ -2105,7 +2105,7 @@ pub fn wrap(text: &str, width: f32, atlas: &HudAtlas) -> Vec<String> {
                 line = candidate;
             }
         }
-        // `Font.wordWrap` also breaks a word that does not fit by itself: Chinese has no
+        // `Font.split` also breaks a word that does not fit by itself: Chinese has no
         // spaces, so its text only wraps between characters.
         if HudBatch::text_width(atlas, &line) > width {
             let mut rest = std::mem::take(&mut line);

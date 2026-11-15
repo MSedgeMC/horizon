@@ -639,7 +639,7 @@ fn shoot_crossbow(m: &mut Mob, who: Who, cx: &mut Cx) {
     let Some(t) = cx.w.target_info(who) else {
         return;
     };
-    // CrossbowItem.shootAll: only the charged projectile flies.
+    // CrossbowItem.performShooting: only the charged projectile flies.
     let Some(ammo) = m
         .extra
         .main_hand_stack()

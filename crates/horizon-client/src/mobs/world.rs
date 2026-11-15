@@ -613,7 +613,7 @@ impl MobWorld<'_> {
         let light = self.world.light(x, y, z);
         let sky = i32::from(light >> 4) - self.sky_darken();
         let level = sky.max(i32::from(light & 15)).clamp(0, 15) as f32;
-        // DimensionType.getBrightness with ambient light 0 (overworld) / 0.1 (nether).
+        // DimensionType.ambientLight with ambient light 0 (overworld) / 0.1 (nether).
         let f = level / 15.0;
         let base = f / (4.0 - 3.0 * f);
         // The End's ambient light (0.25) is not applied here, as before.

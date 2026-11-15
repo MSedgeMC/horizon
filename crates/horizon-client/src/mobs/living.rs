@@ -420,7 +420,7 @@ impl MobWorld<'_> {
             .collision_shape_with_context(&mut scene, state, at, &context)
             .ok()
     }
-    /// `Level.findSupportingBlock`: of the blocks whose collision shape
+    /// `CollisionGetter.findSupportingBlock`: of the blocks whose collision shape
     /// meets `area`, the one whose centre is nearest `from` (ties: the
     /// greatest by `Vec3i.compareTo`, y then z then x).
     ///

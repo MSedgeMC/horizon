@@ -1542,13 +1542,13 @@ pub fn register_hoglin(m: &mut Mob) {
 pub fn register_zoglin(m: &mut Mob) {
     let g = &mut m.ai.goals;
     g.add(0, Float);
-    // Zoglin.initMemories: MeleeAttack.create(40) for adults, 15 for babies.
+    // Zoglin.initFightActivity: MeleeAttack.create(40) for adults, 15 for babies.
     g.add(2, MeleeAttack::new(1.0, true).intervals(40, 15));
     g.add(5, Stroll::avoiding_water(0.4));
     g.add(6, LookAtPlayer::new(8.0));
     m.ai.targets.add(1, HurtByTarget::new());
     m.ai.targets.add(2, NearestTarget::player(true));
-    // Zoglin.isTargetable: anything but creepers and other zoglins.
+    // Zoglin.findNearestValidAttackTarget: anything but creepers and other zoglins.
     m.ai.targets.add(
         3,
         NearestTarget::new(
