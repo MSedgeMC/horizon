@@ -27,14 +27,14 @@ TicketStorage.deactivateTicketsOnClosing	skip:other		chunk-unload bookkeeping; n
 TicketStorage.forEachTicket	skip:other		iteration over stored tickets; ticket_levels.rs walks its own sources
 TicketStorage.fromPacked	port	crates/horizon-client/src/save.rs::SaveDir::load_portal_tickets	saved chunk tickets are read from data/minecraft/chunk_tickets.dat, the forced ones into the forced set and the PORTAL ones back with their level and ticks_left
 TicketStorage.getAllChunksWithTicketThat	skip:other		query over stored tickets; ticket_levels.rs answers per chunk
-TicketStorage.getLowestTicket	port	crates/horizon-client/src/ticket_levels.rs::Map::get	gap: minor: lowest level from the player, forced, PORTAL and dragon-fight arena sources; no saved tickets
+TicketStorage.getLowestTicket	port	crates/horizon-client/src/ticket_levels.rs::Map::get	lowest level from the player, forced, PORTAL (saved ones included) and dragon-fight arena sources
 TicketStorage.getOrCreateTickets	skip:java		per-chunk cache of tickets
 TicketStorage.getTicketDebugString	skip:debug		debug text
-TicketStorage.getTicketLevelAt	port	crates/horizon-client/src/ticket_levels.rs::Map::get	gap: minor: levels from the player, forced, PORTAL and dragon-fight arena sources; no saved tickets
+TicketStorage.getTicketLevelAt	port	crates/horizon-client/src/ticket_levels.rs::Map::get	levels from the player, forced, PORTAL (saved ones included) and dragon-fight arena sources
 TicketStorage.isTicketSameTypeAndLevel	skip:other		compares stored tickets; Horizon stores none, levels come from ticket_levels.rs
 TicketStorage.packTickets	skip:other		saves stored tickets; Horizon saves forced chunks as their own file (save.rs save_forced_chunks)
 TicketStorage.purgeStaleTickets	port	crates/horizon-client/src/ticket_levels.rs::ChunkTickets::tick_portal	the timed tickets are the PORTAL ones (`PORTAL_TIMEOUT` 300 ticks, dropped a tick later as `TicketType.PORTAL` does)
-TicketStorage.removeTicket	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_forceload	gap: minor: only the forced-chunk path; portal and teleport tickets are not modelled
+TicketStorage.removeTicket	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_forceload	the forced-chunk path here; PORTAL tickets are added and counted down in ticket_levels::ChunkTickets (tick_portal), teleport tickets are not modelled
 TicketStorage.removeTicketIf	skip:other		predicate removal over stored tickets; forced chunks are changed by cmd_forceload
 TicketStorage.removeTicketWithRadius	port	crates/horizon-client/src/ticket_levels.rs::ChunkTickets::update	the levels are rebuilt from the sources each tick, so the fight's arena ticket is held only while `EnderDragonFight.tick` reports a watcher (`Game::update_chunk_tickets` clears the source, which is the removal of the radius-9 DRAGON ticket)
 TicketStorage.replaceTicketLevelOfType	skip:other		re-levels stored tickets; ticket_levels.rs computes levels from positions
