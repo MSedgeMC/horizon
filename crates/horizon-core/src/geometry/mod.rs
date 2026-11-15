@@ -652,7 +652,7 @@ pub(crate) fn clamp(value: f64, min: f64, max: f64) -> f64 {
         java_min(value, max)
     }
 }
-/// `Mth.floor`, which is `(int) Math.floor(v)`: truncate, then step down for
+/// `Mth.floor`, which is `(int) Java's floor(v)`: truncate, then step down for
 /// negative fractions. A truncating conversion and a compare, where
 /// `f64::floor` is a libm call on baseline x86-64. Both casts saturate (NaN is
 /// 0), so the step down saturates too: below `i32::MIN` stays `i32::MIN`.
@@ -711,7 +711,7 @@ mod tests {
             -1e-300,
             16_777_215.5,
             -16_777_215.5,
-            // Past the i32 range `(int) Math.floor` saturates (vanilla 26.3's
+            // Past the i32 range `(int) Java's floor` saturates (vanilla 26.3's
             // BlockCollisions and BlockPos.containing rely on it).
             2_147_483_647.5,
             2_147_483_648.0,

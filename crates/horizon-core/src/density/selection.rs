@@ -109,7 +109,7 @@ impl DensityValue {
             Self::Sampler(sampler) => sampler.sample_value(context, position),
         }
     }
-    /// Samples the volume, or with `needed` only the Ys it sets ([`DensitySampler::sample_needed`]).
+    /// Samples the volume, or with `needed` only the Ys it sets (`sample_needed`).
     fn with_volume<T>(
         &self,
         context: &mut SamplerContext,

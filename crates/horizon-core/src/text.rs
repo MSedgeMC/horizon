@@ -1,11 +1,11 @@
 //! Java text conversions shared by registry and client resource binding.
 
-/// JDK 25 Integer.parseInt decimal semantics, including BMP decimal digits.
+/// JDK 25 decimal integer parsing, including BMP decimal digits.
 pub fn parse_java_integer(text: &str) -> Option<i32> {
     parse_java_decimal(text, i128::from(i32::MAX)).map(|value| value as i32)
 }
 
-/// JDK 25 Long.parseLong decimal semantics, including BMP decimal digits.
+/// JDK 25 decimal long parsing, including BMP decimal digits.
 pub fn parse_java_long(text: &str) -> Option<i64> {
     parse_java_decimal(text, i128::from(i64::MAX)).map(|value| value as i64)
 }
@@ -19,7 +19,7 @@ fn parse_java_decimal(text: &str, max: i128) -> Option<i128> {
     if text.is_empty() {
         return None;
     }
-    // BMP decimal digit runs accepted by Character.digit(char, 10) in JDK 25.
+    // BMP decimal digit runs accepted by Java's digit(char, 10) in JDK 25.
     const ZEROES: [u32; 37] = [
         0x30, 0x660, 0x6f0, 0x7c0, 0x966, 0x9e6, 0xa66, 0xae6, 0xb66, 0xbe6, 0xc66, 0xce6, 0xd66,
         0xde6, 0xe50, 0xed0, 0xf20, 0x1040, 0x1090, 0x17e0, 0x1810, 0x1946, 0x19d0, 0x1a80, 0x1a90,

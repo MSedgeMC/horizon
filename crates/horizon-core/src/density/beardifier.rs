@@ -344,7 +344,7 @@ mod tests {
 
     /// YUNG's carved top (kernel 24, distance 24, carve above, nothing
     /// below) around a 5-block cube, values worked out from
-    /// EnhancedTerrainAdaptation.computeDensityFactor.
+    /// the 26.3 `TerrainAdjustment` switch in `Beardifier`.
     #[test]
     fn kernel_pieces_carve_above_the_floor_only() {
         let kernel = Arc::new(TerrainKernel::new(24, 24, -1, 0));
@@ -387,7 +387,7 @@ mod tests {
     /// `zi * 24 * 24 + xi * 24 + yi` — `e^(-(dx² + (dy + 0.5)² + dz²) / 16)` as
     /// a `float`. 13824 values can't be read, so the ones below are pinned as
     /// the bits they have in vanilla (that initialiser's formula run under
-    /// javac/java 21 and printed with `Float.floatToIntBits`), and `TABLE`
+    /// javac/java 21 and printed as float bits), and `TABLE`
     /// hashes every entry so a change to the exponent, the offset or the index
     /// order fails here instead of in a world.
     #[test]
