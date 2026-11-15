@@ -83,10 +83,10 @@ KeyframeTrack.validateKeyframes	port	crates/horizon-world/src/environment_timeli
 KeyframeTrack.validatePeriod	port	crates/horizon-world/src/environment_timeline.rs::Track::validate_period	every keyframe tick must lie in [0; period]; Timeline::parse calls it for each track
 KeyframeTrack.Builder.addKeyframe	skip:java		builder; Horizon builds keyframe lists from JSON
 KeyframeTrack.Builder.build	skip:java		builder; Horizon builds keyframe lists from JSON
-KeyframeTrackSampler.bakeSegments	inline	crates/horizon-client/src/patrol.rs::BoolTrack::sample	gap: minor: no periodic wrap segment; with a period and a first keyframe after tick 0, ticks before it read keyframes[0] instead of the last keyframe
-KeyframeTrackSampler.addSegmentsFromKeyframes	inline	crates/horizon-client/src/patrol.rs::BoolTrack::sample	segments are not built; sample reads the keyframes directly
-KeyframeTrackSampler.getSegmentAt	inline	crates/horizon-client/src/patrol.rs::BoolTrack::sample	the keyframe lookup is a scan in sample
-KeyframeTrackSampler.loopTicks	inline	crates/horizon-client/src/patrol.rs::BoolTrack::sample	the period wrap (rem_euclid) inside sample
+KeyframeTrackSampler.bakeSegments	port	crates/horizon-world/src/environment_timeline.rs::Track::sampler	one segment per keyframe pair; with a period, a wrap segment from the last keyframe back to the first is added on each side of the loop
+KeyframeTrackSampler.addSegmentsFromKeyframes	inline	crates/horizon-world/src/environment_timeline.rs::Track::add_segments_from_keyframes	one segment per consecutive pair, each carrying the track's easing
+KeyframeTrackSampler.getSegmentAt	inline	crates/horizon-world/src/environment_timeline.rs::TrackSampler::sample	the first segment whose end tick is after the sampled tick, else the last; the ends clamp and the middle lerps
+KeyframeTrackSampler.loopTicks	inline	crates/horizon-world/src/environment_timeline.rs::TrackSampler::sample	the period wrap is rem_euclid against the track's period, Java's floor modulo
 LightCoordsUtil.addSmoothBlockEmission	port	crates/horizon-client-render/src/particles.rs::Particle::light_coords	the age-emission arms add the emitted block light capped at 240
 LinearCongruentialGenerator.next	inline	crates/horizon-core/src/biome.rs::BiomeZoom::quart_at_block	the g closure is the LCG step; the coordinate is added separately
 MemoryReserve.release	skip:other		frees a JVM heap reserve for OutOfMemoryError; Horizon is native code
