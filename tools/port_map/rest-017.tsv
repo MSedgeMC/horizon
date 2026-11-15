@@ -119,6 +119,6 @@ ServerConnectionListener.stop	port	crates/horizon-client/src/lan/mod.rs::Lan::st
 ServerConnectionListener.stopTcpServerListener	port	crates/horizon-client/src/lan/mod.rs::Lan::stop_listening	closes the network listener; connections already in, the local one included, stay
 ServerConnectionListener.tick	inline	crates/horizon-client/src/lan/mod.rs::Lan::poll	gap: minor: reports Left events; no Internal server error disconnect when a packet fails
 ServerConnectionListener.addPendingConnections	skip:java		queue of accepted sockets; Horizon starts one thread per connection
-ServerConnectionListener.getSessionId	missing		vanilla sends one random session id per server run in login finished; lan/conn.rs sends the player's own uuid as `session`
+ServerConnectionListener.getSessionId	port	crates/horizon-client/src/lan/mod.rs::SessionId::get	one random id is minted per server run and cached (Shared::session_id); login_and_configure sends it in LoginFinished instead of the player's uuid
 ServerConnectionListener.LatencySimulator.delayDownstream	skip:debug		dev latency simulator behind SharedConstants.DEBUG_FAKE_LATENCY_MS
 ServerConnectionListener.LatencySimulator.onTimeout	skip:debug		dev latency simulator behind SharedConstants.DEBUG_FAKE_LATENCY_MS

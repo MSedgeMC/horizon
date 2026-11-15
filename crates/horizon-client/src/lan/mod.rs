@@ -434,6 +434,26 @@ impl SecureChat {
     }
 }
 
+/// `ServerConnectionListener.getSessionId`: one random UUID minted per server run
+/// and sent to every login finished packet.
+#[derive(Default)]
+pub struct SessionId(Mutex<Option<u128>>);
+impl SessionId {
+    /// The run's id, minted on first use (`UUID.randomUUID`).
+    pub fn get(&self) -> Result<u128, String> {
+        let mut cached = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(id) = *cached {
+            return Ok(id);
+        }
+        let mut bytes = [0u8; 16];
+        horizon_protocol::crypto::random_bytes(&mut bytes)
+            .map_err(|e| format!("No secure random source: {e}"))?;
+        let id = u128::from_be_bytes(bytes);
+        *cached = Some(id);
+        Ok(id)
+    }
+}
+
 /// State shared with the connection threads.
 pub struct Shared {
     /// What the next login is sent; `PlayerList.reloadResources` swaps it.
@@ -453,6 +473,8 @@ pub struct Shared {
     next: AtomicU32,
     stop: AtomicBool,
     random: Mutex<u64>,
+    /// `ServerConnectionListener.getSessionId`: the id login finished carries.
+    session: SessionId,
     /// Connections accepted from the network whose thread still runs.
     connections: AtomicUsize,
     /// Those connections by address.
@@ -475,6 +497,10 @@ impl Shared {
     /// `/reload`: the data new connections are sent from now on.
     pub fn set_sync(&self, sync: Arc<data::SyncData>) {
         *self.sync.lock().unwrap_or_else(|e| e.into_inner()) = sync;
+    }
+    /// `ServerConnectionListener.getSessionId`: the id `LoginFinished` carries.
+    pub fn session_id(&self) -> Result<u128, String> {
+        self.session.get()
     }
     pub fn next_id(&self) -> u32 {
         self.next.fetch_add(1, Ordering::Relaxed)
@@ -748,6 +774,7 @@ impl Lan {
             turned_away: Mutex::new((0, None)),
             shutting_down: AtomicBool::new(false),
             random: Mutex::new(crate::server::java_properties::now_millis() as u64 | 1),
+            session: SessionId::default(),
             config,
         });
         let mut lan = Self {
@@ -1378,5 +1405,18 @@ mod tests {
         assert!(shared.waiting.lock().unwrap().is_empty());
         drop((held, newcomer));
         assert_eq!(shared.connections.load(Ordering::Acquire), 0);
+    }
+
+    #[test]
+    fn the_login_session_id_is_one_random_id_per_run() {
+        let session = super::SessionId::default();
+        let first = session.get().unwrap();
+        assert_eq!(
+            session.get().unwrap(),
+            first,
+            "every login is sent the run id"
+        );
+        // A fresh run mints its own id (a clash is a 2^-128 accident).
+        assert_ne!(super::SessionId::default().get().unwrap(), first);
     }
 }
