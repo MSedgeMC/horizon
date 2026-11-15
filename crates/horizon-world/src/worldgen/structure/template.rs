@@ -176,6 +176,11 @@ fn entities_of(list: &[Tag]) -> Vec<EntityInfo> {
 /// properties keep the block's defaults.
 pub(super) fn read_state(registry: &BlockRegistry, tag: &Tag) -> BlockStateId {
     let air = registry.default_state("minecraft:air").expect("air");
+    // 26.3's packed palette writes each state as one `name[key=value,...]`
+    // string: `NbtUtils.unpackBlockState`'s text form.
+    if let Tag::String(text) = tag {
+        return parse_state_string(registry, &text.to_string_lossy()).unwrap_or(air);
+    }
     let Tag::Compound(compound) = tag else {
         return air;
     };
@@ -774,6 +779,86 @@ mod save_tests {
         // Full blocks by y, x, z; then other blocks; block entities last.
         assert_eq!(order, [[0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]]);
         assert!(blocks[3].nbt.is_some());
+    }
+
+    /// `NbtUtils.unpackStructureTemplate`: 26.3's packed palette writes each
+    /// state as one `name[key=value,...]` string. Each reads as that state,
+    /// not air.
+    #[test]
+    fn a_packed_string_palette_reads_its_states() {
+        let packed_state = |name: &str, properties: &[(&str, &str)]| {
+            let mut map = Compound::new();
+            map.insert("id".into(), Tag::String(name.into()));
+            if !properties.is_empty() {
+                let mut props = Compound::new();
+                for (key, value) in properties {
+                    props.insert((*key).into(), Tag::String((*value).into()));
+                }
+                map.insert("properties".into(), Tag::Compound(props));
+            }
+            Tag::Compound(map)
+        };
+        let registry = BlockRegistry::from_nbt(&Tag::compound([
+            ("DataVersion", Tag::Int(DATA_VERSION)),
+            (
+                "states",
+                Tag::List(vec![
+                    packed_state("minecraft:air", &[]),
+                    packed_state("minecraft:stone", &[]),
+                    packed_state("minecraft:oak_log", &[("axis", "x")]),
+                    packed_state("minecraft:oak_log", &[("axis", "y")]),
+                ]),
+            ),
+            (
+                "defaults",
+                Tag::compound([
+                    ("minecraft:air", Tag::Int(0)),
+                    ("minecraft:stone", Tag::Int(1)),
+                    ("minecraft:oak_log", Tag::Int(2)),
+                ]),
+            ),
+        ]))
+        .unwrap();
+        let transforms = transforms();
+        let block = |x: i32, state: i32| {
+            Tag::compound([
+                (
+                    "pos",
+                    Tag::List(vec![Tag::Int(x), Tag::Int(0), Tag::Int(0)]),
+                ),
+                ("state", Tag::Int(state)),
+            ])
+        };
+        let tag = Tag::compound([
+            (
+                "size",
+                Tag::List(vec![Tag::Int(2), Tag::Int(1), Tag::Int(1)]),
+            ),
+            (
+                "palette",
+                Tag::List(vec![
+                    Tag::String("minecraft:stone".into()),
+                    Tag::String("minecraft:oak_log[axis=y]".into()),
+                ]),
+            ),
+            ("blocks", Tag::List(vec![block(0, 0), block(1, 1)])),
+        ]);
+        let read = StructureTemplate::from_nbt(&tag, &registry, &transforms);
+        let blocks = read.palettes()[0].blocks();
+        assert_eq!(
+            blocks[0].state,
+            registry.default_state("minecraft:stone").unwrap()
+        );
+        assert_eq!(
+            blocks[1].state,
+            registry
+                .resolve(&BlockState {
+                    name: "minecraft:oak_log".into(),
+                    properties: [("axis".to_owned(), "y".to_owned())].into_iter().collect(),
+                })
+                .unwrap(),
+            "the packed state string keeps its property"
+        );
     }
 
     fn transforms() -> StateTransforms {

@@ -142,8 +142,8 @@ NbtUtils.setValueHelper	port	crates/horizon-world/src/worldgen/structure/templat
 NbtUtils.writeStateProperties	port	crates/horizon-world/src/datafix/block_state_data.rs::State::to_tag	Properties written only when the state has any
 NbtUtils.writeBlockState	port	crates/horizon-world/src/datafix/block_state_data.rs::State::to_tag	{Name, Properties}
 NbtUtils.packStructureTemplate	missing		minor: writes the packed palette form of a structure template (string palette, sorted blocks); Horizon's template code only reads templates
-NbtUtils.unpackStructureTemplate	port	crates/horizon-world/src/worldgen/structure/template.rs::StructureTemplate::from_nbt	gap: minor: reads the unpacked palette and blocks only; a packed string palette with its data list is not read and its states load as air
+NbtUtils.unpackStructureTemplate	port	crates/horizon-world/src/worldgen/structure/template.rs::StructureTemplate::from_nbt	reads the unpacked palette, the packed string palette (each entry `name[key=value,...]`) and the blocks' data list; a packed entry resolves through `parse_state_string`
 NbtUtils.packBlockState	missing		minor: writes name{key:value} palette strings; Horizon has no state-to-string writer for templates
-NbtUtils.unpackBlockState	port	crates/horizon-world/src/worldgen/structure/template.rs::parse_state_string	gap: minor: resolves the text to a state id, not an NBT state; invalid text gives None
+NbtUtils.unpackBlockState	port	crates/horizon-world/src/worldgen/structure/template.rs::parse_state_string	resolves a packed palette's `name[key=value]` text to a state id; invalid text reads as air (`None`)
 NbtUtils.addCurrentDataVersion	inline	crates/horizon-world/src/datafix/files.rs::add_versions	gap: minor: add_versions stamps level.dat only, and it also sets LastPlayed and Version
 NbtUtils.addDataVersion	inline	crates/horizon-world/src/datafix/mod.rs::update_chunk_to	gap: minor: stamps chunks only; the same stamp is in update_region_tag_to and update_player_to
