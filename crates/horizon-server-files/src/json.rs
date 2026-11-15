@@ -1,6 +1,7 @@
 //! The JSON the dedicated server reads and writes through Gson: a tree that
 //! keeps object member order and the literal text of numbers (Gson's
-//! LazilyParsedNumber), a strict parser (`Strictness.STRICT`), and Gson's
+//! LazilyParsedNumber), a strict parser (`Strictness.STRICT`), Gson's default one
+//! (`LEGACY_STRICT`, for the files `Gson.fromJson` reads), and Gson's
 //! compact (`JsonElement.toString`) and pretty, HTML-safe writers.
 
 #[derive(Clone, Debug, PartialEq)]
@@ -200,11 +201,24 @@ fn quote(out: &mut String, s: &str, html_safe: bool) {
 /// which Windows editors add) is skipped, as Gson's `JsonReader` skips it; a
 /// second one, or one after whitespace, is an error as in Gson.
 pub fn parse(text: &str, whole: bool) -> Result<Json, String> {
+    parse_with(text, whole, false)
+}
+
+/// Gson's default reader (`LEGACY_STRICT`), which `Gson.fromJson` calls without a strictness:
+/// `StoredUserList.load` for ops, whitelist and ban lists and `CachedUserNameToIdResolver.load`
+/// read through it. Comments, single-quoted strings, unquoted names and values, `=` for the
+/// name/value separator and `;` between elements are accepted, as Gson accepts them.
+pub fn parse_lenient(text: &str, whole: bool) -> Result<Json, String> {
+    parse_with(text, whole, true)
+}
+
+fn parse_with(text: &str, whole: bool, lenient: bool) -> Result<Json, String> {
     let chars: Vec<char> = text.chars().collect();
     let start = usize::from(chars.first() == Some(&'\u{feff}'));
     let mut p = Parser {
         c: &chars,
         i: start,
+        lenient,
     };
     let v = p.value(0)?;
     if whole {
@@ -223,15 +237,46 @@ const MAX_DEPTH: usize = 128;
 struct Parser<'a> {
     c: &'a [char],
     i: usize,
+    lenient: bool,
 }
 impl Parser<'_> {
     fn ws(&mut self) {
-        while self
-            .c
-            .get(self.i)
-            .is_some_and(|c| matches!(c, ' ' | '\t' | '\n' | '\r'))
-        {
-            self.i += 1;
+        loop {
+            while self
+                .c
+                .get(self.i)
+                .is_some_and(|c| matches!(c, ' ' | '\t' | '\n' | '\r'))
+            {
+                self.i += 1;
+            }
+            if !self.lenient {
+                return;
+            }
+            match (self.c.get(self.i), self.c.get(self.i + 1)) {
+                (Some('/'), Some('/')) | (Some('#'), _) => {
+                    while self
+                        .c
+                        .get(self.i)
+                        .is_some_and(|c| !matches!(c, '\n' | '\r'))
+                    {
+                        self.i += 1;
+                    }
+                }
+                (Some('/'), Some('*')) => {
+                    self.i += 2;
+                    loop {
+                        match (self.c.get(self.i), self.c.get(self.i + 1)) {
+                            (None, _) => break,
+                            (Some('*'), Some('/')) => {
+                                self.i += 2;
+                                break;
+                            }
+                            _ => self.i += 1,
+                        }
+                    }
+                }
+                _ => return,
+            }
         }
     }
     fn value(&mut self, depth: usize) -> Result<Json, String> {
@@ -251,15 +296,23 @@ impl Parser<'_> {
                 }
                 loop {
                     self.ws();
-                    if self.c.get(self.i) != Some(&'"') {
-                        return Err("Expected name".into());
-                    }
-                    let k = self.string()?;
+                    let k = match self.c.get(self.i) {
+                        Some('"') => self.string('"')?,
+                        Some('\'') if self.lenient => self.string('\'')?,
+                        Some(_) if self.lenient => self.unquoted()?,
+                        _ => return Err("Expected name".into()),
+                    };
                     self.ws();
-                    if self.c.get(self.i) != Some(&':') {
-                        return Err("Expected ':'".into());
+                    match self.c.get(self.i) {
+                        Some(':') => self.i += 1,
+                        Some('=') if self.lenient => {
+                            self.i += 1;
+                            if self.c.get(self.i) == Some(&'>') {
+                                self.i += 1;
+                            }
+                        }
+                        _ => return Err("Expected ':'".into()),
                     }
-                    self.i += 1;
                     let v = self.value(depth + 1)?;
                     if let Some(slot) = m.iter_mut().find(|(n, _)| *n == k) {
                         slot.1 = v;
@@ -269,6 +322,7 @@ impl Parser<'_> {
                     self.ws();
                     match self.c.get(self.i) {
                         Some(',') => self.i += 1,
+                        Some(';') if self.lenient => self.i += 1,
                         Some('}') => {
                             self.i += 1;
                             return Ok(Json::Object(m));
@@ -290,6 +344,7 @@ impl Parser<'_> {
                     self.ws();
                     match self.c.get(self.i) {
                         Some(',') => self.i += 1,
+                        Some(';') if self.lenient => self.i += 1,
                         Some(']') => {
                             self.i += 1;
                             return Ok(Json::Array(items));
@@ -298,7 +353,20 @@ impl Parser<'_> {
                     }
                 }
             }
-            Some('"') => Ok(Json::String(self.string()?)),
+            Some('"') => Ok(Json::String(self.string('"')?)),
+            Some('\'') if self.lenient => Ok(Json::String(self.string('\'')?)),
+            Some(_) if self.lenient => {
+                // Gson's default reader takes a bare word as a string, except its literals and
+                // numbers: `{uuid:1-2-3-4-5, name:Alex}` holds both as strings.
+                let word = self.unquoted()?;
+                Ok(match word.as_str() {
+                    w if w.eq_ignore_ascii_case("true") => Json::Bool(true),
+                    w if w.eq_ignore_ascii_case("false") => Json::Bool(false),
+                    w if w.eq_ignore_ascii_case("null") => Json::Null,
+                    w if is_number(w) => Json::Number(w.to_owned()),
+                    _ => Json::String(word),
+                })
+            }
             Some(_) => {
                 let start = self.i;
                 while self
@@ -319,7 +387,19 @@ impl Parser<'_> {
             }
         }
     }
-    fn string(&mut self) -> Result<String, String> {
+    /// Gson's `nextUnquotedString`: a name or value without quotes, up to a character that
+    /// cannot be in one.
+    fn unquoted(&mut self) -> Result<String, String> {
+        let start = self.i;
+        while self.c.get(self.i).is_some_and(|&c| literal(c)) {
+            self.i += 1;
+        }
+        if self.i == start {
+            return Err(format!("Malformed JSON at {start}"));
+        }
+        Ok(self.c[start..self.i].iter().collect())
+    }
+    fn string(&mut self, quote: char) -> Result<String, String> {
         self.i += 1;
         let mut out = String::new();
         let mut units: Vec<u16> = Vec::new();
@@ -333,7 +413,7 @@ impl Parser<'_> {
                 units.clear();
             }
             match c {
-                '"' => {
+                c if c == quote => {
                     out.push_str(&String::from_utf16_lossy(&units));
                     return Ok(out);
                 }
@@ -365,6 +445,7 @@ impl Parser<'_> {
                         'r' => '\r',
                         'f' => '\u{c}',
                         '"' | '\\' | '/' => e,
+                        '\'' if self.lenient => '\'',
                         _ => return Err("Invalid escape sequence".into()),
                     });
                 }
@@ -373,6 +454,30 @@ impl Parser<'_> {
             }
         }
     }
+}
+
+/// Gson's `JsonReader.isLiteral`: the characters an unquoted name or value may hold. The
+/// document punctuation, whitespace and the characters `=`, `#`, `/`, `;` and a backslash stop
+/// the word.
+fn literal(c: char) -> bool {
+    !matches!(
+        c,
+        '/' | '\\'
+            | ';'
+            | '#'
+            | '='
+            | '{'
+            | '}'
+            | '['
+            | ']'
+            | ':'
+            | ','
+            | ' '
+            | '\t'
+            | '\u{c}'
+            | '\r'
+            | '\n'
+    )
 }
 
 /// JSON number syntax (Gson's strict reader).
@@ -447,6 +552,37 @@ mod tests {
         );
         assert_eq!(Json::Array(vec![]).pretty(), "[]");
         assert!(parse("{a:1}", true).is_err());
+    }
+
+    /// Gson's default reader (`Gson.fromJson` with no strictness), which `StoredUserList.load`
+    /// and `CachedUserNameToIdResolver.load` read through: a whitelist.json run against the 26.3
+    /// client jar as `[{uuid:1-2-3-4-5,name:Alex}]` loaded Alex, and the same text with `//`
+    /// and `/* */` comments, single quotes or a `;` did too.
+    #[test]
+    fn a_document_with_gsons_default_leniency_parses() {
+        assert_eq!(
+            parse_lenient("[{uuid:1-2-3-4-5, name:'Alex'}]", true)
+                .unwrap()
+                .compact(),
+            r#"[{"uuid":"1-2-3-4-5","name":"Alex"}]"#
+        );
+        assert_eq!(
+            parse_lenient("[{a=b};{c:'d'}]", true).unwrap().compact(),
+            r#"[{"a":"b"},{"c":"d"}]"#
+        );
+        assert_eq!(
+            parse_lenient("[ // players\n {/* who */ name:\"Alex\"} ]", true)
+                .unwrap()
+                .compact(),
+            r#"[{"name":"Alex"}]"#
+        );
+        // `true`, `false` and `null` keep their case-insensitive Gson meaning.
+        assert_eq!(
+            parse_lenient("[TRUE,FALSE,Null]", true).unwrap().compact(),
+            "[true,false,null]"
+        );
+        // The strict parser is unchanged: no member is bare.
+        assert!(parse("[{uuid:1-2-3-4-5}]", true).is_err());
     }
 
     /// A document nested past the cap is refused, not recursed into forever:

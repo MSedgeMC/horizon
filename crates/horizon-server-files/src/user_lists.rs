@@ -475,7 +475,7 @@ impl<E: Entry> UserList<E> {
         if text.trim().is_empty() {
             return Ok(());
         }
-        let Json::Array(items) = json::parse(text, false)? else {
+        let Json::Array(items) = json::parse_lenient(text, false)? else {
             return Err("Expected a JSON array".into());
         };
         for item in items {
@@ -722,5 +722,25 @@ mod tests {
             "[]"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `StoredUserList.load` reads through Gson's default `JsonReader`, where comments,
+    /// unquoted names and single quotes parse; a hand-edited whitelist.json with them loads in
+    /// 26.3. The strict parser failed the file, so the launcher-owned commands refused it.
+    #[test]
+    fn a_list_file_with_gsons_lenient_json_loads() {
+        let mut white = WhiteList::new("/nonexistent/whitelist.json");
+        white
+            .load_str(
+                "[\n  // Notch\n  {uuid:069a79f4-44e9-4726-a5be-fca90e38aaf5, name:'Notch'}\n]",
+            )
+            .unwrap();
+        assert_eq!(
+            white.entries()[0].user,
+            NameAndId {
+                id: parse_uuid("069a79f4-44e9-4726-a5be-fca90e38aaf5").unwrap(),
+                name: "Notch".into()
+            }
+        );
     }
 }

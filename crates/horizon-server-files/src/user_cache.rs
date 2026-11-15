@@ -71,7 +71,7 @@ impl UserCache {
     }
 
     fn parse(&self, text: &str, warnings: &mut Vec<String>) -> Vec<Info> {
-        let items = match json::parse(text, false) {
+        let items = match json::parse_lenient(text, false) {
             Ok(Json::Array(items)) => items,
             // An empty file is Gson's null.
             Ok(Json::Null) => return Vec::new(),
@@ -367,5 +367,20 @@ mod tests {
             .collect();
         assert_eq!(names, ["Steve", "a b", "old", "Notch"]);
         assert!(json.contains(r#""name":"Steve","expiresOn":"2026-11-17 00:00:00 +0000"}"#));
+    }
+
+    /// `CachedUserNameToIdResolver.load` reads through Gson's default `JsonReader` too: a
+    /// usercache.json edited with a `//` comment and an unquoted name loads, as 26.3's reader
+    /// reads it. The strict parser dropped the whole cache with a warning.
+    #[test]
+    fn a_cache_with_gsons_lenient_json_loads() {
+        let (c, warnings) = cache(
+            "[\n  // Notch\n  {uuid:069a79f4-44e9-4726-a5be-fca90e38aaf5, name:'Notch', expiresOn:'2099-01-01 00:00:00 +0000'}\n]",
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        assert_eq!(
+            c.find_by_name("Notch").map(|u| u.name),
+            Some("Notch".into())
+        );
     }
 }
