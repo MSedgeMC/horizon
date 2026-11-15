@@ -54,8 +54,8 @@ of a vanilla server does.
 ## Checks
 
 - Unit tests: a 131-section chunk stores, lights, relights, saves, loads, encodes and random-ticks its whole
-  height; `tests/tall_column.rs` streams, lights and meshes a 131-section level to its top and remeshes after an
-  edit at y 1800.
+  height; `crates/horizon-client/tests/tall_column.rs` streams, lights and meshes a 131-section level to its top
+  and remeshes after an edit at y 1800.
 - `HORIZON_PARITY_DATAPACKS=tools/fixtures/tall_datapacks python3 tools/test_datapack_worldgen_parity.py`
   generates the fixture's 2096-high Overworld (`horizon_tall_test`, Horizon's own MIT pack, terrain from about
   y 475 to 1900) with the vanilla oracle, which takes each level's range from its dimension type, and with
