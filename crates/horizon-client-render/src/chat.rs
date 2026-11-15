@@ -1062,7 +1062,7 @@ impl Chat {
         (x >= 0.0).then_some(&*line.message)
     }
     /// The hover text under a GUI-space cursor while chat is focused
-    /// (ChatScreen.extractRenderState's `renderComponentHoverEffect`).
+    /// (ChatScreen.extractRenderState, where `GuiGraphicsExtractor.componentHoverEffect` draws it).
     pub fn hover_at(&self, font: &crate::font::Font, height: i32, x: f64, y: f64) -> Option<Text> {
         self.style_at(font, height, x, y)?.hover.map(|h| *h)
     }

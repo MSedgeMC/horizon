@@ -240,7 +240,7 @@ pub struct Tick {
     pub changed: bool,
 }
 impl Data {
-    /// `Listener.handleGameEvent` once the user accepted the event.
+    /// `VibrationSystem.Listener.handleGameEvent` once the user accepted the event.
     pub fn schedule(&mut self, info: Info, game_time: i64) {
         self.selector.add_candidate(info, game_time);
     }
@@ -378,7 +378,7 @@ fn info_from_nbt(tag: &Tag) -> Option<Info> {
     })
 }
 
-/// `Listener.isOccluded`: whether wool-like blocks block every line between
+/// `VibrationSystem.isOccluded`: whether wool-like blocks block every line between
 /// the centres of the source and listener blocks (nudged one direction each).
 pub fn is_occluded(
     origin: [f64; 3],

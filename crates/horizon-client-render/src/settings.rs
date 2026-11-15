@@ -551,7 +551,7 @@ impl Settings {
             file: f,
         }
     }
-    /// `Options.createInformation`: what the server learns about this player.
+    /// `Options.buildPlayerInformation`: what the server learns about this player.
     pub fn client_information(&self, view_distance: i8) -> ClientInformation {
         ClientInformation {
             language: self.language.clone(),

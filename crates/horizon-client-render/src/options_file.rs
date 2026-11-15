@@ -573,7 +573,7 @@ impl OptionsFile {
             self.values[i] = V::Int(p as i32);
         }
     }
-    /// `Options.modelCustomisation`: the PlayerModelPart bits the player shows
+    /// `ClientInformation.modelCustomisation`: the PlayerModelPart bits the player shows
     /// (cape first, as `modelPart_*` is in `MODEL_PARTS`).
     pub fn model_customisation(&self) -> u8 {
         MODEL_PARTS

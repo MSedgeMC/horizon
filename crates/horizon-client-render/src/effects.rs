@@ -270,7 +270,7 @@ impl PlayerEffects {
     pub fn clear(&mut self) {
         self.list.clear();
     }
-    /// The effects of a saved player (`Player.active_effects`), each with
+    /// The effects of a saved player (`LivingEntity.activeEffects`), each with
     /// the instances it hides.
     pub fn from_saved(saved: &[SavedEffect]) -> Self {
         let mut effects = Self::default();
@@ -281,7 +281,7 @@ impl PlayerEffects {
         }
         effects
     }
-    /// `Player.active_effects` for the save.
+    /// `LivingEntity.activeEffects` for the save.
     pub fn saved(&self) -> Vec<SavedEffect> {
         self.list.iter().map(SavedEffect::of).collect()
     }

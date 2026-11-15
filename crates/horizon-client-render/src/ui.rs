@@ -842,7 +842,7 @@ fn slider_sprites_ext(
 pub fn slider_value(x: f32, w: f32, cx: f32) -> f32 {
     ((cx - (x + 4.0)) / (w - 8.0)).clamp(0.0, 1.0)
 }
-/// Screen.renderMenuBackground: in a world the translucent dark texture,
+/// Screen.extractMenuBackground: in a world the translucent dark texture,
 /// otherwise the dirt-like menu texture, tiled at 32 pixels.
 pub fn menu_background(
     batch: &mut HudBatch,
