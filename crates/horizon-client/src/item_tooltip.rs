@@ -78,42 +78,56 @@ fn format_amount(value: f64) -> String {
     text.trim_end_matches('0').trim_end_matches('.').to_owned()
 }
 
+/// `Item.BASE_ATTACK_DAMAGE_ID` and `BASE_ATTACK_SPEED_ID`: the player's base
+/// value a modifier of that id adds to.
+fn base_attack_value(modifier: &str, player_base: Option<[f64; 2]>) -> Option<f64> {
+    let [damage, speed] = player_base?;
+    match modifier {
+        "minecraft:base_attack_damage" => Some(damage),
+        "minecraft:base_attack_speed" => Some(speed),
+        _ => None,
+    }
+}
+
 /// `ItemAttributeModifiers.Display.Default.apply`: a modifier's line, none
-/// for a zero amount. `percent` is the modifier's operation id (0: added
-/// value, 1 and 2: multiplied).
+/// for a zero amount, and whether the player's base value was added.
+/// `operation` is the modifier's operation id (0: added value, 1 and 2:
+/// multiplied).
 fn modifier_line(
     translate: &dyn Fn(&str) -> Option<String>,
     attribute: &str,
+    modifier: &str,
     amount: f64,
     operation: usize,
-    total: bool,
-) -> Option<String> {
+    player_base: Option<[f64; 2]>,
+) -> Option<(String, bool)> {
     let text = |key: &str| translate(key).unwrap_or_else(|| key.to_owned());
+    let base = base_attack_value(modifier, player_base);
+    let amount = amount + base.unwrap_or(0.0);
     let scale = match operation {
         0 if attribute == "knockback_resistance" => 10.0,
         0 => 1.0,
         _ => 100.0,
     };
-    let (kind, shown) = if total {
-        ("equals", amount * scale)
+    let (key, shown) = if base.is_some() {
+        ("attribute.modifier.equals.", amount * scale)
     } else if amount > 0.0 {
-        ("plus", amount * scale)
+        ("attribute.modifier.plus.", amount * scale)
     } else if amount < 0.0 {
-        ("take", -amount * scale)
+        ("attribute.modifier.take.", -amount * scale)
     } else {
         return None;
     };
     // TranslatableContents: `%s` and numbered `%1$s` arguments, `%%` a percent sign.
-    Some(
-        crate::text::format_translation(
-            &text(&format!("attribute.modifier.{kind}.{operation}")),
-            &[
-                crate::text::Text::literal(format_amount(shown)),
-                crate::text::Text::literal(text(&format!("attribute.name.{attribute}"))),
-            ],
-        )
-        .plain(),
+    let line = crate::text::format_translation(
+        &text(&format!("{key}{operation}")),
+        &[
+            crate::text::Text::literal(format_amount(shown)),
+            crate::text::Text::literal(text(&format!("attribute.name.{attribute}"))),
+        ],
     )
+    .plain();
+    Some((line, base.is_some()))
 }
 
 /// `Attribute.getStyle`: the colour of a line for an attribute whose value
@@ -170,19 +184,10 @@ pub fn attribute_lines(
                 _ => 0,
             };
             let path = attribute.strip_prefix("minecraft:").unwrap_or(attribute);
-            let base = player_base.and_then(|[damage, speed]| match modifier.as_str() {
-                "minecraft:base_attack_damage" => Some(damage),
-                "minecraft:base_attack_speed" => Some(speed),
-                _ => None,
-            });
-            if let Some(line) = modifier_line(
-                translate,
-                path,
-                amount + base.unwrap_or(0.0),
-                id,
-                base.is_some(),
-            ) {
-                let (line, color) = if base.is_some() {
+            if let Some((line, with_base)) =
+                modifier_line(translate, path, modifier, *amount, id, player_base)
+            {
+                let (line, color) = if with_base {
                     (format!(" {line}"), rgba(0, 170, 0, 255))
                 } else {
                     (line, attribute_color(path, *amount > 0.0))
@@ -823,7 +828,7 @@ fn effect_modifier_lines<'a>(
             let (attribute, amount, operation) =
                 effect_modifier(effect.trim_start_matches("minecraft:"))?;
             let amount = amount * (amplifier + 1) as f64;
-            let line = modifier_line(translate, attribute, amount, operation, false)?;
+            let line = modifier_line(translate, attribute, "", amount, operation, None)?.0;
             let color = if amount > 0.0 {
                 rgba(85, 85, 255, 255)
             } else {
@@ -1888,7 +1893,16 @@ mod tests {
         assert_eq!(custom_base[2].0, " 8 Attack Damage");
         assert_eq!(custom_base[3].0, " 3.6 Attack Speed");
         assert_eq!(
-            modifier_line(&lang, "attack_damage", 0.0, 0, true).as_deref(),
+            modifier_line(
+                &lang,
+                "attack_damage",
+                "minecraft:base_attack_damage",
+                0.0,
+                0,
+                Some([0.0, 0.0])
+            )
+            .map(|(line, _)| line)
+            .as_deref(),
             Some("0 Attack Damage")
         );
     }
@@ -1931,6 +1945,46 @@ mod tests {
     }
 
     #[test]
+    fn attribute_modifier_lines_use_vanilla_keys() {
+        let requested = std::cell::RefCell::new(Vec::new());
+        let lang = |key: &str| {
+            requested.borrow_mut().push(key.to_owned());
+            Some(
+                match key {
+                    "item.modifiers.mainhand" => "When in main hand:",
+                    "attribute.modifier.equals.0" => "%s %s",
+                    "attribute.name.attack_damage" => "Attack Damage",
+                    _ => return None,
+                }
+                .to_owned(),
+            )
+        };
+        let modifiers = [(
+            "attack_damage".to_owned(),
+            "minecraft:base_attack_damage".to_owned(),
+            6.0,
+            "add_value".to_owned(),
+            "mainhand".to_owned(),
+        )];
+        assert_eq!(
+            attribute_lines(&modifiers, Some([1.0, 4.0]), &lang),
+            [
+                (String::new(), u32::MAX),
+                ("When in main hand:".into(), rgba(170, 170, 170, 255)),
+                (" 7 Attack Damage".into(), rgba(0, 170, 0, 255)),
+            ]
+        );
+        assert_eq!(
+            requested.into_inner(),
+            [
+                "item.modifiers.mainhand",
+                "attribute.modifier.equals.0",
+                "attribute.name.attack_damage",
+            ]
+        );
+    }
+
+    #[test]
     fn modifier_lines_follow_the_sign_and_operation() {
         let lang = |k: &str| {
             Some(
@@ -1943,15 +1997,12 @@ mod tests {
                 .to_owned(),
             )
         };
-        assert_eq!(
-            modifier_line(&lang, "movement_speed", 0.2, 2, false).as_deref(),
-            Some("+20% Speed")
-        );
-        assert_eq!(
-            modifier_line(&lang, "movement_speed", -0.6, 2, false).as_deref(),
-            Some("-60% Speed")
-        );
-        assert_eq!(modifier_line(&lang, "movement_speed", 0.0, 2, false), None);
+        let line = |amount: f64| {
+            modifier_line(&lang, "movement_speed", "", amount, 2, None).map(|(line, _)| line)
+        };
+        assert_eq!(line(0.2).as_deref(), Some("+20% Speed"));
+        assert_eq!(line(-0.6).as_deref(), Some("-60% Speed"));
+        assert_eq!(line(0.0), None);
     }
 
     #[test]
@@ -1974,15 +2025,35 @@ mod tests {
             )
         };
         assert_eq!(
-            modifier_line(&lang, "attack_damage", 4.0, 0, true).as_deref(),
+            modifier_line(
+                &lang,
+                "attack_damage",
+                "minecraft:base_attack_damage",
+                4.0,
+                0,
+                Some([0.0, 0.0])
+            )
+            .map(|(line, _)| line)
+            .as_deref(),
             Some("Урон при атаке: 4")
         );
         assert_eq!(
-            modifier_line(&lang, "attack_speed", 1.6, 0, true).as_deref(),
+            modifier_line(
+                &lang,
+                "attack_speed",
+                "minecraft:base_attack_speed",
+                1.6,
+                0,
+                Some([0.0, 0.0])
+            )
+            .map(|(line, _)| line)
+            .as_deref(),
             Some("Скорость атаки: 1.6")
         );
         assert_eq!(
-            modifier_line(&lang, "movement_speed", -0.6, 2, false).as_deref(),
+            modifier_line(&lang, "movement_speed", "", -0.6, 2, None)
+                .map(|(line, _)| line)
+                .as_deref(),
             Some("Скорость: -60%")
         );
     }
@@ -2000,11 +2071,22 @@ mod tests {
             )
         };
         assert_eq!(
-            modifier_line(&lang, "attack_damage", 5.0, 0, true).as_deref(),
+            modifier_line(
+                &lang,
+                "attack_damage",
+                "minecraft:base_attack_damage",
+                5.0,
+                0,
+                Some([0.0, 0.0])
+            )
+            .map(|(line, _)| line)
+            .as_deref(),
             Some("Damage: 5")
         );
         assert_eq!(
-            modifier_line(&lang, "attack_damage", 0.2, 2, false).as_deref(),
+            modifier_line(&lang, "attack_damage", "", 0.2, 2, None)
+                .map(|(line, _)| line)
+                .as_deref(),
             Some("+20% Damage")
         );
     }
