@@ -2838,7 +2838,7 @@ impl Game<'_> {
     }
 
     /// The camera this frame is drawn from, `partial` ticks past the last tick, after vanilla
-    /// placed it (`Camera.setup`): its position, and its yaw and pitch in degrees. Set them to
+    /// placed it (`Camera.update`): its position, and its yaw and pitch in degrees. Set them to
     /// draw the world from anywhere: a cinematic or replay camera. Only the picture, the sound's
     /// listener and the billboards facing the camera follow it; the player, where they aim, the
     /// first-person hand and which chunks load stay the player's. Values that aren't finite keep
@@ -4194,7 +4194,7 @@ impl Game<'_> {
         mod_api::dispatch_perform_command(self, mod_api::mods(), player, command, ran);
     }
     /// A player takes an item from an armor stand or puts one on it
-    /// (`ArmorStand.interactAt`, after the stand's disabled-slot checks and
+    /// (`ArmorStand.interact`, after the stand's disabled-slot checks and
     /// `swapItem`'s take/put locks, before anything moves): `stand_id` is the
     /// stand's `Entity.getId` and `slot` the one the click reached
     /// (`mainhand`, `offhand`, `feet`, `legs`, `chest` or `head`). Set
@@ -7337,7 +7337,7 @@ impl Game<'_> {
         );
     }
     /// A guest is about to throw `stack` (a snowball, an egg, an ender pearl,
-    /// a mod's thrown item): where `ProjectileItem.use` creates the projectile,
+    /// a mod's thrown item): where `ProjectileItem.asProjectile` creates the projectile,
     /// before it exists, cancellable (Bukkit's `ProjectileLaunchEvent` for a
     /// player). Set `cancel` and nothing is thrown, used or put on cooldown,
     /// and `native_player_launch_projectile` hears nothing of it; the guest's
@@ -10906,7 +10906,7 @@ impl Game<'_> {
     pub(super) fn native_menu_blur_radius(&self) -> f32 {
         self.settings.menu_blur as f32
     }
-    /// `Screen.renderMenuBackground`: draws the tiled menu background (32x32) across `rect`
+    /// `Screen.extractMenuBackground`: draws the tiled menu background (32x32) across `rect`
     /// (`[x, y, w, h]` in GUI pixels). If `in_world` is true, uses the dark translucent
     /// texture (`gui/inworld_menu_background`); otherwise uses the opaque dirt-like
     /// texture (`gui/menu_background`). API 444.
