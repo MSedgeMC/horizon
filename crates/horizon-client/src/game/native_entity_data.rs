@@ -50,7 +50,7 @@ impl Game<'_> {
         let merged = horizon_client::data_cmd::merged(&old, &nbt);
         merged != old && self.apply_entity_nbt(t, merged).is_ok()
     }
-    /// The entity's tags (`Entity.getTags`), as `/tag <entity> list` shows
+    /// The entity's tags (`Entity.entityTags`), as `/tag <entity> list` shows
     /// them. API 386.
     pub(super) fn native_entity_tags(&self, entity: EntityRef) -> Option<Vec<String>> {
         if self.remote.is_some() {

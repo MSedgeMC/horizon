@@ -197,7 +197,7 @@ pub struct NativeClientProfile {
 }
 
 impl Game<'_> {
-    /// A screenshot as F2 takes it (`ScreenShot.grab`): of the next frame, at
+    /// A screenshot as F2 takes it (`Screenshot.grab`): of the next frame, at
     /// the game's resolution times Screenshot Quality, into `screenshots/` with
     /// vanilla's file name, and the same "Saved screenshot as" line in chat.
     /// The file it will write, as a path string; an error without a window to draw, or while

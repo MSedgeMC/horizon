@@ -2088,7 +2088,7 @@ impl Game<'_> {
     pub(super) fn toggle_hide_gui(&mut self) {
         self.ui.toggle_hide_gui();
     }
-    /// F2: ScreenShot.grab into `screenshots/` with vanilla's file name. The
+    /// F2: Screenshot.grab into `screenshots/` with vanilla's file name. The
     /// file it will write, `None` without a window to draw.
     pub(super) fn take_screenshot(&mut self) -> Option<std::path::PathBuf> {
         // Its grab would take a sequence's frame.

@@ -7477,7 +7477,7 @@ pub(super) fn from_loot(stack: &horizon_world::loot::LootStack) -> ItemStack {
     item
 }
 /// `LivingEntity.knockback` on `p`: [`Game::knock_back_player`]; 1.8.9's
-/// `EntityLivingBase.knockBack` under `legacy` rules.
+/// `LivingEntity.knockback` under `legacy` rules.
 fn knock_back(
     p: &mut horizon_client::motion::PlayerMotion,
     random: &mut horizon_core::random::LegacyRandom,
@@ -7778,7 +7778,7 @@ mod tests {
 
     #[test]
     fn thrown_item_billboard_faces_the_front_camera() {
-        // Camera.setup turns the front camera round (yaw + 180, -pitch): its
+        // Camera.update turns the front camera round (yaw + 180, -pitch): its
         // right is the player's left.
         let (right, up) = thrown_item_axes(CameraType::FirstPerson, 0.0, 0.0);
         assert!(right.abs_diff_eq(glam::Vec3::NEG_X, 1e-5), "{right}");
