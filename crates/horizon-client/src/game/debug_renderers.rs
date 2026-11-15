@@ -6,9 +6,8 @@
 //! No-ops, for want of the data: `chunk_section_paths`,
 //! `chunk_section_octree` and `chunk_section_visibility` (Horizon culls on
 //! the GPU, with no section occlusion graph or octree),
-//! `visualize_chunks_on_server` (the server's chunk statuses),
-//! `visualize_sky_light_sections` (the light engine's section data) and
-//! `visualize_entity_supporting_blocks` (`Entity.mainSupportingBlockPos`).
+//! `visualize_chunks_on_server` (the server's chunk statuses) and
+//! `visualize_sky_light_sections` (the light engine's section data).
 use super::Game;
 use horizon_client::{
     block_entity_render::vertex_light,
@@ -30,6 +29,11 @@ const SOLID_FACE_FILL: u32 = 0x80FF_0000;
 const TEXT_SCALE: f32 = 0.32;
 /// `HeightMapRenderer.BOX_HEIGHT`.
 const BOX_HEIGHT: f64 = 0.09375;
+/// `SupportBlockRenderer`'s colours: the player's supporting block red,
+/// another entity's green, and the block under a thin support light blue.
+const SUPPORT_PLAYER: u32 = 0xFFFF_0000;
+const SUPPORT_OTHER: u32 = 0xFF00_FF00;
+const SUPPORT_THIN: u32 = 0xFF00_FFFF;
 
 /// `HeightMapRenderer.getColor`, for the client chunk's heightmaps.
 fn heightmap_color(kind: HeightmapType) -> u32 {
@@ -55,10 +59,60 @@ fn cube(center: [i32; 3], radius: i32) -> impl Iterator<Item = [i32; 3]> {
     })
 }
 
+/// `SupportBlockRenderer`'s box for a supporting block: the block grown by
+/// 0.002 on each side, as the other debug outlines are.
+fn support_box(pos: [i32; 3]) -> ([f64; 3], [f64; 3]) {
+    let at = pos.map(f64::from);
+    (
+        [at[0] - 0.002, at[1] - 0.002, at[2] - 0.002],
+        [at[0] + 1.002, at[1] + 1.002, at[2] + 1.002],
+    )
+}
+
+/// `Entity.getOnPos(0.2)`'s block when it is the one directly below the
+/// supporting block: a support thinner than 0.2, such as a carpet or a snow
+/// layer, whose block underneath SupportBlockRenderer marks light blue.
+fn under_thin_support(support: [i32; 3], feet_y: f64) -> Option<[i32; 3]> {
+    let under = [support[0], (feet_y - 0.2).floor() as i32, support[2]];
+    (under[1] == support[1] - 1).then_some(under)
+}
+
+/// The boxes one entity's support marks: its own block, and under a thin
+/// support the block below it.
+fn support_boxes(pos: [i32; 3], feet_y: f64, color: u32, out: &mut Vec<([f64; 3], [f64; 3], u32)>) {
+    let (min, max) = support_box(pos);
+    out.push((min, max, color));
+    if let Some(under) = under_thin_support(pos, feet_y) {
+        let (min, max) = support_box(under);
+        out.push((min, max, SUPPORT_THIN));
+    }
+}
+
 impl Game<'_> {
     /// `CollisionBoxRenderer`: the block collisions within 6 of the camera
     /// entity's box, white.
     pub(super) fn debug_renderer_gizmos(&self, g: &mut Gizmos) {
+        if self.debug_entry("visualize_entity_supporting_blocks") {
+            let mut boxes = Vec::new();
+            if let Some(p) = &self.player
+                && let Some(pos) = p.ground.supporting_block
+            {
+                support_boxes(
+                    [pos.x, pos.y, pos.z],
+                    p.position.y,
+                    SUPPORT_PLAYER,
+                    &mut boxes,
+                );
+            }
+            for m in self.mobs.iter().filter(|m| !m.removed) {
+                if let Some(pos) = m.supporting {
+                    support_boxes(pos, m.position.y, SUPPORT_OTHER, &mut boxes);
+                }
+            }
+            for (min, max, color) in boxes {
+                g.cuboid(min, max, color, g::STROKE_WIDTH);
+            }
+        }
         if !self.debug_entry("visualize_collision_boxes") {
             return;
         }
@@ -288,5 +342,37 @@ fn light_level_texts(
             let color = srgb_lerp(f32::from(block_light) / 15.0, 0xFFAA_0000, 0xFFFF_FF00);
             texts.push(([x + 0.5, y + 0.5, z + 0.5], block_light.to_string(), color));
         }
+    }
+}
+
+#[cfg(test)]
+mod support_block_tests {
+    use super::*;
+
+    /// `SupportBlockRenderer` marks the support block itself, and the block
+    /// below a support thinner than the 0.2 probe (a carpet) too.
+    #[test]
+    fn a_thin_support_marks_the_block_below_it() {
+        let (min, max) = support_box([3, 64, 5]);
+        assert!((min[0] - 2.998).abs() < 1e-9);
+        assert!((min[1] - 63.998).abs() < 1e-9);
+        assert!((min[2] - 4.998).abs() < 1e-9);
+        assert!((max[0] - 4.002).abs() < 1e-9);
+        assert!((max[1] - 65.002).abs() < 1e-9);
+        assert!((max[2] - 6.002).abs() < 1e-9);
+        // A full block: 0.2 below the feet is still the support itself.
+        assert_eq!(under_thin_support([3, 64, 5], 65.0), None);
+        // A slab's top is above the probe.
+        assert_eq!(under_thin_support([3, 64, 5], 64.5), None);
+        // A carpet's top is below it, so the block under the carpet is marked.
+        assert_eq!(under_thin_support([3, 64, 5], 64.0625), Some([3, 63, 5]));
+        // A fence top is above the support block; the air above is not marked.
+        assert_eq!(under_thin_support([3, 64, 5], 65.5), None);
+        // One thin support adds both boxes, the second in the light-blue colour.
+        let mut boxes = Vec::new();
+        support_boxes([3, 64, 5], 64.0625, SUPPORT_PLAYER, &mut boxes);
+        assert_eq!(boxes.len(), 2);
+        assert_eq!(boxes[0].2, SUPPORT_PLAYER);
+        assert_eq!(boxes[1].2, SUPPORT_THIN);
     }
 }
