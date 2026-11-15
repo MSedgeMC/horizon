@@ -2032,7 +2032,7 @@ impl LootContext<'_> {
                 "minecraft:uniform" => {
                     let min = Self::number(o.get("min").unwrap_or(&Value::Null), random);
                     let max = Self::number(o.get("max").unwrap_or(&Value::Null), random);
-                    // UniformGenerator.getFloat / getInt (Mth.nextInt) differ; use int for counts.
+                    // UniformGenerator.getFloatUnsafe / getIntUnsafe (Mth.nextInt) differ; use int for counts.
                     if max <= min {
                         min
                     } else {
