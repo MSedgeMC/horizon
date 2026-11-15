@@ -69,7 +69,6 @@ class ShrinkTests(unittest.TestCase):
 class KnownTests(unittest.TestCase):
     def test_a_filed_group_is_reported_under_its_issue_and_a_new_one_is_not(self):
         self.assertEqual(fuzz.known('persist|trident|live|damage')[1], 14823)
-        self.assertEqual(fuzz.known('persist|end_crystal|reloaded|Rotation[]')[1], 16128)
         self.assertEqual(fuzz.known('persist|pig|live|TicksFrozen')[1], 16100)
         self.assertIsNone(fuzz.known('persist|pig|live|Air'))
         self.assertIsNone(fuzz.known('persist|trident|live|Air'))
@@ -78,7 +77,7 @@ class KnownTests(unittest.TestCase):
         by_issue, new, fixed = fuzz.classified([filed, fresh])
         self.assertEqual(list(by_issue), [14823])  # known groups under their issue
         self.assertEqual([g['signature'] for g in new], ['persist|pig|live|Air'])  # only the rest as new
-        self.assertEqual([entry[1] for entry in fixed], [16100, 16128])  # the entries that did not diverge
+        self.assertEqual([entry[1] for entry in fixed], [16100])  # the entries that did not diverge
 
 
 class FamilyTests(unittest.TestCase):

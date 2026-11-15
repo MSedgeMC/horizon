@@ -46,8 +46,6 @@ KNOWN = [
     (r'persist\|trident\|\w+\|(?:damage|crit|PierceLevel)', 14823,
      'a trident saves damage 2.0d, crit 0b and PierceLevel 0b, whatever it loaded'),
     (r'persist\|\w+\|\w+\|TicksFrozen', 16100, 'a mob freezes and thaws twice a tick'),
-    (r'persist\|end_crystal\|\w+\|(?:Motion|Rotation)(?:\[\])?', 16128,
-     'an end crystal saves Motion and Rotation as zero'),
 ]
 
 
