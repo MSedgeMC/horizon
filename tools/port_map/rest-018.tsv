@@ -80,13 +80,13 @@ ServerTextFilter.makeRequest	skip:service		text filter / notification service: t
 ServerTextFilter.getURLConnection	skip:service		text filter / notification service: the LAN host wires no such service
 ServerTextFilter.PlayerContext.processMessageBundle	skip:service		text filter / notification service: the LAN host wires no such service
 ServerTextFilter.PlayerContext.processStreamMessage	skip:service		text filter / notification service: the LAN host wires no such service
-PrepareSpawnTask.start	port	crates/horizon-client/src/game/lan.rs::Game::lan_guest_joined	gap: minor: no wait for the spawn chunks; the saved state is applied and a new player is placed by server_player_spawn
-PrepareSpawnTask.tick	missing		minor: no spawn-chunk wait before a joining player is placed (see Preparing.tick)
+PrepareSpawnTask.start	port	crates/horizon-client/src/game/lan.rs::Game::lan_guest_joined	the saved state is applied and a new player is placed by server_player_spawn, after the spawn chunks are lit (wait_for_spawn_chunks)
+PrepareSpawnTask.tick	port	crates/horizon-client/src/game/lan.rs::Game::wait_for_spawn_chunks	the Joined event is held until the guest's 7x7 spawn chunks are lit
 PrepareSpawnTask.spawnPlayer	inline	crates/horizon-client/src/game/lan.rs::Game::lan_guest_joined	the load and the placement run here, through place_new_player
-PrepareSpawnTask.keepAlive	skip:other		no preparing state to hold spawn chunks for
-PrepareSpawnTask.close	skip:other		no preparing state to cancel
-PrepareSpawnTask.Preparing.tick	missing		minor: no spawn-chunk load (radius 3) and no LOAD_PLAYER_CHUNKS progress before the join
-PrepareSpawnTask.Ready.keepAlive	skip:other		no waiting state to hold spawn chunks for
+PrepareSpawnTask.keepAlive	inline	crates/horizon-client/src/game/lan.rs::Game::lan_process_events	a waiting join's square is requested again every tick, as Ready.keepAlive re-adds the ticket
+PrepareSpawnTask.close	inline	crates/horizon-client/src/game/lan.rs::Game::lan_process_events	a waiting join whose guest left is dropped
+PrepareSpawnTask.Preparing.tick	inline	crates/horizon-client/src/game/lan.rs::Game::spawn_chunks_missing	the 7x7 (radius 3) chunks load and hold the join; no LOAD_PLAYER_CHUNKS progress reaches a joining client
+PrepareSpawnTask.Ready.keepAlive	inline	crates/horizon-client/src/game/lan.rs::Game::lan_process_events	the 7x7 square is kept requested (streaming extra) for every tick of the wait
 PrepareSpawnTask.Ready.spawn	port	crates/horizon-client/src/lan/hub.rs::Hub::place_new_player	the saved state is loaded in lan_guest_joined; placeNewPlayer is here
 ServerResourcePackConfigurationTask.start	port	crates/horizon-client/src/lan/conn.rs::offer_pack	sends ResourcePackPush; the answer is awaited
 SynchronizeRegistriesTask.sendRegistries	port	crates/horizon-client/src/lan/data.rs::SyncData::registry_packets	registry data; the tags are sent by login_and_configure

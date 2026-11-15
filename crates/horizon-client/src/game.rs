@@ -2450,6 +2450,10 @@ struct Game<'a> {
     /// Chunks a respawn search waits for this tick, kept loading beside the
     /// player's own (taken by `update_world`).
     spawn_wait: Vec<(i32, i32)>,
+    /// Guests whose join waits for the spawn chunks (`PrepareSpawnTask.
+    /// Preparing.tick`), with the spawn chunk: their `Joined` event is held
+    /// until the 7x7 chunks round it are lit.
+    spawn_join_wait: Vec<(u32, (i32, i32))>,
     mobs: horizon_client::join_seq::JoinList<Mob>,
     /// `mobs` by network id, for the packets that name one (`game/mob_index.rs`).
     mob_index: mob_index::MobIndex,
@@ -11540,6 +11544,7 @@ impl<'a> Game<'a> {
             spawn_spiral: Default::default(),
             player_spawn: None,
             spawn_wait: Vec::new(),
+            spawn_join_wait: Vec::new(),
             mobs: Default::default(),
             mob_index: Default::default(),
             creatures: Default::default(),

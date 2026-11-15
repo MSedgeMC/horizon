@@ -1250,6 +1250,53 @@ fn enforce_guest_game_mode(
     }
 }
 
+/// `PrepareSpawnTask.PREPARE_CHUNK_RADIUS`: the chunks round the spawn that
+/// load before a joining player is placed.
+const PREPARE_CHUNK_RADIUS: i32 = 3;
+
+/// The chunks `PrepareSpawnTask.Preparing.tick` loads round `center`.
+fn prepare_chunks((cx, cz): (i32, i32)) -> impl Iterator<Item = (i32, i32)> {
+    (-PREPARE_CHUNK_RADIUS..=PREPARE_CHUNK_RADIUS).flat_map(move |dz| {
+        (-PREPARE_CHUNK_RADIUS..=PREPARE_CHUNK_RADIUS).map(move |dx| (cx + dx, cz + dz))
+    })
+}
+
+/// The chunks round `center` still to load, from `lit`.
+fn spawn_chunks_missing(
+    center: (i32, i32),
+    lit: impl Fn(i32, i32) -> bool,
+) -> Vec<(i32, i32)> {
+    prepare_chunks(center)
+        .filter(|&(cx, cz)| !lit(cx, cz))
+        .collect()
+}
+
+#[cfg(test)]
+mod spawn_preparation_tests {
+    use super::*;
+
+    /// The 7x7 spawn chunks of `PrepareSpawnTask.PREPARE_CHUNK_RADIUS`, and
+    /// a join waits until every one of them is lit.
+    #[test]
+    fn a_join_waits_for_the_7x7_chunks_round_the_spawn() {
+        let center = (2, -3);
+        let chunks: Vec<_> = prepare_chunks(center).collect();
+        assert_eq!(chunks.len(), 49);
+        assert!(chunks.contains(&(center.0 - 3, center.1 - 3)));
+        assert!(chunks.contains(&(center.0 + 3, center.1 + 3)));
+        assert!(!chunks.contains(&(center.0 + 4, center.1)));
+        let lit = |cx: i32, cz: i32| {
+            (cx - center.0).abs() <= PREPARE_CHUNK_RADIUS
+                && (cz - center.1).abs() <= PREPARE_CHUNK_RADIUS
+        };
+        assert!(spawn_chunks_missing(center, lit).is_empty());
+        let missing = spawn_chunks_missing(center, |cx, cz| {
+            lit(cx, cz) && (cx, cz) != (center.0 + 3, center.1 + 3)
+        });
+        assert_eq!(missing, vec![(center.0 + 3, center.1 + 3)]);
+    }
+}
+
 impl Game<'_> {
     /// The level's default point, independently of the acting player's bed or spawnpoint.
     pub(super) fn world_spawn_position(&self) -> [f64; 3] {
@@ -2053,6 +2100,35 @@ impl Game<'_> {
         self.lan_object_states(hub, out, drain_minecart_steps, after);
     }
 
+    /// The chunk a joining guest's spawn chunks are round, or None for a bot
+    /// with no client and for a guest of another level.
+    fn spawn_join_center(&self, host: &LanHost, conn: u32) -> Option<(i32, i32)> {
+        let g = host.hub.guest(conn)?;
+        if g.fake || g.dimension != self.dim.id() {
+            return None;
+        }
+        Some((
+            (g.position[0].floor() as i32) >> 4,
+            (g.position[2].floor() as i32) >> 4,
+        ))
+    }
+
+    /// `PrepareSpawnTask`: hold a guest's join until the 7x7 chunks round its
+    /// spawn are lit, keeping the whole square requested (`Ready.keepAlive`).
+    /// True when the join waits.
+    fn wait_for_spawn_chunks(&mut self, host: &LanHost, conn: u32) -> bool {
+        let Some(center) = self.spawn_join_center(host, conn) else {
+            return false;
+        };
+        let missing = spawn_chunks_missing(center, |cx, cz| self.streaming.is_lit(cx, cz));
+        if missing.is_empty() {
+            return false;
+        }
+        self.spawn_wait.extend(prepare_chunks(center));
+        self.spawn_join_wait.push((conn, center));
+        true
+    }
+
     /// Apply gameplay events produced while the hub handles guest packets.
     ///
     /// Both the pre-block packet phase and the normal LAN tick receive the
@@ -2066,6 +2142,28 @@ impl Game<'_> {
         entities: &[EntityState],
         spawn: [f64; 3],
     ) -> Option<LanHost> {
+        let mut events: Vec<HostEvent> = events.into_iter().collect();
+        // `PrepareSpawnTask.Ready.keepAlive`: the square of a join still
+        // preparing stays requested; once every chunk is lit the join runs.
+        let mut ready = Vec::new();
+        let mut still_waiting = Vec::new();
+        for (conn, center) in std::mem::take(&mut self.spawn_join_wait) {
+            if host.hub.guest(conn).is_none() {
+                continue;
+            }
+            let missing = spawn_chunks_missing(center, |cx, cz| self.streaming.is_lit(cx, cz));
+            if missing.is_empty() {
+                ready.push(conn);
+            } else {
+                // The whole square stays requested while the join waits.
+                self.spawn_wait.extend(prepare_chunks(center));
+                still_waiting.push((conn, center));
+            }
+        }
+        self.spawn_join_wait = still_waiting;
+        for conn in ready.into_iter().rev() {
+            events.insert(0, HostEvent::Joined(conn));
+        }
         // A slow tick's line says which event took it, and whose (`spans::note`): each event's
         // time is noted when the next one starts (an event's arm may `continue`), the last's
         // after the loop.
@@ -2108,6 +2206,11 @@ impl Game<'_> {
                     }
                 }
                 HostEvent::Joined(conn) => {
+                    // `PrepareSpawnTask.tick`: the guest's 7x7 spawn chunks load
+                    // before it is placed; the join waits for them.
+                    if self.wait_for_spawn_chunks(&host, conn) {
+                        continue;
+                    }
                     // The mods may refuse the login before the player is placed.
                     if let Some((uuid, name, permission)) = host
                         .hub
