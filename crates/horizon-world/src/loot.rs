@@ -1931,18 +1931,15 @@ impl<R: RandomSource> Context<'_, R> {
                     return stack;
                 };
                 let mut contents = Vec::new();
+                let mut out = |c: &mut Context<'_, R>, stack: LootStack| {
+                    // `LootTable.createStackSplitter`: an oversized stack
+                    // becomes several slots.
+                    c.data.split(stack, &mut contents);
+                };
                 for entry in entries {
-                    let mut choices = Vec::new();
-                    self.expand(entry, &mut choices);
-                    for choice in &choices {
-                        let mut out = |c: &mut Context<'_, R>, stack: LootStack| {
-                            // `LootTable.createStackSplitter`: an oversized
-                            // stack becomes several slots.
-                            c.data.split(stack, &mut contents);
-                        };
-                        self.create(choice, &mut out);
-                    }
+                    self.expand_created(entry, &mut out);
                 }
+                drop(out);
                 let id = "minecraft:container";
                 stack.components.retain(|(k, _)| k != id);
                 let slots: Vec<Value> = contents
@@ -2103,6 +2100,55 @@ impl<R: RandomSource> Context<'_, R> {
             valid.swap_remove(at)
         };
         self.create(&chosen, sink);
+    }
+    /// `SetContainerContents`: `entry.expand(context, entry ->
+    /// entry.createItemStack(...))` creates each stack as its entry expands,
+    /// so a group's or sequence's conditions and modifiers draw in that order,
+    /// and no weight test applies (that one is in `LootPool.addRandomItem`).
+    fn expand_created(&mut self, entry: &Value, sink: &mut Sink<'_, R>) -> bool {
+        if !entry["condition"].is_null() && !self.condition(&entry["condition"]) {
+            return false;
+        }
+        let children = || entry["children"].as_array().into_iter().flatten();
+        match entry["type"].as_str().unwrap_or("") {
+            "minecraft:alternatives" => {
+                for c in children() {
+                    if self.expand_created(c, &mut *sink) {
+                        return true;
+                    }
+                }
+                false
+            }
+            "minecraft:group" => {
+                for c in children() {
+                    self.expand_created(c, &mut *sink);
+                }
+                true
+            }
+            "minecraft:sequence" => {
+                for c in children() {
+                    if !self.expand_created(c, &mut *sink) {
+                        return false;
+                    }
+                }
+                true
+            }
+            "minecraft:item" | "minecraft:empty" | "minecraft:loot_table" => {
+                self.create(&Choice { entry, item: None }, &mut *sink);
+                true
+            }
+            "minecraft:tag" => {
+                if entry["expand"].as_bool().unwrap_or(false) {
+                    for item in self.data.holder_set("item", &entry["items"]) {
+                        self.create(&Choice { entry, item: Some(item) }, &mut *sink);
+                    }
+                } else {
+                    self.create(&Choice { entry, item: None }, &mut *sink);
+                }
+                true
+            }
+            _ => false,
+        }
     }
     /// LootPoolEntryContainer.expand: the singleton entries that can run.
     fn expand<'v>(&mut self, entry: &'v Value, out: &mut Vec<Choice<'v>>) -> bool {
@@ -2718,7 +2764,8 @@ mod namespace_tests {
                  "modifier": [{"type": "minecraft:set_count", "count": 70}]},
                 {"type": "minecraft:item", "name": "minecraft:apple", "weight": 3,
                  "condition": {"type": "minecraft:random_chance", "chance": 1.0},
-                 "modifier": [{"type": "minecraft:set_count", "count": 2}]}
+                 "modifier": [{"type": "minecraft:set_count", "count": 2}]},
+                {"type": "minecraft:item", "name": "minecraft:brick", "weight": 0}
             ]
         });
         let table = serde_json::json!({
@@ -2747,7 +2794,8 @@ mod namespace_tests {
             serde_json::json!([
                 {"slot": 0, "item": {"id": "minecraft:diamond", "count": 64}},
                 {"slot": 1, "item": {"id": "minecraft:diamond", "count": 6}},
-                {"slot": 2, "item": {"id": "minecraft:apple", "count": 2}}
+                {"slot": 2, "item": {"id": "minecraft:apple", "count": 2}},
+                {"slot": 3, "item": {"id": "minecraft:brick"}}
             ])
         );
         // An empty stack keeps no component, even with the same function.
