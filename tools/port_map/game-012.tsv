@@ -100,7 +100,7 @@ CopperGolemAi.initCoreActivity	port	crates/horizon-client/src/mobs/animal_brain.
 CopperGolemAi.initIdleActivity	port	crates/horizon-client/src/mobs/animal_brain.rs::copper_golem_package	transport between chests, look at player, then stroll (2 blocks) or do nothing while the transport cooldown runs
 CopperGolemAi.getTargetReachedInteractions	inline	crates/horizon-client/src/mobs/transport_items.rs::reached_interaction	pickup, pickup nothing, place, place nothing from what the chest holds and what the golem carries
 CopperGolemAi.onReachedTargetInteraction	inline	crates/horizon-client/src/mobs/transport_items.rs::Transport::on_reached	tick 1 opens the chest and sets the state, tick 9 plays the sound, tick 60 closes it
-IronGolem.registerGoals	port	crates/horizon-client/src/mobs/golem.rs::register_iron	gap: player: no MoveBackToVillageGoal and no village-bound stroll (plain stroll 0.6), so golems wander off from their village; no ResetUniversalAngerTargetGoal
+IronGolem.registerGoals	port	crates/horizon-client/src/mobs/golem.rs::register_iron	registers MoveBackToVillageGoal (10-tick interval), GolemRandomStrollInVillageGoal and ResetUniversalAngerTargetGoal with the golem's alertOthersOfSameType false
 IronGolem.decreaseAirSupply	port	crates/horizon-client/src/mobs/ai/air.rs::keeps_its_air	`iload_1; ireturn`: the air is handed back unchanged, so a golem under water never loses a bubble and never reaches the -20 that drowns
 IronGolem.createAttributes	skip:data		attributes come from entity-types.json
 IronGolem.doPush	port	crates/horizon-client/src/mobs/ai.rs::push_entities	a monster that is not a creeper becomes the target one time in 20, drawn only for those, then the push
@@ -112,7 +112,7 @@ IronGolem.hurtServer	port	crates/horizon-client/src/mobs.rs::Mob::damage_with	go
 IronGolem.isPlayerCreated	inline	crates/horizon-client/src/mobs/goals.rs::Mob::spares_players	the flag is extra.player_created; spares_players reads it, and entity_nbt.rs writes and reads it
 IronGolem.setPlayerCreated	inline	crates/horizon-client/src/game/golems.rs::Game::check_golem_spawn	sets extra.player_created on the golem built from blocks; mob_from_nbt sets it on load
 IronGolem.getLeashOffset	port	crates/horizon-client/src/mobs/leash.rs::leash_offset	0.875 of the eye height, the default width/2 forwards
-SnowGolem.registerGoals	port	crates/horizon-client/src/mobs/golem.rs::register_snow	gap: minor: stroll uses the 0.001 water-avoiding probability, vanilla 1.0000001E-5
+SnowGolem.registerGoals	port	crates/horizon-client/src/mobs/golem.rs::register_snow	the water-avoiding stroll takes the constructor's 1.0000001e-5 chance, not the default 0.001
 SnowGolem.shear	port	crates/horizon-client/src/game/creatures.rs::Game::interact_shear_mob	shear sound, pumpkin off, shearing loot table at eye height
 SnowGolem.hasPumpkin	inline	crates/horizon-client/src/game/creatures.rs::Game::interact_shear_mob	extra.sheared is the inverse; synced as DATA_PUMPKIN_ID in lan.rs and remote_mob_data.rs
 SnowGolem.setPumpkin	inline	crates/horizon-client/src/game/creatures.rs::Game::interact_shear_mob	sets extra.sheared (shears, dispenser); nothing puts a pumpkin back, as in vanilla
@@ -132,8 +132,8 @@ HappyGhast.getControllingPassenger	port	crates/horizon-client/src/mobs/happy_gha
 HappyGhast.tickRidden	port	crates/horizon-client/src/mobs/happy_ghast.rs::ridden	turns 8 percent toward the rider's yaw, pitch half of theirs, head and body follow
 HappyGhast.getHappyGhastRestrictionRadius	port	crates/horizon-client/src/mobs/happy_ghast.rs::restriction_radius	64 for a bare adult, 32 otherwise
 HappyGhast.checkRestriction	inline	crates/horizon-client/src/mobs/happy_ghast.rs::ai_step	home set to the block when unleashed and unridden and stale or the radius changed
-HappyGhast.continuousHeal	inline	crates/horizon-client/src/mobs/happy_ghast.rs::ai_step	gap: minor: one point every 600 ticks, every 20 in precipitation; the in-clouds fast heal is missing
-HappyGhast.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	gap: minor: STAYS_STILL is synced; IS_LEASH_HOLDER is not tracked (no leashHolderTime), so the harness rope layer is never drawn
+HappyGhast.continuousHeal	inline	crates/horizon-client/src/mobs/happy_ghast.rs::ai_step	one point every 600 ticks, every 20 in rain or snow or inside a cloud band (`in_clouds`); `a_happy_ghast_in_the_clouds_heals_every_second` covers both
+HappyGhast.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	IS_LEASH_HOLDER is tracked by `happy_ghast::notify_leash_holder` and `is_leash_holder` and packed at entity-data index 18, so the harness rope layer can be drawn
 HappyGhast.syncStayStillFlag	port	crates/horizon-client/src/game/lan.rs::mob_meta	STAYS_STILL shown while the timeout is above zero (on_still_timeout)
 HappyGhast.getLeashOffset	port	crates/horizon-client/src/mobs/leash.rs::leash_offset	Vec3.ZERO, the rope at the ghast's feet rather than an eye height up
 HappyGhastAi.initCoreActivity	port	crates/horizon-client/src/mobs/animal_brain.rs::ghastling_package	swim, flying panic 2.0, look sink, move sink and the tempt cooldown countdown
