@@ -58,7 +58,8 @@ fn compile_selector(source: &str, reg: &horizon_client::command::Registries) -> 
 
 impl Game<'_> {
     /// ComponentArgument with selectors resolved for the source
-    /// (ComponentUtils.updateForEntity: names joined by ", ").
+    /// (ComponentUtils.updateForEntity: display names joined by the
+    /// component's `separator`, ", " when it has none).
     pub(in crate::game) fn component_arg(&mut self, ctx: &Context, name: &str) -> R<Text> {
         let Some(Arg::Str(json)) = ctx.get(name) else {
             return Ok(Text::empty());
@@ -72,10 +73,14 @@ impl Game<'_> {
         // storage data, rich-styled (or plain, or interpreted), ", "-joined.
         // ScoreContents.resolve: the holder's score in the objective.
         let nbt_values = std::cell::RefCell::new(Vec::new());
+        let selector_values = std::cell::RefCell::new(Vec::new());
         {
             let mut collect = |o: &serde_json::Map<String, serde_json::Value>| {
                 if o.contains_key("nbt") || o.contains_key("score") {
                     nbt_values.borrow_mut().push(o.clone());
+                }
+                if o.contains_key("selector") {
+                    selector_values.borrow_mut().push(o.clone());
                 }
             };
             fn walk(
@@ -104,25 +109,24 @@ impl Game<'_> {
             };
             resolved.push((o, t));
         }
-        let mut resolve = |raw: &str| -> Text {
-            let mut reader = horizon_client::command::Reader::new(raw);
-            let entities = horizon_client::command::args::ArgType::Entity {
-                single: false,
-                players: false,
+        // SelectorContents.resolve: each entity's display name, joined by the
+        // component's own `separator` (a component, ", " by default). Resolving
+        // them here rather than through `resolve` lets the object's separator
+        // reach the join; `to_text_with` asks the contents hook first.
+        for o in selector_values.into_inner() {
+            let Some(raw) = o.get("selector").and_then(serde_json::Value::as_str) else {
+                continue;
             };
-            let Ok(Arg::Entity(sel)) = entities.parse(&mut reader, &self.ui.registries) else {
-                return Text::literal(raw);
-            };
-            let found = self.select(&sel);
-            let mut out = Text::empty();
-            for (i, t) in found.into_iter().enumerate() {
-                if i > 0 {
-                    out.push(Text::literal(", "));
+            let separator = match o.get("separator") {
+                Some(separator) => {
+                    horizon_client::component::to_text(separator, &mut |s| Text::literal(s))
                 }
-                out.push(self.target_name(t));
-            }
-            out
-        };
+                None => Text::literal(", "),
+            };
+            let t = self.selector_text(raw, &separator);
+            resolved.push((o, t));
+        }
+        let mut resolve = |raw: &str| -> Text { self.selector_text(raw, &Text::literal(", ")) };
         Ok(horizon_client::component::to_text_with(
             &value,
             &mut resolve,
@@ -133,6 +137,27 @@ impl Game<'_> {
                     .map(|(_, t)| t.clone())
             },
         ))
+    }
+    /// `SelectorContents.resolve`: the selector's entities' display names,
+    /// joined by `separator`.
+    fn selector_text(&mut self, raw: &str, separator: &Text) -> Text {
+        let mut reader = horizon_client::command::Reader::new(raw);
+        let entities = horizon_client::command::args::ArgType::Entity {
+            single: false,
+            players: false,
+        };
+        let Ok(Arg::Entity(sel)) = entities.parse(&mut reader, &self.ui.registries) else {
+            return Text::literal(raw);
+        };
+        let found = self.select(&sel);
+        let mut out = Text::empty();
+        for (i, t) in found.into_iter().enumerate() {
+            if i > 0 {
+                out.push(separator.clone());
+            }
+            out.push(self.target_name(t));
+        }
+        out
     }
     /// The text of a `score` component (ScoreContents.resolve): the named
     /// holder's score, `*` being the player the command runs for.
@@ -388,6 +413,37 @@ mod tests {
             bad.contains("command.trailing_data") || bad.contains("Trailing"),
             "{bad}"
         );
+    }
+
+    /// `SelectorContents.resolve`: the component's own `separator` joins the
+    /// entities' display names (", " when it has none).
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_selector_component_joins_its_entities_with_its_own_separator() {
+        use crate::game::native_machines::tests::server_game;
+        use horizon_client::motion::PlayerMotion;
+        use horizon_core::geometry::Vec3;
+
+        let mut game = server_game();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.player = Some(PlayerMotion::new(game.motion, Vec3::new(0.5, 200.0, 0.5)).unwrap());
+        assert!(game.run_command(
+            r#"summon minecraft:pig 1.5 200 1.5 {UUID:[I;31,1,1,1],NoAI:1b,Silent:1b,CustomName:"A"}"#
+        ));
+        assert!(game.run_command(
+            r#"summon minecraft:pig 2.5 200 1.5 {UUID:[I;31,1,1,2],NoAI:1b,Silent:1b,CustomName:"B"}"#
+        ));
+        game.chat_capture = Some(Vec::new());
+        assert!(game.run_command(
+            r#"tellraw @a {"selector":"@e[type=minecraft:pig]","separator":" | "}"#
+        ));
+        let said = game.chat_capture.take().unwrap_or_default();
+        assert_eq!(said.len(), 1, "{said:?}");
+        let line = said[0].plain();
+        let mut names: Vec<&str> = line.split(" | ").collect();
+        names.sort_unstable();
+        assert_eq!(names, ["A", "B"], "{line:?}");
     }
 
     #[test]

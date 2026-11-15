@@ -120,7 +120,7 @@ ObjectContents.visit	port	crates/horizon-client-render/src/hud.rs::draw_inline_o
 PlainTextContents.LiteralContents.visit	skip:java		leaf of the visit walk; Text holds the literal in its spans
 ScoreContents.findTargetName	inline	crates/horizon-client/src/game/commands/text_commands.rs::Game::resolve_score_component	a selector matching one entity is that entity, none is the name, more than one is an error
 ScoreContents.getScore	port	crates/horizon-client/src/game/commands/text_commands.rs::Game::resolve_score_component	the objective's value in the holder's format; empty when there is none
-SelectorContents.resolve	port	crates/horizon-client/src/game/commands/text_commands.rs::Game::component_arg	gap: minor: the separator is always ', '
+SelectorContents.resolve	port	crates/horizon-client/src/game/commands/text_commands.rs::Game::component_arg	the component's own `separator` joins the resolved names, ', ' when it has none
 SelectorContents.visit	port	crates/horizon-client-core/src/component.rs::to_text	with a literal resolver the selector text is shown, as visit does
 TranslatableContents.filterAllowedArguments	skip:java		codec filter; Text arguments are typed
 TranslatableContents.isAllowedPrimitiveArgument	skip:java		Text arguments are typed
