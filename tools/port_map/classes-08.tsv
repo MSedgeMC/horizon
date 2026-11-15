@@ -137,7 +137,7 @@ SetCustomModelDataFunction.validate	skip:data		validation at datapack load
 SetEnchantmentsFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	set_enchantments arm
 SetEnchantmentsFunction.validate	skip:data		validation at datapack load
 SetEnchantmentsFunction.Builder	skip:java		builder
-SetFireworkExplosionFunction.apply	missing		minor: no vanilla loot table uses set_firework_explosion
+SetFireworkExplosionFunction.apply	port	crates/horizon-world/src/loot.rs::Context::run	set_firework_explosion arm: the firework_explosion component keeps the fields the function omits (or FireworkExplosion.DEFAULT), `trail`/`twinkle` written as the component's has_trail/has_twinkle
 SetFireworksFunction.apply	missing		minor: no vanilla loot table uses set_fireworks
 SetInstrumentFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	the random option becomes the item's minecraft:instrument component
 SetItemCountFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	set_count arm

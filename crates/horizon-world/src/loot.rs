@@ -1850,6 +1850,52 @@ impl<R: RandomSource> Context<'_, R> {
                 stack.components.retain(|(k, _)| k != id);
                 stack.components.push((id.to_owned(), Value::Array(layers)));
             }
+            // SetFireworkExplosionFunction: the `minecraft:firework_explosion`
+            // component (a firework star's own) updated field by field, keeping
+            // the fields the function omits - the component the stack already
+            // carries, or `FireworkExplosion.DEFAULT` (a small ball, no
+            // colours, no trail or twinkle) when it has none. The function
+            // names its booleans `trail` and `twinkle`, the component writes
+            // them `has_trail` and `has_twinkle`; a shape its codec does not
+            // know is left off, as the table would not load.
+            "minecraft:set_firework_explosion" => {
+                let id = "minecraft:firework_explosion";
+                let mut content = stack
+                    .components
+                    .iter()
+                    .find(|(k, _)| k == id)
+                    .map(|(_, v)| v.clone())
+                    .filter(Value::is_object)
+                    .unwrap_or_else(|| Value::Object(serde_json::Map::new()));
+                let Value::Object(map) = &mut content else {
+                    unreachable!("an object above")
+                };
+                const SHAPES: [&str; 5] =
+                    ["small_ball", "large_ball", "star", "creeper", "burst"];
+                if let Some(shape) = f["shape"].as_str()
+                    && SHAPES.contains(&shape)
+                {
+                    map.insert("shape".to_owned(), Value::String(shape.to_owned()));
+                }
+                for field in ["colors", "fade_colors"] {
+                    if f[field].is_array() {
+                        map.insert(field.to_owned(), f[field].clone());
+                    }
+                }
+                for (from, to) in [("trail", "has_trail"), ("twinkle", "has_twinkle")] {
+                    match f[from].as_bool() {
+                        Some(true) => {
+                            map.insert(to.to_owned(), Value::Bool(true));
+                        }
+                        Some(false) => {
+                            map.remove(to);
+                        }
+                        None => {}
+                    }
+                }
+                stack.components.retain(|(k, _)| k != id);
+                stack.components.push((id.to_owned(), content));
+            }
             // SetBookCoverFunction: the written book's title, author and
             // generation, kept over the component the stack already carries (an
             // earlier function's) with its pages and resolved flag. The title is
@@ -3242,5 +3288,88 @@ mod custom_data_predicate_tests {
         assert_eq!(doubled(Some("{h:1}")), ["orange", "light_gray"]);
         assert_eq!(doubled(Some("{entries:[]}")), ["lime", "light_gray"]);
         assert_eq!(doubled(None), ["light_gray"]);
+    }
+}
+
+#[cfg(test)]
+mod firework_explosion_function_tests {
+    use super::*;
+
+    /// A firework star whose item modifiers are `modifiers`, rolled once.
+    fn stack(name: &str, modifiers: &str) -> LootStack {
+        let root = std::env::temp_dir().join(format!(
+            "loot-firework-{name}-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = format!(
+            r#"{{"pools":[{{"rolls":1,"entries":[{{"type":"minecraft:item","name":"minecraft:firework_star","modifier":[{modifiers}]}}]}}]}}"#
+        );
+        std::fs::write(dir.join("test.json"), json).unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        let mut stacks = data.roll(
+            "minecraft:test",
+            &mut LegacyRandom::new(1),
+            0.0,
+            None,
+            None,
+        );
+        assert_eq!(stacks.len(), 1, "{stacks:?}");
+        stacks.remove(0)
+    }
+
+    fn component(stack: &LootStack) -> Value {
+        stack
+            .components
+            .iter()
+            .find(|(k, _)| k == "minecraft:firework_explosion")
+            .map(|(_, v)| v.clone())
+            .expect("the firework_explosion component")
+    }
+
+    /// `SetFireworkExplosionFunction`: only the fields the function names
+    /// replace the component's, or `FireworkExplosion.DEFAULT`'s when the
+    /// stack had none. `trail` and `twinkle` are the component's `has_trail`
+    /// and `has_twinkle`; a shape the codec knows replaces the old one and
+    /// one it does not leaves it; without the function the component is the
+    /// earlier function's.
+    #[test]
+    fn the_function_updates_only_the_explosion_fields_it_names() {
+        // No component before: the named fields, the rest FireworkExplosion.DEFAULT.
+        let got = component(&stack(
+            "defaults",
+            r#"{"type":"minecraft:set_firework_explosion","shape":"creeper","twinkle":true}"#,
+        ));
+        assert_eq!(
+            got,
+            serde_json::json!({"shape": "creeper", "has_twinkle": true})
+        );
+        // An earlier component: its shape and trail stay, the colours and
+        // fade colours are replaced, twinkle is cleared.
+        let got = component(&stack(
+            "replace",
+            r#"{"type":"minecraft:set_components","components":{"minecraft:firework_explosion":{"shape":"star","colors":[16711680],"has_trail":true,"has_twinkle":true}}},{"type":"minecraft:set_firework_explosion","colors":[255,65280],"fade_colors":[255],"twinkle":false}"#,
+        ));
+        assert_eq!(
+            got,
+            serde_json::json!({"shape": "star", "colors": [255, 65280],
+                "fade_colors": [255], "has_trail": true})
+        );
+        // A shape the codec does not know leaves the old one.
+        let got = component(&stack(
+            "bad_shape",
+            r#"{"type":"minecraft:set_components","components":{"minecraft:firework_explosion":{"shape":"star"}}},{"type":"minecraft:set_firework_explosion","shape":"cube"}"#,
+        ));
+        assert_eq!(got, serde_json::json!({"shape": "star"}));
+        // The control: without the function the component is unchanged.
+        let got = component(&stack(
+            "control",
+            r#"{"type":"minecraft:set_components","components":{"minecraft:firework_explosion":{"shape":"star"}}}"#,
+        ));
+        assert_eq!(got, serde_json::json!({"shape": "star"}));
     }
 }
