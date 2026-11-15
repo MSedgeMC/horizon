@@ -28,7 +28,7 @@ ChatComponent.DrawingFocusedGraphicsAccess.handleMessage	port	crates/horizon-cli
 ChatComponent.DrawingFocusedGraphicsAccess.isMouseOver	inline	crates/horizon-client-render/src/chat.rs::Chat::focused_tags	the cursor test of the tag bar and its icons, folded into the tag lookup
 ChatComponent.DrawingFocusedGraphicsAccess.handleTagIcon	port	crates/horizon-client-render/src/chat.rs::Chat::focused_tags	the modified-message tags under the cursor: the tooltip of the bar or icon, and the icons of the message the cursor is over
 ChatComponent.DrawingFocusedGraphicsAccess.showTooltip	port	crates/horizon-client/src/game/chat.rs::Game::draw_chat_screen	gap: minor: every indicator shows the systemSinglePlayer text as its tooltip
-Checkbox.adjustWidth	missing		minor: the checkbox width is never capped or its label wrapped; dialog_screen.rs:137 sets the width to the full label
+Checkbox.adjustWidth	inline	crates/horizon-client/src/dialog_screen.rs::input	a boolean input is 17 + 4 + the label's width wide (Control::Boolean), so the box grows to fit its message
 Checkbox.overflowsRowLimit	missing		minor: no tooltip for a label that wraps past two rows; Horizon dialog labels never wrap
 Checkbox.onPress	port	crates/horizon-client/src/game/dialogs.rs::Game::dialog_click	toggles the boolean input value (dialogs.rs:448)
 Checkbox.updateWidgetNarration	inline	crates/horizon-client/src/screen_narrator.rs::narrate	narrate's checkbox arm: gui.narrate.button(message), then narration.checkbox.usage.{focused,hovered}.{check,uncheck} while the widget is active
@@ -56,7 +56,7 @@ CommandSuggestions.SuggestionsList.cycle	port	crates/horizon-client-render/src/c
 CommandSuggestions.SuggestionsList.getNarrationMessage	port	crates/horizon-client-render/src/chat.rs::suggestion_narration	narration.suggestion, or narration.suggestion.tooltip when the entry has one, over the position, the count and the text; SuggestionList::narration_message marks lastNarratedEntry
 ComponentRenderUtils.stripColor	port	crates/horizon-client-render/src/chat.rs::Chat::displayed	with Chat Colors off the section codes are stripped before wrapping
 ContainerObjectSelectionList.nextFocusPath	port	crates/horizon-client-input/src/gamepad.rs::focus_step	gap: minor: picks the nearest target by geometry, not row by row with a wrap to the next entry
-ContainerObjectSelectionList.setFocused	missing		minor: unsure: no list focus model beyond gamepad focus_step; losing focus does not clear a selection here
+ContainerObjectSelectionList.setFocused	port	crates/horizon-client/src/game/pad_menu.rs::Game::pad_focus_on	each row is a Kind::Row target; focusing one stores it as the focus and the screen's selection follows (pad_focus_selects_row)
 ContainerObjectSelectionList.updateWidgetNarration	inline	crates/horizon-client/src/screen_narrator.rs::narrate	narrate's container-list arm: the row under the mouse for the mouse and the system, else the focused one, then narrator.position.list; the row's own widgets one level deeper (narrate_row)
 ContainerObjectSelectionList.Entry.setFocused	missing		minor: unsure: focus inside a row is not tracked; focus_step works on target rectangles
 ContainerObjectSelectionList.Entry.focusPathAtIndex	missing		minor: unsure: no per-row focus path; see focus_step
