@@ -712,7 +712,7 @@ impl<H: LevelHost> NaturalLevel for Level<'_, H> {
     }
 }
 impl horizon_client::mobs::spawner::SpawnerLevel for GameLevel<'_, '_> {
-    /// `EntityGetter.hasNearbyAlivePlayer`, over every player.
+    /// `Level.hasNearbyAlivePlayer`, over every player.
     fn alive_player_near(&self, x: f64, y: f64, z: f64, range: f64) -> bool {
         self.players.iter().any(|p| p.alive_near(x, y, z, range))
     }
@@ -852,7 +852,7 @@ impl<'a> Game<'a> {
             spectator: p.spectator,
         })
     }
-    /// `EntityGetter.hasNearbyAlivePlayer` before a level is built for the spawn
+    /// `Level.hasNearbyAlivePlayer` before a level is built for the spawn
     /// code: what a spawner asks first, every tick.
     /// Spawners ask it every tick: the guests are tested where they stand,
     /// without building their boxes.
