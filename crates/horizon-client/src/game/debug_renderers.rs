@@ -31,6 +31,22 @@ const TEXT_SCALE: f32 = 0.32;
 /// `HeightMapRenderer.BOX_HEIGHT`.
 const BOX_HEIGHT: f64 = 0.09375;
 
+/// `RaidDebugRenderer`: `ARGB.colorFromFloat(0.15F, 1.0F, 0.0F, 0.0F)` and
+/// the camera distance its centres show within.
+const RAID_FILL: u32 = 0x26FF_0000;
+const RAID_MAX_DIST: f64 = 160.0;
+/// `RaidDebugRenderer.TEXT_SCALE`.
+const RAID_TEXT_SCALE: f32 = 0.64;
+
+/// `SharedConstants.debugFlag`: a debug view is on when `MC_DEBUG_ENABLED`
+/// and then `MC_DEBUG_<name>` are set, as `booleanProperty` reads them.
+fn debug_flag(name: &str) -> bool {
+    fn property(name: &str) -> bool {
+        std::env::var(name).is_ok_and(|v| v.is_empty() || v.eq_ignore_ascii_case("true"))
+    }
+    property("MC_DEBUG_ENABLED") && property(&format!("MC_DEBUG_{name}"))
+}
+
 /// `HeightMapRenderer.getColor`, for the client chunk's heightmaps.
 fn heightmap_color(kind: HeightmapType) -> u32 {
     match kind {
@@ -53,6 +69,22 @@ fn cube(center: [i32; 3], radius: i32) -> impl Iterator<Item = [i32; 3]> {
                 .map(move |dx| [center[0] + dx, center[1] + dy, center[2] + dz])
         })
     })
+}
+
+/// `RaidDebugRenderer`: the raid centres nearer than [`RAID_MAX_DIST`] of
+/// the camera's block, in the raids' order.
+fn raid_centers_within(
+    centers: impl Iterator<Item = [i32; 3]>,
+    eye: [i32; 3],
+) -> Vec<[i32; 3]> {
+    let eye = eye.map(f64::from);
+    centers
+        .filter(|c| {
+            let c = c.map(f64::from);
+            let d = [c[0] - eye[0], c[1] - eye[1], c[2] - eye[2]];
+            d[0] * d[0] + d[1] * d[1] + d[2] * d[2] < RAID_MAX_DIST * RAID_MAX_DIST
+        })
+        .collect()
 }
 
 impl Game<'_> {
@@ -105,16 +137,17 @@ impl Game<'_> {
         let block_light = self.debug_entry("visualize_block_light_levels");
         let sky_light = self.debug_entry("visualize_sky_light_levels");
         let solid = self.debug_entry("visualize_solid_faces");
+        let raid = debug_flag("RAIDS");
         let Some(p) = &self.player else {
             return;
         };
-        if !(water || heightmap || block_light || sky_light || solid) {
+        if !(water || heightmap || block_light || sky_light || solid || raid) {
             return;
         }
         let feet = [p.position.x, p.position.y, p.position.z].map(|v| v.floor() as i32);
         let eye = camera.to_array().map(|v| v.floor() as i32);
         let mut fills: Vec<([[f64; 3]; 4], u32)> = Vec::new();
-        let mut texts: Vec<([f64; 3], String, u32)> = Vec::new();
+        let mut texts: Vec<([f64; 3], String, u32, f32)> = Vec::new();
         if water {
             self.water_level_shapes(feet, &mut fills, &mut texts);
         }
@@ -126,6 +159,9 @@ impl Game<'_> {
         }
         if solid {
             self.solid_face_shapes(eye, &mut fills);
+        }
+        if raid {
+            self.raid_center_shapes(camera, &mut fills, &mut texts);
         }
         let start = out.len();
         self.mark_translucent_entity(start, "");
@@ -155,7 +191,7 @@ impl Game<'_> {
         }
         // `Gizmos.billboardText`: centred, without a background.
         let mut patches = Vec::new();
-        for (at, text, color) in texts {
+        for (at, text, color, scale) in texts {
             patches.extend(self.name_tag_quads(
                 glam::DVec3::from_array(at) - camera,
                 &[(Text::literal(text).with_color(color & 0xFF_FFFF), 0.0)],
@@ -163,7 +199,7 @@ impl Game<'_> {
                 false,
                 2,
                 0,
-                g::billboard_text_unit(TEXT_SCALE),
+                g::billboard_text_unit(scale),
                 out,
             ));
         }
@@ -176,7 +212,7 @@ impl Game<'_> {
         &self,
         feet: [i32; 3],
         fills: &mut Vec<([[f64; 3]; 4], u32)>,
-        texts: &mut Vec<([f64; 3], String, u32)>,
+        texts: &mut Vec<([f64; 3], String, u32, f32)>,
     ) {
         use horizon_client::blocks::Fluid;
         for pos in cube(feet, 10) {
@@ -202,6 +238,7 @@ impl Game<'_> {
                 [x + 0.5, top, z + 0.5],
                 f.fluid_level.to_string(),
                 0xFF00_0000,
+                TEXT_SCALE,
             ));
         }
     }
@@ -236,6 +273,35 @@ impl Game<'_> {
                     }
                 }
             }
+        }
+    }
+
+    /// `RaidDebugRenderer`: a filled cube and "Raid center" over each raid
+    /// centre within 160 blocks of the camera, from the integrated server.
+    fn raid_center_shapes(
+        &self,
+        camera: glam::DVec3,
+        fills: &mut Vec<([[f64; 3]; 4], u32)>,
+        texts: &mut Vec<([f64; 3], String, u32, f32)>,
+    ) {
+        let eye = [
+            camera.x.floor() as i32,
+            camera.y.floor() as i32,
+            camera.z.floor() as i32,
+        ];
+        let centers = self.raiding.raids.map.values().map(|raid| raid.center);
+        for center in raid_centers_within(centers, eye) {
+            let at = center.map(f64::from);
+            fills.extend(
+                g::cuboid_fill_quads(at, [at[0] + 1.0, at[1] + 1.0, at[2] + 1.0])
+                    .map(|q| (q, RAID_FILL)),
+            );
+            texts.push((
+                [at[0] + 0.5, at[1] + 1.3, at[2] + 0.5],
+                "Raid center".into(),
+                0xFFFF_0000,
+                RAID_TEXT_SCALE,
+            ));
         }
     }
 
@@ -274,7 +340,7 @@ fn light_level_texts(
     eye: [i32; 3],
     block: bool,
     sky: bool,
-    texts: &mut Vec<([f64; 3], String, u32)>,
+    texts: &mut Vec<([f64; 3], String, u32, f32)>,
 ) {
     for pos in cube(eye, 10) {
         let light = game.world.light(pos[0], pos[1], pos[2]);
@@ -282,11 +348,35 @@ fn light_level_texts(
         let [x, y, z] = pos.map(f64::from);
         if sky_light != 15 && sky {
             let color = srgb_lerp(f32::from(sky_light) / 15.0, 0xFF00_00FF, 0xFF00_FFFF);
-            texts.push(([x + 0.5, y + 0.25, z + 0.5], sky_light.to_string(), color));
+            texts.push((
+                [x + 0.5, y + 0.25, z + 0.5],
+                sky_light.to_string(),
+                color,
+                TEXT_SCALE,
+            ));
         }
         if block && block_light != 0 {
             let color = srgb_lerp(f32::from(block_light) / 15.0, 0xFFAA_0000, 0xFFFF_FF00);
-            texts.push(([x + 0.5, y + 0.5, z + 0.5], block_light.to_string(), color));
+            texts.push((
+                [x + 0.5, y + 0.5, z + 0.5],
+                block_light.to_string(),
+                color,
+                TEXT_SCALE,
+            ));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn raid_centres_within_160_blocks() {
+        let eye = [0, 64, 0];
+        let near = [[0, 64, 0], [159, 64, 0], [0, 64, -159], [96, 64, -96]];
+        let far = [[160, 64, 0], [0, 224, 0], [0, 64, 160], [-120, 64, 120]];
+        let all = near.into_iter().chain(far);
+        assert_eq!(raid_centers_within(all, eye), near.to_vec());
     }
 }
