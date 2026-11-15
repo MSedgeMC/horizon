@@ -1570,14 +1570,16 @@ impl<R: RandomSource> Context<'_, R> {
                 };
                 stack.count = base + self.int(&f["count"]);
             }
+            // LimitCount: each present bound is a number provider, drawn
+            // from the loot random (a literal number reads as itself).
             "minecraft:limit_count" => {
                 let limit = &f["limit"];
                 let mut count = stack.get_count();
-                if let Some(min) = int_value(&limit["min"]) {
-                    count = count.max(min as i32);
+                if !limit["min"].is_null() {
+                    count = count.max(self.int(&limit["min"]));
                 }
-                if let Some(max) = int_value(&limit["max"]) {
-                    count = count.min(max as i32);
+                if !limit["max"].is_null() {
+                    count = count.min(self.int(&limit["max"]));
                 }
                 stack.count = count;
             }
@@ -2266,6 +2268,41 @@ mod namespace_tests {
                 ("minecraft:unbreaking".to_owned(), 3),
             ]
         );
+    }
+
+    /// `LimitCount.run`: a bound of the range is a number provider, drawn
+    /// from the loot random, so a `uniform` bound clamps the count.
+    #[test]
+    fn limit_count_draws_number_provider_bounds() {
+        let root = std::env::temp_dir().join(format!("horizon-loot-limit-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("data/minecraft/loot_table/chests")).unwrap();
+        fs::write(root.join("items.json"), r#"{"minecraft:stick": {}}"#).unwrap();
+        let uniform = |min: i64, max: i64| serde_json::json!({"type": "minecraft:uniform", "min": min, "max": max});
+        let table = |start: i64, limit: Value| {
+            serde_json::json!({"pools": [{"rolls": 1, "entries": [{
+                "type": "minecraft:item", "name": "minecraft:stick", "modifier": [
+                    {"type": "minecraft:set_count", "count": start},
+                    {"type": "minecraft:limit_count", "limit": limit}]}]}]})
+        };
+        // A drawn maximum of 3 caps a stack of 5; a drawn minimum of 4 lifts
+        // a stack of 1.
+        let files = [
+            ("max", table(5, serde_json::json!({"max": uniform(3, 3)}))),
+            ("min", table(1, serde_json::json!({"min": uniform(4, 4)}))),
+        ];
+        for (name, table) in files {
+            fs::write(
+                root.join(format!("data/minecraft/loot_table/chests/{name}.json")),
+                serde_json::to_string(&table).unwrap(),
+            )
+            .unwrap();
+        }
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let count = |table: &str| data.fill(table, 7, 1, None)[0].as_ref().map(|s| s.count);
+        assert_eq!(count("minecraft:chests/max"), Some(3));
+        assert_eq!(count("minecraft:chests/min"), Some(4));
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// The same root and packs share one map while it is held; other packs

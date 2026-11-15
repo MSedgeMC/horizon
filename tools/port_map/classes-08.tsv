@@ -62,7 +62,7 @@ ContainerComponentManipulator.ComponentSlotCollection	skip:java		record wrapper 
 FloatRangePredicate.Line.createPredicate	missing		minor: float range with number-provider bounds; Horizon does not evaluate these bounds
 FloatRangePredicate.Line.test	missing		minor: float range check with number-provider bounds
 FloatRangePredicate.Line.validate	skip:data		validation at datapack load
-IntLimit.createLimiter	port	crates/horizon-world/src/loot.rs::Context::run	gap: minor: limit_count arm reads literal min and max only
+IntLimit.createLimiter	port	crates/horizon-world/src/loot.rs::Context::run	the count clamps to each present bound, drawn as a loot number provider (a literal number reads as itself)
 IntLimit.validate	skip:data		validation at datapack load
 IntRangePredicate.Line.createPredicate	inline	crates/horizon-world/src/loot.rs::int_bounds	gap: minor: literal bounds only; number-provider bounds are not evaluated
 IntRangePredicate.Line.test	port	crates/horizon-world/src/loot.rs::int_bounds	gap: minor: literal bounds only
@@ -114,7 +114,7 @@ FillPlayerHead.run	missing		minor: no vanilla loot table uses fill_player_head
 FilteredFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	filtered arm
 FilteredFunction.Builder.build	skip:java		builder
 FunctionUserBuilder	skip:java		builder interface (apply, buildFunction)
-LimitCount.run	port	crates/horizon-world/src/loot.rs::Context::run	gap: minor: limit_count arm reads literal min and max only
+LimitCount.run	port	crates/horizon-world/src/loot.rs::Context::run	the count clamps to each present bound, drawn as a loot number provider (a literal number reads as itself)
 LootItemConditionalFunction.apply	port	crates/horizon-world/src/loot.rs::Context::modify	condition check, then run
 LootItemConditionalFunction.commonFields	skip:java		codec fields
 LootItemFunction.decorate	port	crates/horizon-world/src/loot.rs::Context::modify	function applied to a drop
