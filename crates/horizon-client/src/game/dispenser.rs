@@ -819,7 +819,7 @@ impl Game<'_> {
             subject: None,
         };
         let mut amount = if moved_up { -2.0 } else { -1.0 };
-        // Level.getCollisions(null, aabb): CollisionContext.empty().
+        // CollisionGetter.getCollisions(null, aabb): CollisionContext.empty().
         if let Ok(scan) = BlockCollisionScan::new(
             &mut scene,
             CollisionContext::empty(false),

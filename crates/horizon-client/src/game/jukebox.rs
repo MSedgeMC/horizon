@@ -279,7 +279,7 @@ impl Game<'_> {
         let Some(s) = self.items().songs.get(song).cloned() else {
             return;
         };
-        // LevelRenderer.playJukeboxSong: SimpleSoundInstance.forJukeboxSong.
+        // LevelEventHandler.playJukeboxSong: SimpleSoundInstance.forJukeboxSong.
         let id = self.audio.play_jukebox_song(&s.sound, pos);
         self.jukebox_sounds.insert((pos[0], pos[1], pos[2]), id);
         let description =

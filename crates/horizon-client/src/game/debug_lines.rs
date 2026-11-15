@@ -294,7 +294,7 @@ impl Game<'_> {
         ));
     }
 
-    /// `Level.getEntityCount` over the entities Horizon keeps.
+    /// `ClientLevel.getEntityCount` over the entities Horizon keeps.
     fn debug_entity_count(&self) -> usize {
         self.mobs.iter().filter(|m| !m.removed).count()
             + self.dropped.len()

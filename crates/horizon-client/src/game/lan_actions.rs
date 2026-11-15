@@ -3320,7 +3320,7 @@ impl Game<'_> {
         }
     }
 
-    /// `Level.getEntityOrPart(id).getBoundingBox()` for a guest's attack or
+    /// `ServerLevel.getEntityOrPart(id).getBoundingBox()` for a guest's attack or
     /// interaction: the host, another player, a mob, a vehicle or object, a
     /// dragon part or crystal, a projectile. None for an id the level doesn't
     /// have (the handlers then find nothing either).

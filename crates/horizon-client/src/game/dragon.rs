@@ -434,7 +434,7 @@ impl FightPlayer {
     }
 }
 /// `TargetingConditions.forCombat` (visibility aside) in
-/// `Level.getNearestPlayer`: the enemy nearest `at` among `players`, within
+/// `EntityGetter.getNearestPlayer`: the enemy nearest `at` among `players`, within
 /// `range` of the dragon at `from` and passing `selector`; none on Peaceful.
 fn nearest_enemy(
     players: &[FightPlayer],
@@ -2068,7 +2068,7 @@ impl Game<'_> {
                     }
                 }
                 let d2 = (pp.x - pos.x).powi(2) + (pp.y - pos.y).powi(2) + (pp.z - pos.z).powi(2);
-                // Entity.hasLineOfSight: eye to eye (the dragon's eye is 0.85 of
+                // LivingEntity.hasLineOfSight: eye to eye (the dragon's eye is 0.85 of
                 // its 8 block height), blocks only.
                 let sees = d2 < 4096.0 && {
                     let eye = Vec3::new(pos.x, pos.y + 6.8, pos.z);
