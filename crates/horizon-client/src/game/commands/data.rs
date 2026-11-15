@@ -203,7 +203,10 @@ impl Game<'_> {
             Target::Orb(id) => {
                 let uuid = self.uuid_for(id);
                 let tag = entity_nbt::orb_to_nbt(self.orbs.iter().find(|o| o.id == id)?, uuid);
-                crate::game::persist::with_raw(tag, self.persist.raw.get(&id))
+                let mut tag = crate::game::persist::with_raw(tag, self.persist.raw.get(&id));
+                // Entity.saveWithoutId writes the live PortalCooldown.
+                self.save_portal_cooldown(id, &mut tag);
+                tag
             }
             Target::Projectile(id) => {
                 let uuid = self.uuid_for(id);

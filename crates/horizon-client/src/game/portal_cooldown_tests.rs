@@ -1,17 +1,16 @@
 //! Direct production handlers over an empty in-memory world; no server or renderer.
 use super::*;
+use crate::game::commands::Target;
 use crate::game::{Audio, Options, Progress, Settings, load_resources};
 use horizon_client::chunk::Chunk;
 use std::sync::Arc;
 
-#[test]
-#[ignore = "needs explicit HORIZON_TEST_RESOURCES and HORIZON_PORTAL_REFERENCE"]
-fn portal_contact_and_waiting_handoff_match_vanilla_counters() {
-    let reference: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(std::env::var_os("HORIZON_PORTAL_REFERENCE").unwrap()).unwrap(),
-    )
-    .unwrap();
-    let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+/// An integrated server game over an empty in-memory world.
+fn game() -> Game<'static> {
+    let root = std::path::PathBuf::from(
+        std::env::var_os("HORIZON_TEST_RESOURCES")
+            .expect("set HORIZON_TEST_RESOURCES to prepared resources"),
+    );
     let settings = Settings::default();
     let loaded = load_resources(
         root.clone(),
@@ -30,8 +29,9 @@ fn portal_contact_and_waiting_handoff_match_vanilla_counters() {
     options.headless = true;
     options.game_dir = Some(std::env::current_dir().unwrap());
     options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+    let res: &'static _ = Box::leak(Box::new(loaded.resources));
     let mut game = Game::new(
-        &loaded.resources,
+        res,
         loaded.pack,
         loaded.gui.unwrap(),
         options,
@@ -50,6 +50,17 @@ fn portal_contact_and_waiting_handoff_match_vanilla_counters() {
                 .insert((x, z), Arc::new(Chunk::empty(x, z)));
         }
     }
+    game
+}
+
+#[test]
+#[ignore = "needs explicit HORIZON_TEST_RESOURCES and HORIZON_PORTAL_REFERENCE"]
+fn portal_contact_and_waiting_handoff_match_vanilla_counters() {
+    let reference: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(std::env::var_os("HORIZON_PORTAL_REFERENCE").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let mut game = game();
     let entry = BlockPos::new(4, 210, 4);
     let portal = game
         .pack
@@ -163,6 +174,51 @@ fn portal_contact_and_waiting_handoff_match_vanilla_counters() {
     }
     for (field, expected) in [("runtime", "contact"), ("handoff", "delays")] {
         assert_eq!(report[field], reference[expected], "{field}");
+    }
+}
+
+/// `Entity.saveWithoutId` writes the live `PortalCooldown` for every entity,
+/// arrows and experience orbs included: a summoned one reads 250 before the
+/// tick that counts it down and 249 after, through the `/data get` writer.
+#[test]
+#[ignore = "needs explicit HORIZON_TEST_RESOURCES"]
+fn arrows_and_orbs_read_the_live_portal_cooldown() {
+    let mut game = game();
+    let mut ids = Vec::new();
+    for (index, kind) in ["minecraft:arrow", "minecraft:experience_orb"]
+        .iter()
+        .enumerate()
+    {
+        let uuid = [11309, 21, 0, index as i32];
+        let tag = Tag::compound([
+            ("id", Tag::String((*kind).into())),
+            ("UUID", Tag::IntArray(uuid.to_vec())),
+            ("Pos", doubles([4.5, 210.0, 4.5])),
+            ("Motion", doubles([0.0, 0.0, 0.0])),
+            ("NoGravity", Tag::Byte(1)),
+            ("PortalCooldown", Tag::Int(250)),
+        ]);
+        game.load_listed(kind, Some(uuid), None, tag).unwrap();
+        ids.push(game.next_entity);
+    }
+    let targets = [Target::Projectile(ids[0]), Target::Orb(ids[1])];
+    for t in targets {
+        let tag = game.entity_nbt(t).unwrap();
+        assert_eq!(counter(&tag), 250, "{t:?}");
+    }
+    game.tickets
+        .update(Some(crate::ticket_levels::Sources::default()));
+    game.tickets.update(Some(crate::ticket_levels::Sources {
+        forced: vec![(0, 0)],
+        ..Default::default()
+    }));
+    assert!(game.entity_ticking_area()(4, 4));
+    // Entity.handlePortal: the arrow in the after-move pass, the orb before.
+    game.handle_entity_portals();
+    game.find_entity_portals();
+    for t in targets {
+        let tag = game.entity_nbt(t).unwrap();
+        assert_eq!(counter(&tag), 249, "{t:?}");
     }
 }
 
