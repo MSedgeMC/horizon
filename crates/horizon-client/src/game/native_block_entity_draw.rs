@@ -570,7 +570,7 @@ impl Game<'_> {
     }
 
     /// Draws `text` under `draw`'s pose as a sign draws its lines
-    /// (`Font.drawInBatch` in a `BlockEntityRenderer`): in the pose's x-y
+    /// (`Font.prepareText` in a `BlockEntityRenderer`): in the pose's x-y
     /// plane, one unit a font pixel, y down, its left end at `at`, facing
     /// +z. Scale the pose first as a sign does (`draw.scale([1.0 / 64.0,
     /// -1.0 / 64.0, 1.0 / 64.0])` for its letters, 8 pixels high). Each span

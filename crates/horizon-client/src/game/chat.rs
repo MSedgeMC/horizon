@@ -2029,7 +2029,7 @@ impl Game<'_> {
         self.snapshot_test_defs();
         self.sync_rules();
     }
-    /// Save the clock beside level.dat (Level.write saves the game rules: a
+    /// Save the clock beside level.dat (`ServerLevel.save` writes the game rules: a
     /// second writer of game_rules.dat could leave it with the rules loaded
     /// when the world opened).
     pub(super) fn save_world_state(&mut self) {

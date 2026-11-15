@@ -197,7 +197,7 @@ impl Game<'_> {
         let key = (registry.to_owned(), type_id.to_owned());
         self.world_tables.as_ref()?.data_maps.maps.get(&key)
     }
-    /// `Holder.getData(type)`: the value the data pack and mod files gave
+    /// `Holder.value()`: the value the data pack and mod files gave
     /// `entry` (`minecraft:coal`) in data map `type_id` for `registry`
     /// (`minecraft:item`, `minecraft:block`), as the JSON the file held. None
     /// when the entry has none, the type isn't registered for that registry

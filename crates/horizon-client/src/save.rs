@@ -8111,7 +8111,7 @@ mod tests {
         };
         assert_eq!(back.recipes_used.get("minecraft:cooked_porkchop"), Some(&3));
     }
-    /// The world's save (Level.write) writes the rules as they are now, and a
+    /// The world's save (`ServerLevel.save`) writes the rules as they are now, and a
     /// world opened again reads them back (#74).
     #[test]
     fn level_save_keeps_changed_rules() {

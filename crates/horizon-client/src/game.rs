@@ -8702,7 +8702,7 @@ impl Game<'_> {
             .player
             .as_ref()
             .map(|p| p.spawn_extra_particles_on_fall);
-        // Level.write saves the game rules (game_rules.dat) with the rest.
+        // `ServerLevel.save` writes the game rules (game_rules.dat) with the rest.
         self.level.game_rules = self.ui.rules.by_name();
         // PrimaryLevelData.setDifficulty: /difficulty and the options button change it.
         self.level.difficulty =
