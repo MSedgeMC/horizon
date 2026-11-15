@@ -23,8 +23,8 @@ JoinMultiplayerScreen.tick	inline	crates/horizon-client/src/multiplayer.rs::Scre
 JoinMultiplayerScreen.removed	port	crates/horizon-client/src/lan/discovery.rs::ScanInner::drop	dropping the list screen drops its scanner, and the drop stops the LAN scan
 JoinMultiplayerScreen.deleteCallback	port	crates/horizon-client/src/multiplayer.rs::Screen::click	delete answer (ids 58, 59) removes the server, clears the selection and saves
 JoinMultiplayerScreen.editServerCallback	port	crates/horizon-client/src/multiplayer.rs::Screen::click	edit save (id 50); the list reloads and re-pings after it
-JoinMultiplayerScreen.addServerCallback	port	crates/horizon-client/src/multiplayer.rs::Screen::click	gap: minor: no hidden-server unhide (ServerList.unhide); add save (id 50, no index)
-JoinMultiplayerScreen.directJoinCallback	port	crates/horizon-client/src/multiplayer.rs::Screen::click	gap: minor: a new address is not saved to the list first, as vanilla does; direct join (id 52) connects
+JoinMultiplayerScreen.addServerCallback	port	crates/horizon-client/src/multiplayer.rs::Screen::click	a saved address brings a hidden entry of the same address back into the list (ServerList.unhide) and saves both lists; add and edit share id 50
+JoinMultiplayerScreen.directJoinCallback	port	crates/horizon-client/src/multiplayer.rs::Screen::click	an address no shown or hidden entry has is saved first as a hidden entry named selectServer.defaultName (remember_direct_join); direct join (id 52) connects
 JoinMultiplayerScreen.keyPressed	port	crates/horizon-client/src/title.rs::Title::refresh_servers	F5 refreshes the server list, wired in game/startup_menu.rs
 JoinMultiplayerScreen.join	port	crates/horizon-client/src/multiplayer.rs::Screen::click	returns Outcome::Connect for the selected server, LAN game or friend invite
 JoinMultiplayerScreen.onSelectedChange	port	crates/horizon-client/src/multiplayer.rs::Screen::buttons	Join enabled with a selection; Edit and Delete only for a saved server
