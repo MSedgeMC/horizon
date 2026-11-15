@@ -40,12 +40,12 @@ ItemEntity.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::
 ItemEntity.getName	inline	crates/horizon-client/src/game/commands.rs::Game::target_name	the command target's name for a dropped item: its saved CustomName, else the stack's `item_name` (minecraft:item_name), else the item's display name
 ItemEntity.teleport	inline	crates/horizon-client/src/entities.rs::merge_with_neighbours	the arrival merge is the normal per-tick merge, not a teleport step
 ItemEntity.getVisualRotationYInDegrees	inline	crates/horizon-client/src/game/item_draw.rs::Game::dropped_item_geometry	spin is applied in radians there; no degree conversion
-ItemEntity.getSlot	port	crates/horizon-client/src/game/commands/items.rs::Game::slot_get	a dropped item is the `contents` slot: `Slot::Item` is read and written by `slot_get`/`slot_set` (ItemEntity.getSlot(0))
+ItemEntity.getSlot	missing		a dropped item is not addressable as an entity slot: `game/commands.rs` has no item entity case
 PrimedTnt.defineSynchedData	skip:other		fuse and block state are struct fields; spawn sets fuse 80; the block is always TNT
 PrimedTnt.explode	inline	crates/horizon-client/src/game/tnt.rs::Game::tick_one_tnt	the power is the tnt's own field (`explosion_power`, 4 by default); gap: minor: no used-portal damage calculator
 PrimedTnt.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::tnt_to_nbt	the fuse and the block state are saved
-PrimedTnt.restoreFrom	port	crates/horizon-client/src/game/tnt.rs::Game::loaded_tnt_owner	`tnt_to_nbt` writes `owner`, `load_tnt` keeps the tag in `persist.raw`, and `loaded_tnt_owner` reads it back for the blast
-PrimedTnt.teleport	inline	crates/horizon-client/src/game/nether_portal.rs::Game::send_through_portal	a portal transfer marks the tnt `used_portal` before the arrival tag is queued; `/tp` sets it too (commands.rs)
+PrimedTnt.restoreFrom	missing		`PrimedTnt` has no owner field, so the igniter is not kept through a dimension change
+PrimedTnt.teleport	missing		`PrimedTnt` carries no used-portal flag and the portal damage calculator is not applied to it
 Blaze.registerGoals	port	crates/horizon-client/src/mobs/nether.rs::register_blaze	gap: minor: MoveTowardsRestriction goal (priority 5) is not registered
 Blaze.createAttributes	skip:data		attribute defaults come from data tables
 Blaze.isCharged	inline	crates/horizon-client/src/mobs/nether.rs::BlazeAttack::tick	the charged state is m.extra.flag, set in the attack goal tick
