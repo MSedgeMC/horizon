@@ -343,10 +343,24 @@ fn load_bitmap(
     if rows.is_empty() || rows[0].is_empty() {
         return out;
     }
-    let cell_w = sw / rows[0].len() as u32;
-    let cell_h = sh / rows.len() as u32;
+    // `BitmapProvider.Definition.validateDimensions`: the sheet is a whole
+    // number of `chars` cells, each at least a pixel. A ragged sheet used to
+    // load with its last column and row cut off instead of being refused.
+    let (cols, lines) = (rows[0].len() as u32, rows.len() as u32);
+    if sw == 0 || sh == 0 || sw % cols != 0 || sh % lines != 0 {
+        log::warn!("font sheet {file} is not {cols} by {lines} equal glyph cells");
+        return out;
+    }
     let height = p["height"].as_f64().unwrap_or(8.0) as f32;
     let ascent = p["ascent"].as_f64().unwrap_or(7.0) as f32;
+    // `BitmapProvider.Definition.validate`: the ascent may not reach past the
+    // height the sheet is scaled to.
+    if ascent > height {
+        log::warn!("font sheet {file} has ascent {ascent} over its height {height}");
+        return out;
+    }
+    let cell_w = sw / cols;
+    let cell_h = sh / lines;
     let scale = height / cell_h as f32;
     let origin = in_atlas.map_or((0, 0), |rect| {
         (
@@ -1613,6 +1627,44 @@ mod tests {
                 "{ns}: the atlas sheet is not copied into the run-time region"
             );
         }
+    }
+
+    /// `BitmapProvider.Definition.validateDimensions` and `validate`: a sheet
+    /// that is not a whole number of `chars` cells, or a definition whose ascent
+    /// reaches past its height, is not loaded; its characters fall through to
+    /// the missing glyph. Both used to load, with the sheet's last column and
+    /// row cut off or with glyphs above the line.
+    #[test]
+    fn a_ragged_or_over_tall_bitmap_definition_is_rejected() {
+        let ragged = br#"{"providers":[{"type":"bitmap","file":"minecraft:font/a.png","ascent":7,"chars":["ab"]}]}"#;
+        let dir = root(
+            "ragged-bitmap",
+            &[
+                ("assets/minecraft/font/default.json", ragged),
+                // 15 px for two 7 px columns leaves one over.
+                (
+                    "assets/minecraft/textures/font/a.png",
+                    &png(15, 8, |x, _| x < 2),
+                ),
+            ],
+        );
+        let font = load(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(font.glyph('a').advance, 6.0, "the missing glyph");
+        let tall = br#"{"providers":[{"type":"bitmap","file":"minecraft:font/a.png","height":8,"ascent":9,"chars":["ab"]}]}"#;
+        let dir = root(
+            "tall-ascent",
+            &[
+                ("assets/minecraft/font/default.json", tall),
+                (
+                    "assets/minecraft/textures/font/a.png",
+                    &png(16, 8, |x, _| x < 2),
+                ),
+            ],
+        );
+        let font = load(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(font.glyph('a').advance, 6.0, "the missing glyph");
     }
 
     #[test]

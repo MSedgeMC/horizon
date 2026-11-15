@@ -146,6 +146,6 @@ BakedSheetGlyph.EffectInstance.right	inline	crates/horizon-client-render/src/hud
 BakedSheetGlyph.EffectInstance.bottom	inline	crates/horizon-client-render/src/hud.rs::HudBatch::text_styled	underline row, 1 px at pen y plus 8
 BakedSheetGlyph.GlyphInstance.activeRight	inline	crates/horizon-client-render/src/hud.rs::HudBatch::text_styled	advance including the bold offset
 SpecialGlyphs.generate	port	crates/horizon-client-render/src/font.rs::Font::white	gap: minor: white texel only; the missing-box outline is drawn in HudBatch::text_styled, not generated
-BitmapProvider.Definition.validateDimensions	missing		minor: no check of the bitmap grid; a ragged grid loads
-BitmapProvider.Definition.validate	missing		minor: no check that ascent is at most height
+BitmapProvider.Definition.validateDimensions	port	crates/horizon-client-render/src/font.rs::load_bitmap	a sheet that is not a whole number of `chars` cells, each at least a pixel, is not loaded (a ragged grid used to load with its edge cut off)
+BitmapProvider.Definition.validate	port	crates/horizon-client-render/src/font.rs::load_bitmap	the definition is rejected when its ascent reaches past its height, before the sheet is read
 BitmapProvider.Definition.getActualGlyphWidth	port	crates/horizon-client-render/src/font.rs::used_width	rightmost column with any visible pixel
