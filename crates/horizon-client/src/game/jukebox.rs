@@ -41,6 +41,25 @@ fn jukebox_playable(
     }
 }
 
+/// The stack's own `jukebox_playable` patch, before the item prototype:
+/// an explicit removal, an inline song definition or a song id.
+pub(super) fn stack_jukebox_playable(
+    record: &ItemStack,
+) -> Option<horizon_client::advancements::JukeboxPlayable> {
+    use horizon_client::advancements::JukeboxPlayable;
+    let data = record.data()?;
+    if data.other("!minecraft:jukebox_playable").is_some() {
+        return Some(JukeboxPlayable::Removed);
+    }
+    match data.other("minecraft:jukebox_playable") {
+        Some(horizon_world::nbt::Tag::String(song)) => {
+            Some(JukeboxPlayable::Song(song.to_string_lossy()))
+        }
+        Some(_) => Some(JukeboxPlayable::Inline),
+        None => None,
+    }
+}
+
 /// `JukeboxSong.fromStack`: the song the disc names, by its id.
 fn song_of_record(record: &ItemStack, items: &horizon_client::items::Items) -> Option<String> {
     jukebox_playable(record, items).flatten()

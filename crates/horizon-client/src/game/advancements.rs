@@ -169,6 +169,16 @@ impl adv::World for View<'_, '_> {
     fn predicate(&self, id: &str) -> Option<&Value> {
         self.0.fns.store.predicates.get(id)
     }
+    /// `Item.Properties`'s `jukebox_playable` component: a music disc's song.
+    fn item_jukebox_playable(&self, item: &str) -> Option<adv::JukeboxPlayable> {
+        self.0
+            .res
+            .items()
+            .get(item)?
+            .jukebox_song
+            .clone()
+            .map(adv::JukeboxPlayable::Song)
+    }
     fn dimension(&self) -> &str {
         self.0.dim.id()
     }
@@ -345,6 +355,7 @@ pub(super) fn item_view(s: &ItemStack) -> ItemView {
         potion: s.potion().map(str::to_owned),
         custom_name: s.custom_name().is_some(),
         custom_data: None,
+        jukebox_playable: super::jukebox::stack_jukebox_playable(s),
     }
 }
 impl Game<'_> {

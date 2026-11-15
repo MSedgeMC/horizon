@@ -639,6 +639,23 @@ pub trait World {
     fn predicate(&self, _id: &str) -> Option<&Value> {
         None
     }
+    /// The item prototype's `jukebox_playable` component (a music disc's
+    /// song), when this context has an item catalog. `None` leaves it
+    /// unresolved in contexts without one.
+    fn item_jukebox_playable(&self, _item: &str) -> Option<JukeboxPlayable> {
+        None
+    }
+}
+/// A stack's `minecraft:jukebox_playable` component as
+/// `JukeboxPlayablePredicate` sees it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum JukeboxPlayable {
+    /// Removed on the stack (`!minecraft:jukebox_playable`): it has none.
+    Removed,
+    /// An inline song definition, which has no registry id to compare.
+    Inline,
+    /// The `jukebox_song` registry id the component names.
+    Song(String),
 }
 /// An item stack as predicates see it.
 #[derive(Clone, Debug, Default)]
@@ -652,6 +669,9 @@ pub struct ItemView {
     /// Typed snapshot for supported mob equipment views. `None` leaves this
     /// family unprojected and unsupported; an empty compound is actual absence.
     pub custom_data: Option<horizon_world::nbt::Tag>,
+    /// The stack's own `minecraft:jukebox_playable` patch; `None` leaves it
+    /// to the item prototype (`World::item_jukebox_playable`).
+    pub jukebox_playable: Option<JukeboxPlayable>,
 }
 /// Query snapshot of supported known movement, in blocks/tick, and actual fall distance.
 #[derive(Clone, Copy, Debug)]
@@ -872,6 +892,23 @@ pub fn item(v: &Value, it: &ItemView, w: &dyn World) -> bool {
     if let Some(d) = keyed(preds, "minecraft:damage").and_then(Value::as_object) {
         let damage = Value::Object(d.clone());
         if !range_i(&damage["damage"], i64::from(it.damage)) {
+            return false;
+        }
+    }
+    // `JukeboxPlayablePredicate` (`SingleComponentItemPredicate`): a stack
+    // without the component never matches; a `song` bounds it to those ids,
+    // which an inline song (no registry key) never has. The stack's own
+    // patch decides first, then the item prototype.
+    if let Some(p) = keyed(preds, "minecraft:jukebox_playable") {
+        let prototype = w.item_jukebox_playable(&it.id);
+        let ok = match it.jukebox_playable.as_ref().or(prototype.as_ref()) {
+            Some(JukeboxPlayable::Inline) => p["song"].is_null(),
+            Some(JukeboxPlayable::Song(id)) => {
+                p["song"].is_null() || id_matches(&p["song"], "jukebox_song", id, w)
+            }
+            Some(JukeboxPlayable::Removed) | None => false,
+        };
+        if !ok {
             return false;
         }
     }
@@ -2092,6 +2129,10 @@ mod tests {
                 || (tag == "minecraft:is_projectile"
                     && matches!(id, "minecraft:fireball" | "minecraft:arrow"))
         }
+        fn item_jukebox_playable(&self, item: &str) -> Option<JukeboxPlayable> {
+            (item == "minecraft:music_disc_cat")
+                .then(|| JukeboxPlayable::Song("minecraft:cat".into()))
+        }
     }
     /// `BlockPredicate.matchesBlockEntity`: an `nbt` test needs a block
     /// entity whose `saveWithFullMetadata` contains the pattern
@@ -2293,6 +2334,50 @@ mod tests {
         // The potion is a registry id too.
         let bare = serde_json::json!({"components": {"minecraft:potion_contents": "swiftness"}});
         assert!(item(&bare, &potion, &Flat));
+    }
+    /// `JukeboxPlayablePredicate.matches` (`SingleComponentItemPredicate`):
+    /// the stack must carry the component, and a `song` bounds it to those
+    /// registry ids, which an inline song definition has none of.
+    #[test]
+    fn a_jukebox_playable_predicate_needs_the_component() {
+        let disc = |patch: Option<JukeboxPlayable>| ItemView {
+            id: "minecraft:music_disc_cat".into(),
+            count: 1,
+            jukebox_playable: patch,
+            ..Default::default()
+        };
+        let any = serde_json::json!({"predicates": {"minecraft:jukebox_playable": {}}});
+        let cat = serde_json::json!({"predicates": {"minecraft:jukebox_playable": {"song": "minecraft:cat"}}});
+        let pigstep = serde_json::json!({"predicates": {"minecraft:jukebox_playable": {"song": "minecraft:pigstep"}}});
+        let cat_disc = disc(Some(JukeboxPlayable::Song("minecraft:cat".into())));
+        // `JukeboxPlayable` may define its song inline; the component is
+        // present, but no registry key names the song.
+        let inline = disc(Some(JukeboxPlayable::Inline));
+        let removed = disc(Some(JukeboxPlayable::Removed));
+        let stone = ItemView {
+            id: "minecraft:stone".into(),
+            count: 1,
+            ..Default::default()
+        };
+        assert!(item(&any, &cat_disc, &Flat));
+        assert!(item(&any, &inline, &Flat));
+        assert!(item(&cat, &cat_disc, &Flat));
+        assert!(!item(&cat, &inline, &Flat));
+        assert!(!item(&pigstep, &cat_disc, &Flat));
+        // A stack without the component fails even the unconstrained
+        // predicate, and so does an explicit removal of it.
+        assert!(!item(&any, &stone, &Flat));
+        assert!(!item(&any, &removed, &Flat));
+        // With no patch the item prototype's component decides: a music disc
+        // is playable though its stack only carries the item id.
+        let plain = ItemView {
+            id: "minecraft:music_disc_cat".into(),
+            count: 1,
+            ..Default::default()
+        };
+        assert!(item(&any, &plain, &Flat));
+        assert!(item(&cat, &plain, &Flat));
+        assert!(!item(&pigstep, &plain, &Flat));
     }
     /// `PassengerPredicate.matches`: ride_a_boat_with_a_goat's vehicle holds a goat.
     #[test]
