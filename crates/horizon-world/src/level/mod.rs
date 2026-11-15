@@ -729,7 +729,7 @@ pub trait LevelAccess {
     fn container_open(&self, _pos: BlockPos) -> bool {
         false
     }
-    /// `ContainerOpenersCounter.recheckOpeners` for the chest or ender chest
+    /// `ContainerOpenersCounter.recheckOpenCount` for the chest or ender chest
     /// block entity at `pos`: recounts its openers and returns the previous
     /// and new counts (the caller plays open/close effects when they change),
     /// or None when there is no such block entity.
