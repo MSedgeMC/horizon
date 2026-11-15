@@ -103,7 +103,7 @@ LivingEntity.wouldNotSuffocateAtTargetPose	port	crates/horizon-client/src/pose.r
 LivingEntity.canUsePortal	port	crates/horizon-client/src/game/nether_portal.rs::Game::mob_can_use_portal	gap: minor: a sleeping mob is not excluded
 LivingEntity.setPosToBed	port	crates/horizon-client/src/mobs/villager.rs::start_sleeping	x and z at the bed's centre, y 0.6875 above its base (sleep height plus 0.125)
 LivingEntity.entityEventForEquipmentBreak	inline	crates/horizon-client/src/mobs/item_break.rs::equipment_break_event	the slot-to-event table itself; a mob's worn armour that breaks broadcasts 49 to 52 and 65 (Game::hurt_mob_armor, #5317) and a player's hands, armour and shield reach every client through onEquippedItemBroken (#5392)
-LivingEntity.onEquippedItemBroken	inline	crates/horizon-client/src/game/item_durability.rs::Game::damage_held	gap: minor: the stack is cleared and modifiers rebuilt, but no break event is broadcast
+LivingEntity.onEquippedItemBroken	inline	crates/horizon-client/src/game/item_durability.rs::Game::damage_held	the stack is cleared; the broken statistic is awarded and the break entity event is sent to the guests and nearby players (`player_equipment_broke`)
 LivingEntity.stopLocationBasedEffects	inline	crates/horizon-client/src/game/player_equip.rs::Game::apply_equipment	all applied modifiers are dropped and re-added from what is worn
 LivingEntity.getEquipmentSlotForItem	inline	crates/horizon-client/src/game/mob_gear.rs::Game::equip_from_table	resolveSlot: the item's equip_slot, else the main hand
 LivingEntity.createEquipmentSlotAccess	inline	crates/horizon-client/src/game/commands/items.rs::Game::slots_named	/item slot names such as armor.head and weapon.mainhand
@@ -119,7 +119,7 @@ Mob.getControllingPassenger	inline	crates/horizon-client/src/mobs/riders.rs::con
 Mob.asValidTarget	port	crates/horizon-client/src/mobs/monster_brain.rs::can_attack	creative and spectator players are never valid; goal mobs use goals.rs Mob::can_target_player
 Mob.spawnAnim	port	crates/horizon-client/src/game/spawner.rs::Game::poof_particles	the poof of a mob a spawner made (event 20 on a server's client)
 Mob.updateControlFlags	inline	crates/horizon-client/src/mobs/riders.rs::drive	a controlled rider disables MOVE, JUMP and LOOK (and TARGET for a ravager) through the goal flags `drive` sets
-Mob.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	gap: minor: drop_chances and DeathLootTable survive only from the loaded raw tag
+Mob.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	drop_chances writes only the non-default chances; DeathLootTable and DeathLootTableSeed are written from the mob's fields
 Mob.burnUndead	inline	crates/horizon-client/src/mobs/ai.rs::ai_step	burn_undead sends SunProtectionWear for an undead with its sun-protection item, and Game::wear_sun_protection does hurtAndBreak(nextInt(2)) on a damageable one, emptying the slot with the break event when it breaks; an unprotected undead is ignited for 160 ticks
 Mob.pickUpItem	port	crates/horizon-client/src/mobs/equip.rs::Slot::wants_to_pick_up	ticked in #3514; `Mob.pickUpItem` is cited at crates/horizon-client/src/mobs/equip.rs:211
 Mob.attemptToShearEquipment	port	crates/horizon-client/src/game/mounts.rs::Game::shear_saddle	a saddle comes off any saddleable mob before its mobInteract (an occupied mount is skipped); happy ghast harness and llama carpet remain in their adapters; gap: minor: other equipment slots and component overrides are not generalized
@@ -145,8 +145,8 @@ Mob.removeAfterChangingDimensions	inline	crates/horizon-client/src/game/nether_p
 Mob.onAttributeUpdated	missing		minor: follow_range set at runtime does not resize the pathfinder's visited-node cap (set once in Mob::new)
 Mob.registerDebugValues	skip:debug		debug overlay values
 Mob.swingForAttack	port	crates/horizon-client/src/mobs/ai.rs::Mob::swing_hand_modified	swing duration with haste, conduit power and mining fatigue
-NeutralMob.addPersistentAngerSaveData	port	crates/horizon-client/src/mobs/bee.rs::to_nbt	gap: minor: anger_end_time only; angry_at (the target's UUID) is not saved, and wolves and polar bears keep a tick counter instead
-NeutralMob.readPersistentAngerSaveData	port	crates/horizon-client/src/mobs/bee.rs::from_nbt	gap: minor: anger_end_time only; angry_at is not read, so a reloaded angry bee picks its target again
+NeutralMob.addPersistentAngerSaveData	port	crates/horizon-client/src/mobs/bee.rs::to_nbt	anger_end_time and angry_at (the target's UUID) are written; a mob target the level has not loaded keeps its loaded UUID
+NeutralMob.readPersistentAngerSaveData	port	crates/horizon-client/src/mobs/bee.rs::from_nbt	anger_end_time and angry_at are read back; a non-player UUID becomes Who::Mob(0) until the level resolves it
 NeutralMob.isAngryAtAllPlayers	inline	crates/horizon-client/src/mobs/tame.rs::angry_at_player	the universal_anger rule on, anger left and no persistent target angers the mob at any player
 NeutralMob.playerDied	port	crates/horizon-client/src/mobs/ai.rs::forgive_dead_player	ticked in #3514; `NeutralMob.playerDied` is cited at crates/horizon-client/src/mobs/ai.rs:2334
 OminousItemSpawner.tick	port	crates/horizon-client/src/game/ominous_item_spawner.rs::Game::tick_ominous_item_spawners	count, then server and client parts
