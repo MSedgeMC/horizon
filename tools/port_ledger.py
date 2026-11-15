@@ -28,7 +28,8 @@ method-by-method reading misses:
   0.30000001192092896) as the double 0.3;
 - drift: a port that never names what its vanilla method uses: a sound, particle, item, block, effect or
   game event, or a rare number (a missing sound or a changed constant);
-- stale: a citation whose class or method doesn't exist in the pinned version;
+- stale: a citation whose own vanilla class exists but whose method doesn't (a rename candidate);
+  a class the pinned version has never heard of is skipped, not reported;
 - unported: vanilla methods with no port, ranked by how many vanilla methods call them.
 
     python3 tools/port_ledger.py build                         # index into .local/port-ledger/ledger.json
@@ -1298,8 +1299,11 @@ def build(sources, jars, jobs):
                             continue
                     cp = van.resolve(cls_name)
                     if not cp:
-                        if member and sum(ch.isupper() for ch in cls_name) >= 1 and len(cls_name) > 3 and cls_name not in ("Self", "Some", "None", "Ok", "Err", "Vec", "Option", "Result", "String", "Box", "Arc", "Rc", "HashMap", "HashSet", "BTreeMap"):
-                            stale.append({"what": "class", "cite": f"{cls_name}.{member}", "file": f["file"], "line": line})
+                        # Only the pinned version can call a citation stale. An unknown class is no evidence
+                        # of a rename: Java's Math/Number/UUID, JOML's Matrix4f/Quaternion, authlib and
+                        # Horizon's own types (Ranges, Game, its snake_case helpers) are not vanilla 26.3
+                        # classes, so citing one says nothing about whether vanilla had it. When its class
+                        # is in the index but the method is not, the method is a real rename candidate.
                         continue
                     if not member:
                         if sum(ch.isupper() for ch in cls_name.split(".")[-1]) >= 2:

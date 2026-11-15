@@ -78,6 +78,59 @@ class PortLedgerJarOnlyTests(unittest.TestCase):
                         self.assertIn("Child.missing", stale)
 
 
+class PortLedgerStaleScanTests(unittest.TestCase):
+    """A citation is stale only when its own vanilla class exists but the method does not."""
+
+    SOURCES = {
+        "net/minecraft/test/SimplexNoise.java": """package net.minecraft.test;
+public class SimplexNoise {
+   public double get(final double x, final double y) { return 0.0; }
+}
+""",
+        "net/minecraft/world/level/gameevent/vibrations/VibrationSystem.java":
+            """package net.minecraft.world.level.gameevent.vibrations;
+public interface VibrationSystem {
+   class Listener {
+      boolean present() { return false; }
+   }
+}
+""",
+    }
+    RUST = """/// Math.max for the bounds.
+fn a() {}
+/// Ranges.margins for the viewport.
+fn b() {}
+/// SimplexNoise.getValue, which 1.21 had; 26.3 spells it get.
+fn c() {}
+/// VibrationSystem.Listener.isOccluded for the allay.
+fn d() {}
+/// VibrationSystem.Listener.present does exist.
+fn e() {}
+"""
+
+    def test_only_a_known_vanilla_class_makes_a_citation_stale(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            sources = root / "sources"
+            for rel, text in self.SOURCES.items():
+                source = sources / rel
+                source.parent.mkdir(parents=True, exist_ok=True)
+                source.write_text(text, encoding="utf-8")
+            rust = root / "crates/example/src/lib.rs"
+            rust.parent.mkdir(parents=True)
+            rust.write_text(self.RUST, encoding="utf-8")
+            out = root / "output"
+            with mock.patch.multiple(port_ledger, ROOT=root, OUT=out, LEDGER=out / "ledger.json",
+                                     MAP_DIR=root / "maps", ORACLE_DIR=root / "oracles",
+                                     ProcessPoolExecutor=ThreadPoolExecutor), \
+                    mock.patch.object(port_ledger, "rust_files", return_value=["crates/example/src/lib.rs"]):
+                result = port_ledger.build([str(sources)], [], 1)
+                stale = {g["cite"] for g in result["gaps"] if g["kind"] == "stale"}
+                # Math (JDK) and Ranges (Horizon) are not vanilla classes, so no rename is implied;
+                # SimplexNoise.getValue and the nested VibrationSystem.Listener.isOccluded are real.
+                self.assertEqual(stale, {"SimplexNoise.getValue", "VibrationSystem.Listener.isOccluded"})
+
+
 class PortLedgerCliTests(unittest.TestCase):
     """--json is read the same before or after the query's name (port_ledger.py's docstring)."""
 
