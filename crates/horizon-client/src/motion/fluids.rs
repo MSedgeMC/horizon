@@ -212,7 +212,7 @@ pub fn bubble_column_surfaces(
     });
     surfaces
 }
-/// Every bubble column block the box touches (`Entity.getInsideBlockPoints`).
+/// Every bubble column block the box touches.
 fn bubble_columns_touching(
     world: &World,
     registry: &horizon_world::registry::BlockRegistry,

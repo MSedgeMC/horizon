@@ -263,7 +263,7 @@ impl Game<'_> {
         let uuid = uuid_from_text(name).filter(|_| name.len() == 36)?;
         self.target_with_uuid(uuid)
     }
-    /// `Entity.getTags` (the `Tags` list of the saved entity).
+    /// The saved tag list of the entity.
     pub(super) fn tags_of(&self, t: Target) -> Vec<String> {
         let raw = match t {
             Target::Mob(id)

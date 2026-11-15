@@ -49,7 +49,7 @@ pub fn register(m: &mut Mob) {
     m.set_required_path_length(48.0);
 }
 
-/// `LivingEntity.addParticlesAroundSelf`: five particles about the body.
+/// Five particles about the body.
 pub fn particles_around(m: &mut Mob, kind: &'static str, events: &mut Vec<MobEvent>) {
     let (w, h) = (f64::from(m.width()), f64::from(m.height()));
     for _ in 0..5 {

@@ -239,7 +239,7 @@ impl Game<'_> {
     /// `Minecraft.reloadResourcePacks`: rebuild the overlay and reload every
     /// client resource from it, as vanilla's reload listeners do: block
     /// models and sprites (every section is meshed again,
-    /// `LevelRenderer.allChanged`), the shared atlas (GUI, item, entity,
+    /// the renderer is reloaded), the shared atlas (GUI, item, entity,
     /// particle and font textures), item models, sounds, languages, GUI
     /// metadata and the cloud and world border textures. The loading runs on
     /// a worker under the progress overlay (`LoadingOverlay` over

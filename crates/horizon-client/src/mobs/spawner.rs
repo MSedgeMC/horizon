@@ -244,7 +244,7 @@ pub trait SpawnerLevel: NaturalLevel {
     fn alive_player_near(&self, x: f64, y: f64, z: f64, range: f64) -> bool;
     /// The `spawner_blocks_work` game rule.
     fn spawner_blocks_work(&self) -> bool;
-    /// `EntityType.byString`: the entity type exists.
+    /// The entity type exists.
     fn entity_exists(&self, id: &str) -> bool;
     /// Entities of the exact class of `id` whose box meets `bounds`.
     fn count_entities(&self, id: &str, bounds: Aabb) -> usize;

@@ -500,7 +500,7 @@ fn submit_quads(
                 translucent
             }
         };
-        // Every item render type culls back faces: `Sheets.solidBlockSheet`
+        // Every item render type culls back faces: the solid block sheet
         // (`entitySolid`), `cutoutBlockSheet` (`entityCutout`) and
         // `translucentItemSheet` (`entityTranslucentCull`). Drawing both sides
         // z-fights the coplanar pairs a two-sided model already carries (a

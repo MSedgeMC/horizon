@@ -479,7 +479,7 @@ impl Game<'_> {
 
     /// Loads a saved `attributes` list (the compound's, as
     /// `native_player_compound` gives it) onto the player `uuid`, as
-    /// vanilla's `AttributeMap.load` reads a player's file: each listed
+    /// vanilla reads a player's file: each listed
     /// attribute takes its base and permanent modifiers, unknown ones are
     /// skipped, the others stay. A lower `max_health` caps their health.
     /// False for anything but a list, and for a player not reached or dead.
