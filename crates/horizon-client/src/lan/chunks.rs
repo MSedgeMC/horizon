@@ -38,6 +38,10 @@ pub fn block_entity_type(name: &str) -> Option<&'static str> {
     let n = name.strip_prefix("minecraft:")?;
     Some(match n {
         "chest" => "minecraft:chest",
+        // BlockEntityType.CHEST covers copper chests too: their block entity
+        // id is `minecraft:chest` (containers::BlockEntity::Chest), and a
+        // client draws them through the chest renderer.
+        n if n.ends_with("copper_chest") => "minecraft:chest",
         "trapped_chest" => "minecraft:trapped_chest",
         "ender_chest" => "minecraft:ender_chest",
         "barrel" => "minecraft:barrel",
@@ -1572,6 +1576,15 @@ mod tests {
         assert_eq!(
             block_entity_type("minecraft:red_shulker_box"),
             Some("minecraft:shulker_box")
+        );
+        // Copper chests share the chest block entity type (BlockEntityType.CHEST).
+        assert_eq!(
+            block_entity_type("minecraft:copper_chest"),
+            Some("minecraft:chest")
+        );
+        assert_eq!(
+            block_entity_type("minecraft:waxed_oxidized_copper_chest"),
+            Some("minecraft:chest")
         );
         assert_eq!(block_entity_type("minecraft:stone"), None);
     }
