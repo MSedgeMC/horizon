@@ -1945,15 +1945,15 @@ impl<R: RandomSource> Context<'_, R> {
                 }
                 let id = "minecraft:container";
                 stack.components.retain(|(k, _)| k != id);
-                if !contents.is_empty() {
-                    let slots = contents
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, stack)| !stack.is_empty())
-                        .map(|(slot, stack)| {
-                            serde_json::json!({"slot": slot, "item": container_item(stack)})
-                        })
-                        .collect();
+                let slots: Vec<Value> = contents
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, stack)| !stack.is_empty())
+                    .map(|(slot, stack)| {
+                        serde_json::json!({"slot": slot, "item": container_item(stack)})
+                    })
+                    .collect();
+                if !slots.is_empty() {
                     stack.components.push((id.to_owned(), Value::Array(slots)));
                 }
             }
