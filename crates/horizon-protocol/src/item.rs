@@ -943,7 +943,7 @@ fn older_layout(kind: i32, r: &mut Reader) -> Result<Older> {
     use component::*;
     let quirks = ids::quirks();
     Ok(match kind {
-        // EitherHolder.streamCodec: ByteBufCodecs.either(the holder, its ResourceKey), a flag set for the
+        // ByteBufCodecs.either(the holder, its ResourceKey), a flag set for the
         // holder, which then reads as the pinned one does. A key names an entry of the server's registry
         // that the pinned holder can't point to without its numbering.
         DAMAGE_TYPE
@@ -1144,7 +1144,7 @@ fn write_slot(v: Option<&Stack>, w: &mut Writer) {
 /// A component value as the version being written for reads it. Values kept as their pinned bytes that hold
 /// items (a pot's sides, a container's slots, a use remainder) are read again and written with that
 /// version's item ids, and a pot's sides as 26.2's item ids when it reads them so
-/// ([`ids::Quirks::pot_decorations_are_items`]). Written as they are when nothing is renumbered.
+/// (the `pot_decorations_are_items` quirk). Written as they are when nothing is renumbered.
 fn write_value(kind: i32, c: &Component, w: &mut Writer) {
     use component::*;
     let quirks = ids::quirks_written();
