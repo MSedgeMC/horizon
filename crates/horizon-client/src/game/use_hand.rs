@@ -115,11 +115,11 @@ impl Game<'_> {
                 respawn_anchor::AnchorUse::Pass => anchor_passed = true,
                 respawn_anchor::AnchorUse::Other => {}
             }
-            // SignBlock.useItemOn, on a ceiling sign's underside or a
-            // wall sign's edge: the hanging sign in hand chains a new sign
-            // there, so the block's own use is skipped, unless the side the
-            // player faces has click commands to run
-            // (`shouldTryToChainAnotherHangingSign`).
+            // CeilingHangingSignBlock.useItemOn (and the wall variant), on a
+            // ceiling sign's underside or a wall sign's edge: the hanging sign
+            // in hand chains a new sign there, so the block's own use is
+            // skipped, unless the side the player faces has click commands to
+            // run (`shouldTryToChainAnotherHangingSign`).
             let chains_sign = self.chains_hanging_sign(hit.pos, hit.face, held.as_ref());
             // TRY_WITH_EMPTY_HAND: only the main hand's turn uses the block
             // itself (useWithoutItem).
