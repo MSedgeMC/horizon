@@ -1857,7 +1857,9 @@ impl<R: RandomSource> Context<'_, R> {
             // colours, no trail or twinkle) when it has none. The function
             // names its booleans `trail` and `twinkle`, the component writes
             // them `has_trail` and `has_twinkle`; a shape its codec does not
-            // know is left off, as the table would not load.
+            // know is left off, as the table would not load. The codec reads
+            // `shape` as a required field, so the written component always
+            // carries one, the default small ball when nothing named it.
             "minecraft:set_firework_explosion" => {
                 let id = "minecraft:firework_explosion";
                 let mut content = stack
@@ -1870,8 +1872,7 @@ impl<R: RandomSource> Context<'_, R> {
                 let Value::Object(map) = &mut content else {
                     unreachable!("an object above")
                 };
-                const SHAPES: [&str; 5] =
-                    ["small_ball", "large_ball", "star", "creeper", "burst"];
+                const SHAPES: [&str; 5] = ["small_ball", "large_ball", "star", "creeper", "burst"];
                 if let Some(shape) = f["shape"].as_str()
                     && SHAPES.contains(&shape)
                 {
@@ -1893,6 +1894,12 @@ impl<R: RandomSource> Context<'_, R> {
                         None => {}
                     }
                 }
+                // `FireworkExplosion.CODEC` reads `shape` as a required
+                // field (`fieldOf("shape")`), so a component without one
+                // would not read back; `DEFAULT_VALUE` starts from a small
+                // ball, so that is what a function that names no shape leaves.
+                map.entry("shape".to_owned())
+                    .or_insert_with(|| Value::String("small_ball".to_owned()));
                 stack.components.retain(|(k, _)| k != id);
                 stack.components.push((id.to_owned(), content));
             }
@@ -3297,10 +3304,8 @@ mod firework_explosion_function_tests {
 
     /// A firework star whose item modifiers are `modifiers`, rolled once.
     fn stack(name: &str, modifiers: &str) -> LootStack {
-        let root = std::env::temp_dir().join(format!(
-            "loot-firework-{name}-{}",
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("loot-firework-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let dir = root.join("data/minecraft/loot_table");
         std::fs::create_dir_all(&dir).unwrap();
@@ -3311,13 +3316,7 @@ mod firework_explosion_function_tests {
         std::fs::write(root.join("items.json"), "{}").unwrap();
         let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
         let _ = std::fs::remove_dir_all(&root);
-        let mut stacks = data.roll(
-            "minecraft:test",
-            &mut LegacyRandom::new(1),
-            0.0,
-            None,
-            None,
-        );
+        let mut stacks = data.roll("minecraft:test", &mut LegacyRandom::new(1), 0.0, None, None);
         assert_eq!(stacks.len(), 1, "{stacks:?}");
         stacks.remove(0)
     }
@@ -3331,12 +3330,30 @@ mod firework_explosion_function_tests {
             .expect("the firework_explosion component")
     }
 
+    /// The fields `FireworkExplosion.CODEC` reads: `shape` is required
+    /// (`fieldOf("shape")`), the other four have codec defaults. Reading a
+    /// written component back through it proves the component is readable.
+    #[allow(dead_code)]
+    #[derive(serde::Deserialize)]
+    struct ExplosionCodec {
+        shape: String,
+        #[serde(default)]
+        colors: Vec<i32>,
+        #[serde(default)]
+        fade_colors: Vec<i32>,
+        #[serde(default)]
+        has_trail: bool,
+        #[serde(default)]
+        has_twinkle: bool,
+    }
+
     /// `SetFireworkExplosionFunction`: only the fields the function names
     /// replace the component's, or `FireworkExplosion.DEFAULT`'s when the
     /// stack had none. `trail` and `twinkle` are the component's `has_trail`
     /// and `has_twinkle`; a shape the codec knows replaces the old one and
     /// one it does not leaves it; without the function the component is the
-    /// earlier function's.
+    /// earlier function's. The component always has a `shape`, as
+    /// `FireworkExplosion.CODEC` requires the field.
     #[test]
     fn the_function_updates_only_the_explosion_fields_it_names() {
         // No component before: the named fields, the rest FireworkExplosion.DEFAULT.
@@ -3348,6 +3365,21 @@ mod firework_explosion_function_tests {
             got,
             serde_json::json!({"shape": "creeper", "has_twinkle": true})
         );
+        // A table that names only colours: the component starts from
+        // FireworkExplosion.DEFAULT, so it carries the small ball, and it
+        // reads back through the codec.
+        let got = component(&stack(
+            "colors_only",
+            r#"{"type":"minecraft:set_firework_explosion","colors":[255,65280]}"#,
+        ));
+        assert_eq!(
+            got,
+            serde_json::json!({"shape": "small_ball", "colors": [255, 65280]})
+        );
+        let read: ExplosionCodec = serde_json::from_value(got)
+            .expect("the component reads back through FireworkExplosion.CODEC");
+        assert_eq!(read.shape, "small_ball");
+        assert_eq!(read.colors, [255, 65280]);
         // An earlier component: its shape and trail stay, the colours and
         // fade colours are replaced, twinkle is cleared.
         let got = component(&stack(
