@@ -135,12 +135,12 @@ EquipmentSlot.isArmor	port	crates/horizon-client/src/mobs/equip.rs::Slot::is_arm
 EquipmentSlot.byName	skip:data		slot names are read as strings from data and NBT
 EquipmentSlotGroup.bySlot	inline	crates/horizon-client/src/game/lan_attributes.rs::slot_in_group	a slot is its own group, so the test is group == slot
 EquipmentTable.createForAllSlots	skip:data		drop chances come from the loot and entity data
-ExperienceOrb.<init>	port	crates/horizon-client/src/game/item_entities.rs::Game::add_orb	random yaw and motion from the orb's own random; gap: minor: no rough direction offset and no unstuck when the orb spawns inside a block
+ExperienceOrb.<init>	port	crates/horizon-client/src/game/item_entities.rs::Game::add_orb_toward	the orb starts 0.25 along the rough direction, unstuck out of a block, then gets a random motion that is turned round when it points against the direction
 ExperienceOrb.unstuckIfPossible	port	crates/horizon-client/src/entities.rs::ExperienceOrb::unstuck	an orb spawned with its box inside blocks moves to the nearest free position (find_free_position over the border), run by the spawn path
-ExperienceOrb.awardWithDirection	port	crates/horizon-client/src/game/item_entities.rs::Game::spawn_orbs	gap: minor: the rough direction is never given, so xp bottle orbs do not fly away from the surface they hit
+ExperienceOrb.awardWithDirection	port	crates/horizon-client/src/game/item_entities.rs::Game::spawn_orbs_toward	`spawn_orbs_toward` passes the rough direction to `add_orb_toward`, so an orb from an experience bottle flies away from the face it hit
 ExperienceOrb.setUnderwaterMovement	port	crates/horizon-client/src/entities.rs::ExperienceOrb::set_underwater_movement	widened float arithmetic; gap: minor: caller still tests the block at the orb's feet, not its eyes
 ExperienceOrb.hurtServer	port	crates/horizon-client/src/entities.rs::ExperienceOrb::hurt	ticked in #3514; `ExperienceOrb.hurtServer` is cited at crates/horizon-client/src/entities.rs:538
-ExperienceOrb.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::orb_to_nbt	gap: minor: Health is always written as 5
-ExperienceOrb.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::orbs_from_nbt	gap: minor: Health is ignored
+ExperienceOrb.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::orb_to_nbt	Health is written from the orb's own health field
+ExperienceOrb.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::orbs_from_nbt	Health is read back, five when the tag has none
 HumanoidArm.getOpposite	inline	crates/horizon-client/src/game/frame_geometry.rs::Game::hand_geometry	the main hand's side is main_hand_left; the off hand is the other side
 InsideBlockEffectApplier.StepBasedCollector.flushStep	port	crates/horizon-client/src/arrows.rs::Collector::flush	gap: minor: the arrow collector has four effects (clear freeze, fire, lava, extinguish); the player's collector sits in motion.rs check_inside_blocks
