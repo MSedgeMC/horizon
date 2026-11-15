@@ -1919,9 +1919,12 @@ impl<R: RandomSource> Context<'_, R> {
                     .find(|(k, _)| k == id)
                     .map(|(_, v)| v)
                     .filter(|v| v.is_object());
+                // The rocket's default component is Fireworks(1, []): a
+                // table that names only explosions keeps flight 1.
+                let default_flight = u8::from(stack.item == "minecraft:firework_rocket");
                 let old_flight = old
                     .and_then(|v| v["flight_duration"].as_u64())
-                    .unwrap_or(0)
+                    .unwrap_or(u64::from(default_flight))
                     .min(255) as u8;
                 let old_explosions = old
                     .and_then(|v| v["explosions"].as_array().cloned())
@@ -2695,6 +2698,27 @@ mod namespace_tests {
         assert_eq!(
             component["explosions"],
             serde_json::json!([{"shape": "creeper", "colors": [65280], "fade_colors": [255], "has_trail": true, "has_twinkle": true}])
+        );
+        // A plain rocket starts from the item's default Fireworks(1, []).
+        fs::write(
+            root.join("data/minecraft/loot_table/chests/fireworks.json"),
+            r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:firework_rocket",
+                "modifier": [{"type": "minecraft:set_fireworks", "explosions": {"mode": "append", "values": [{"shape": "ball", "colors": [1]}]}}]}]}]}"#,
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/fireworks", 9, 27, None);
+        let rocket = filled.iter().flatten().next().expect("a firework rocket");
+        let component = rocket
+            .components
+            .iter()
+            .find(|(k, _)| k == "minecraft:fireworks")
+            .map(|(_, v)| v)
+            .expect("the fireworks component");
+        assert_eq!(component["flight_duration"], 1);
+        assert_eq!(
+            component["explosions"],
+            serde_json::json!([{"shape": "ball", "colors": [1]}])
         );
         let _ = fs::remove_dir_all(&root);
     }
