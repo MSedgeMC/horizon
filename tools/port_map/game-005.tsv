@@ -10,7 +10,7 @@ Entity.setRot	skip:other		plain setter; yaw and pitch are struct fields and the 
 Entity.reapplyPosition	skip:other		bounding boxes are built from the position on demand (Mob::bounds_at), so there is no cached box to refresh
 Entity.commonTick	inline	crates/horizon-client/src/mobs/ai.rs::tick	previous position and rotations saved and age counted; invulnerable time counts down in base_tick; remote mobs do the same in tick_remote_entities
 Entity.computeSpeed	port	crates/horizon-client/src/mobs/ai.rs::tick	`Mob.known_speed` is the position minus the previous one; gap: minor: mobs only, the player keeps no lastKnownSpeed
-Entity.setSharedFlagOnFire	inline	crates/horizon-client/src/game/lan.rs::mob_meta	gap: minor: flag 0x01 is fire_ticks > 0, packed only when a mob goes to LAN guests; HasVisualFire is not read
+Entity.setSharedFlagOnFire	inline	crates/horizon-client/src/game/lan.rs::mob_meta	flag 0x01 is fire_ticks > 0 for a mob, packed only when it goes to LAN guests; a fireball's synced fire is `fire_ticks > 0 || has_visual_fire` (`projectiles::Projectile::tick`) and a remote projectile's flag is read in `remote_projectiles`
 Entity.isSupportedBy	inline	crates/horizon-client/src/game/piston_push.rs::Game::push_body	supporting block equal to the piston's block decides whether the body rides it
 Entity.getBlockBounciness	port	crates/horizon-world/src/movement_restitution.rs::restitute_movement	mobs bind it too through crates/horizon-client/src/mobs/living.rs::MobRestitution::block_bounce_restitution, so a mob landing on a slime block or bed bounces
 Entity.addMovementThisTick	port	crates/horizon-world/src/entity_move.rs::MovementHistory::add	the 100 record cap merges the first two (MovementHistory); only the player keeps a history, mobs and arrows sweep from the start to the end of their move
@@ -43,7 +43,7 @@ Entity.shouldRender	port	crates/horizon-client/src/game/entity_culling.rs::Game:
 Entity.saveAsPassenger	port	crates/horizon-client/src/game/persist.rs::Game::mob_tree_nbt	a mob with its riders nested under Passengers; players and unsaved types are skipped
 Entity.getEncodeId	inline	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	the id written is the mob type's id
 Entity.dropAllLeashConnections	port	crates/horizon-client/src/game/leads.rs::Game::drop_all_leash_connections	FireworkRocketItem.use while gliding; dispenser shears still drop through Game::shear_off_leashes
-Entity.canCollideWith	inline	crates/horizon-client/src/game/ghasts.rs::Game::player_entity_collisions	gap: player: the entities a player cannot walk through are boats and happy ghasts only; a live shulker (canBeCollidedWith) is not solid, so the player walks through it
+Entity.canCollideWith	inline	crates/horizon-client/src/game/ghasts.rs::Game::player_entity_collisions	a player cannot walk through boats, a live shulker, or a happy ghast held still under someone; a dead shulker is not solid
 Entity.getDefaultPassengerAttachmentPoint	inline	crates/horizon-client/src/mobs/riders.rs::passenger_attachment	one point per vehicle, so the passenger index is always 0; default is the top of the box
 Entity.ejectPassengers	port	crates/horizon-client/src/game/boat_passengers.rs::Game::eject_boat_mobs	gap: minor: boats place riders at the dismount spot; when a mob vehicle dies sync_riders only lets go and the rider stays where it was seated
 Entity.removeVehicle	port	crates/horizon-client/src/game/sculk.rs::Game::mount_events	`startRiding`/`removeVehicle`: `entity_mount` at the new vehicle and `entity_dismount` at the old one, derived from the vehicle the rider had last tick, for players and mobs
@@ -72,7 +72,7 @@ Entity.fillCrashReportCategory	skip:debug		crash report detail
 Entity.teleportPassengers	inline	crates/horizon-client/src/game/passengers.rs::Game::position_riders	riders and riders of riders are seated again each tick
 Entity.teleportRelative	port	crates/horizon-client/src/landing.rs::MotionWorld::teleport_relative	gap: minor: only the player is lifted out of a block that turns solid; mobs are lifted by trample_farmland, dropped items and boats are not
 Entity.fixupDimensions	inline	crates/horizon-client/src/mobs/living.rs::Mob::dims	dimensions are worked out on each call from size, age and pose, so there is nothing to refresh after a slime resize
-Entity.createHoverEvent	inline	crates/horizon-client/src/game/lan_trading.rs::Game::merchant_display_name	gap: minor: only players and merchants get the show_entity hover in chat; other mobs' names have none
+Entity.createHoverEvent	inline	crates/horizon-client/src/game/commands/display_names.rs::Game::mob_command_name	a mob's command display name carries a show_entity hover of its type, UUID and name, and a UUID insertion; a player chat name gets the same hover from `lan/hub.rs::display_name`
 Entity.getInterpolatedBoundingBox	port	crates/horizon-client/src/game/entity_culling.rs::Game::standing_entity_in_view	the box is moved to the interpolated position for culling
 Entity.getFirstPassenger	inline	crates/horizon-client/src/game/passengers.rs::Game::sync_riders	gap: minor: one rider id per mob vehicle (extra.rider), not a list
 Entity.hasPassenger	inline	crates/horizon-client/src/game/passengers.rs::Game::sync_riders	gap: minor: one rider id per mob vehicle (extra.rider); the player's vehicle is Game.riding
@@ -98,7 +98,7 @@ Entity.applyImplicitComponents	port	crates/horizon-client/src/game/armor_stands.
 Entity.applyImplicitComponent	inline	crates/horizon-client/src/entity_nbt.rs::apply_item_components	the stack's components (name, bucket data, variant, trim...) applied to the entity it spawns
 Entity.applyImplicitComponentIfPresent	inline	crates/horizon-client/src/entity_nbt.rs::apply_item_components	each component is applied only when the stack carries it
 EntityAttachments.scale	inline	crates/horizon-client/src/mobs/riders.rs::passenger_attachment	the vehicle attachment point is multiplied by the mob's minecraft:scale and the rider's own offset by its scale (vehicle_attachment); a baby hoglin and the avatars have their own points
-EntityAttachments.getNullable	inline	crates/horizon-client/src/game/names.rs::Game::name_tags	gap: minor: only the NAME_TAG default (0.5 above the height) is used, so a sniffer's tag (offset 2.05) sits 0.2 too high
+EntityAttachments.getNullable	inline	crates/horizon-client/src/mobs/living.rs::Mob::name_tag_height	the tag hangs 0.5 above the attachment: a mob's height, or the sniffer's 2.05 (1.35 while digging) times its age scale and model scale
 EntityAttachments.get	inline	crates/horizon-client/src/mobs/riders.rs::passenger_attachment	the point is always found: the species table or the top of the box
 EntityAttachments.getAverage	inline	crates/horizon-client/src/mobs/riders.rs::passenger_attachment	gap: minor: one point; a sheared harness or sulfur cube item spawns at the mob's centre or box top rather than at the average passenger point
 EntityAttachments.getClamped	inline	crates/horizon-client/src/mobs/riders.rs::seat	the point turned by the vehicle's yaw and added to its position
