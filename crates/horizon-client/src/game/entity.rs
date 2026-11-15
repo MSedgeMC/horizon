@@ -1016,6 +1016,7 @@ impl Game<'_> {
             .chain(self.fangs.list.iter().map(|e| e.id))
             .chain(self.crystals.iter().map(|e| e.id))
             .chain(self.dragon.iter().map(|e| e.id))
+            .chain(self.extra_dragons.iter().map(|e| e.id))
             .chain(self.ominous_spawners.iter().map(|e| e.id))
     }
     /// Saves every entity of every kind that lies in `keys` into `out`, by chunk.

@@ -885,8 +885,7 @@ impl Game<'_> {
             }
         });
         let dragon = self
-            .dragon
-            .as_ref()
+            .dragon_by_id(id as u32)
             .map(|d| (d.id as i32, [d.position.x, d.position.y, d.position.z]));
         let mut state = entity_sound_state(id, player, mob, &r.entities, dragon)?;
         // Mob states already use the live position. In particular,
@@ -2793,7 +2792,7 @@ impl Game<'_> {
         // tick_remote_dragon eases to the server's moves through `lerps`. Its
         // copy in the mob list draws nothing: given the move, it kept the
         // dragon where it spawned (#2083).
-        let dragon = self.dragon.as_ref().is_some_and(|d| d.id as i32 == id);
+        let dragon = self.dragons().any(|d| d.id as i32 == id);
         let driven = self.driven_mount().is_some_and(|m| m.id as i32 == id);
         let mob = self
             .mob_index
@@ -7234,18 +7233,19 @@ impl Game<'_> {
         self.flash = self.flash.saturating_sub(1);
         if running {
             self.guardian_bubbles();
-            // The dragon: LivingEntity's interpolation, inside its aiStep.
-            let dragon_lerp = self
-                .dragon
-                .as_ref()
-                .and_then(|d| lerps.get_mut(&(d.id as i32)))
-                .filter(|l| l.steps > 0)
-                .map(|l| {
-                    let steps = l.steps;
-                    l.steps -= 1;
-                    (l.target, l.rotation.map(|r| r.0), steps)
-                });
-            self.tick_remote_dragon(dragon_lerp);
+            // The dragons: LivingEntity's interpolation, inside their aiStep.
+            let ids: Vec<u32> = self.dragons().map(|d| d.id).collect();
+            for id in ids {
+                let lerp = lerps
+                    .get_mut(&(id as i32))
+                    .filter(|l| l.steps > 0)
+                    .map(|l| {
+                        let steps = l.steps;
+                        l.steps -= 1;
+                        (l.target, l.rotation.map(|r| r.0), steps)
+                    });
+                self.with_dragon(id, |g| g.tick_remote_dragon(lerp));
+            }
             // Armor stands: ClientLevel.tickNonPassenger's setOldPosAndRot,
             // then their SteppedInterpolationHandler's step, as the mobs'.
             if let Some(r) = self.remote.as_mut() {

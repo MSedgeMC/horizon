@@ -280,7 +280,7 @@ impl Game<'_> {
                 }
             }
             Target::Dragon(id) => {
-                if let Some(e) = self.dragon.as_mut().filter(|e| e.id == id) {
+                if let Some(e) = self.dragon_mut_by_id(id) {
                     e.position = at;
                 }
             }
@@ -392,6 +392,7 @@ impl Game<'_> {
         if self.dragon.as_ref().is_some_and(|e| gone.contains(&e.id)) {
             self.dragon = None;
         }
+        self.extra_dragons.retain(|e| !gone.contains(&e.id));
         for &id in gone {
             self.release_vehicle_container(id);
             self.unlink_passenger(id);

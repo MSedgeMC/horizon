@@ -1002,7 +1002,7 @@ impl Game<'_> {
             e.defaults
                 .push((9, serializer::BOOLEAN, Value::Bool(false)));
         }
-        out.extend(self.lan_dragon_state());
+        out.extend(self.lan_dragon_states());
     }
 }
 

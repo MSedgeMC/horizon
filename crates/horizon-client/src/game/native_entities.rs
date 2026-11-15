@@ -482,7 +482,8 @@ enum Apart {
     Painting(usize),
     Frame(usize),
     Other(usize),
-    Dragon,
+    /// The current dragon (0) or an extra one (1 + its place in the list).
+    Dragon(usize),
 }
 
 /// One entity a mod is told of: in the walk, or apart from it.
@@ -596,8 +597,8 @@ impl Game<'_> {
         for (i, o) in self.others.iter().enumerate() {
             offer(Slot::Apart(Apart::Other(i)), o.id);
         }
-        if let Some(d) = &self.dragon {
-            offer(Slot::Apart(Apart::Dragon), d.id);
+        for (i, id) in self.dragons().map(|d| d.id).enumerate() {
+            offer(Slot::Apart(Apart::Dragon(i)), id);
         }
         best
     }
@@ -637,9 +638,9 @@ impl Game<'_> {
                 let o = &self.others[i];
                 (o.kind.clone().into(), o.position)
             }
-            Slot::Apart(Apart::Dragon) => (
+            Slot::Apart(Apart::Dragon(i)) => (
                 "minecraft:ender_dragon".into(),
-                self.dragon.as_ref().map_or(Vec3::ZERO, |d| d.position),
+                self.dragons().nth(i).map_or(Vec3::ZERO, |d| d.position),
             ),
         }
     }
@@ -652,7 +653,13 @@ impl Game<'_> {
             Slot::Apart(Apart::Painting(i)) => drop(self.paintings.remove(i)),
             Slot::Apart(Apart::Frame(i)) => drop(self.item_frames.remove(i)),
             Slot::Apart(Apart::Other(i)) => drop(self.others.remove(i)),
-            Slot::Apart(Apart::Dragon) => self.dragon = None,
+            Slot::Apart(Apart::Dragon(i)) => {
+                if i == 0 {
+                    self.dragon = None;
+                } else if i <= self.extra_dragons.len() {
+                    drop(self.extra_dragons.remove(i - 1));
+                }
+            }
         }
     }
     /// Entities that were moved, not added (a portal's arrival keeps being
@@ -696,6 +703,7 @@ impl Game<'_> {
         if self.persist.live.is_empty() || self.remote.is_some() {
             return;
         }
+        let dragon_ids: Vec<u32> = self.dragons().map(|d| d.id).collect();
         for l in &mut self.persist.live {
             l.2 = false;
         }
@@ -713,8 +721,8 @@ impl Game<'_> {
         self.paintings.iter().for_each(|p| seen(p.id));
         self.item_frames.iter().for_each(|f| seen(f.id));
         self.others.iter().for_each(|o| seen(o.id));
-        if let Some(d) = &self.dragon {
-            seen(d.id);
+        for id in dragon_ids {
+            seen(id);
         }
         while let Some(i) = self.persist.live.iter().position(|l| !l.2) {
             let (id, kind, _) = self.persist.live.remove(i);

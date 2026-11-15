@@ -497,11 +497,7 @@ impl Game<'_> {
             Target::Other(id) => self.others.retain(|o| o.id != id),
             Target::Fangs(id) => self.fangs.list.retain(|f| f.id != id),
             Target::Crystal(id) => self.crystals.retain(|c| c.id != id),
-            Target::Dragon(id) => {
-                if self.dragon.as_ref().is_some_and(|d| d.id == id) {
-                    self.dragon = None;
-                }
-            }
+            Target::Dragon(id) => self.remove_dragon(id),
             Target::Spawner(id) => self.ominous_spawners.retain(|s| s.id != id),
             Target::Cloud(id) => self.breath_clouds.retain(|c| c.id != id),
             _ => {}

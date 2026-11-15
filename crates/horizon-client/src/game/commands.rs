@@ -921,9 +921,7 @@ impl Game<'_> {
         // The End crystals and the dragon (EndCrystal and EnderDragon
         // are entities of their own).
         candidates.extend(self.crystals.iter().map(|c| Target::Crystal(c.id)));
-        if let Some(d) = &self.dragon {
-            candidates.push(Target::Dragon(d.id));
-        }
+        candidates.extend(self.dragons().map(|d| Target::Dragon(d.id)));
         candidates.extend(self.ominous_spawners.iter().map(|s| Target::Spawner(s.id)));
         candidates.extend(
             self.breath_clouds
@@ -996,7 +994,7 @@ impl Game<'_> {
             Target::Other(id) => self.others.iter().any(|o| o.id == id),
             Target::Fangs(id) => self.fangs.list.iter().any(|f| f.id == id),
             Target::Crystal(id) => self.crystals.iter().any(|c| c.id == id),
-            Target::Dragon(id) => self.dragon.as_ref().is_some_and(|d| d.id == id),
+            Target::Dragon(id) => self.dragon_by_id(id).is_some(),
             Target::Tnt(id) => self.tnts.iter().any(|t| t.id == id),
             Target::Cushion(id) => self.cushions.iter().any(|c| c.id == id),
             Target::Falling(id) => self.falling.iter().any(|f| f.id == id),
@@ -1516,7 +1514,7 @@ impl Game<'_> {
             target_entity_mut!(g, t, e => *e.velocity_mut() = Vec3::ZERO);
             // The dragon's flight builds on the motion it carries.
             if let Target::Dragon(id) = t
-                && let Some(d) = g.dragon.as_mut().filter(|d| d.id == id)
+                && let Some(d) = g.dragon_mut_by_id(id)
             {
                 d.stop();
             }
@@ -1736,7 +1734,7 @@ impl Game<'_> {
                 }
             }
             Target::Dragon(id) => {
-                if let Some(d) = self.dragon.as_mut().filter(|d| d.id == id) {
+                if let Some(d) = self.dragon_mut_by_id(id) {
                     d.position = v;
                     d.previous = v;
                 }

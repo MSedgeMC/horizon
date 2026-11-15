@@ -1011,21 +1011,24 @@ impl Game<'_> {
         }
     }
 
-    /// The saved ender dragon.
+    /// A saved ender dragon. A level keeps every one it held, so the first
+    /// takes the current-dragon slot and the rest go beside it.
     pub(super) fn load_dragon(&mut self, tag: Tag, uuid: Option<[i32; 4]>) {
         // The loaded dragon's own random (`Entity.random`): loading draws
         // nothing from the level's.
         let seed = random_source::unique_seed();
-        if self.dragon.is_none()
-            && let Some(mut d) = super::dragon::Dragon::from_nbt(&tag, seed)
-        {
+        if let Some(mut d) = super::dragon::Dragon::from_nbt(&tag, seed) {
             // EnderDragon's constructor takes its id and its
             // parts' from the entity counter.
             d.id = self.next_entity + 1;
             self.next_entity += 9;
             self.remember_tags(d.id, &tag);
             self.remember_uuid(d.id, uuid, &tag);
-            self.dragon = Some(d);
+            if self.dragon.is_none() {
+                self.dragon = Some(d);
+            } else {
+                self.extra_dragons.push(d);
+            }
         }
     }
 
@@ -1761,9 +1764,10 @@ impl Game<'_> {
             keys.iter().map(|k| (*k, Vec::new())).collect();
         // Every kind in `entity_lists!` saves itself (`Entity::save_nbt`).
         self.save_every_entity(keys, &mut out);
-        if let Some(d) = &self.dragon
-            && keys.contains(&chunk_of(d.position))
-        {
+        for d in self.dragons() {
+            if !keys.contains(&chunk_of(d.position)) {
+                continue;
+            }
             let raw = anon_raw(&self.persist, "minecraft:ender_dragon", d.position);
             let uuid = saved_uuid(&self.persist, d.id);
             out.entry(chunk_of(d.position))
@@ -1929,6 +1933,7 @@ impl Game<'_> {
             if self.dragon.as_ref().is_some_and(|d| gone(d.position)) {
                 self.dragon = None;
             }
+            self.extra_dragons.retain(|d| !gone(d.position));
             self.carts.retain(|c| {
                 let keep = !gone(c.position) || Some(c.id) == riding;
                 if !keep {

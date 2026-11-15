@@ -66,6 +66,7 @@ pub(super) struct Parked {
     bolts: Vec<lightning::Bolt>,
     crystals: Vec<dragon::Crystal>,
     dragon: Option<dragon::Dragon>,
+    extra_dragons: Vec<dragon::Dragon>,
     breath_clouds: Vec<dragon::Breath>,
     tridents: horizon_client::join_seq::JoinList<trident::ThrownTrident>,
     rockets: horizon_client::join_seq::JoinList<fireworks::Rocket>,
@@ -308,6 +309,7 @@ impl Game<'_> {
             bolts: Vec::new(),
             crystals: Vec::new(),
             dragon: None,
+            extra_dragons: Vec::new(),
             breath_clouds: Vec::new(),
             tridents: Default::default(),
             rockets: Default::default(),
@@ -459,6 +461,7 @@ impl Game<'_> {
         swap(&mut self.bolts, &mut p.bolts);
         swap(&mut self.crystals, &mut p.crystals);
         swap(&mut self.dragon, &mut p.dragon);
+        swap(&mut self.extra_dragons, &mut p.extra_dragons);
         swap(&mut self.breath_clouds, &mut p.breath_clouds);
         swap(&mut self.tridents, &mut p.tridents);
         swap(&mut self.rockets, &mut p.rockets);

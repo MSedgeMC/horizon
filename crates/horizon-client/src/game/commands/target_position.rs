@@ -71,9 +71,7 @@ impl Game<'_> {
                 .find(|c| c.id == id)
                 .map(|c| [c.position.x, c.position.y, c.position.z]),
             Target::Dragon(id) => self
-                .dragon
-                .as_ref()
-                .filter(|d| d.id == id)
+                .dragon_by_id(id)
                 .map(|d| [d.position.x, d.position.y, d.position.z]),
             Target::Cushion(id) => self
                 .cushions

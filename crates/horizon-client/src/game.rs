@@ -2687,7 +2687,10 @@ struct Game<'a> {
     maps: maps::Maps,
     /// The ender dragon fight (game/dragon.rs).
     fight: dragon::Fight,
+    /// The dragon the level is known by: the End fight's dragon, or the first
+    /// one there. The extra_dragons list holds the rest (vanilla keeps no limit).
     dragon: Option<dragon::Dragon>,
+    extra_dragons: Vec<dragon::Dragon>,
     crystals: Vec<dragon::Crystal>,
     breath_clouds: Vec<dragon::Breath>,
     dragon_model: Option<horizon_client::mobs::Part>,
@@ -7653,6 +7656,7 @@ impl Game<'_> {
         self.paintings.clear();
         self.others.clear();
         self.dragon = None;
+        self.extra_dragons.clear();
         self.crystals.clear();
         self.breath_clouds.clear();
         self.tridents.clear();
@@ -11671,6 +11675,7 @@ impl<'a> Game<'a> {
             maps: maps::Maps::default(),
             fight: dragon::Fight::default(),
             dragon: None,
+            extra_dragons: Vec::new(),
             crystals: Vec::new(),
             breath_clouds: Vec::new(),
             dragon_model: prepared.dragon_model,
