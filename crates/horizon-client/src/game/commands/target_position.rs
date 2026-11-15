@@ -107,6 +107,7 @@ impl Game<'_> {
                 .iter()
                 .find(|s| s.id == id)
                 .map(|s| s.position),
+            Target::Hook(id) => self.hook_at(id).map(|p| [p.x, p.y, p.z]),
             Target::Knot(id) => self.natural_knot(id).map(|fence| {
                 let p = horizon_client::mobs::leash::knot_state(fence).position;
                 [p.x, p.y, p.z]

@@ -224,7 +224,8 @@ impl Game<'_> {
             | Target::Trident(id)
             | Target::Other(id)
             | Target::Fangs(id)
-            | Target::Cloud(id) => Some(uuid_text(self.uuid_for(id))),
+            | Target::Cloud(id)
+            | Target::Hook(id) => Some(uuid_text(self.uuid_for(id))),
             // It keeps its UUID with itself.
             Target::Spawner(id) => self
                 .ominous_spawners
@@ -299,6 +300,8 @@ impl Game<'_> {
                 .and_then(|f| f.saved.as_ref().map(|s| &s.1)),
             // A natural knot keeps no saved compound: it has no tags.
             Target::Knot(_) => None,
+            // A bobber loads no saved compound of its own either, so it has no tags.
+            Target::Hook(_) => None,
         };
         match raw.and_then(|r| r.get("Tags")) {
             Some(Tag::List(l)) => l

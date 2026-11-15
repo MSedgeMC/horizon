@@ -1482,6 +1482,22 @@ fn push_remote_hook(hooks: &mut Vec<RemoteHook>, id: u32, owner: u32, at: Vec3, 
     });
 }
 
+/// The ids of the fishing hooks a selector lists in the level in place
+/// (`EntityLookup`): this player's bobber, a hosted world's guests' and the
+/// other players' a server tracks. Vanilla keeps each in the level's entity
+/// list; Horizon keeps them beside their owner.
+fn command_hook_ids<'a>(
+    own: Option<&'a Hook>,
+    guests: impl IntoIterator<Item = &'a Hook>,
+    tracked: impl IntoIterator<Item = &'a RemoteHook>,
+) -> Vec<u32> {
+    own.into_iter()
+        .map(Hook::id)
+        .chain(guests.into_iter().map(Hook::id))
+        .chain(tracked.into_iter().map(RemoteHook::id))
+        .collect()
+}
+
 fn remove_remote_hook_from(hooks: &mut Vec<RemoteHook>, id: u32) {
     let owner = hooks.iter().find(|h| h.id == id).map(|h| h.owner);
     hooks.retain(|h| h.id != id);
@@ -1545,6 +1561,23 @@ impl Hook {
     pub(super) fn id(&self) -> u32 {
         self.id
     }
+    /// `FishingHook.addAdditionalSaveData`: the entity it hooked, if any.
+    fn hooked(&self) -> Option<u32> {
+        match self.state {
+            State::Hooked(id) => Some(id),
+            _ => None,
+        }
+    }
+    /// `Entity.teleportTo` for a command: placed still and on the ground
+    /// there (`TeleportCommand.performTeleport`), with no server update left
+    /// to interpolate towards.
+    fn teleport_to(&mut self, at: Vec3) {
+        self.position = at;
+        self.previous = at;
+        self.velocity = Vec3::ZERO;
+        self.on_ground = true;
+        self.lerp = HookLerp::default();
+    }
     /// A server's update of this client's own hook (`handleMoveEntity` also
     /// sets `onGround`).
     pub(super) fn move_to(&mut self, target: [f64; 3], on_ground: bool) {
@@ -1555,6 +1588,25 @@ impl Hook {
 impl RemoteHook {
     pub(super) fn id(&self) -> u32 {
         self.id
+    }
+    /// `FishingHook.addAdditionalSaveData`: the entity it hooked, if any.
+    fn hooked(&self) -> Option<u32> {
+        match self.state {
+            State::Hooked(id) => Some(id),
+            _ => None,
+        }
+    }
+    /// `Entity.teleportTo` for a command, as this client's own hook's.
+    fn teleport_to(&mut self, at: Vec3) {
+        self.position = at;
+        self.previous = at;
+        self.velocity = Vec3::ZERO;
+        self.on_ground = true;
+        self.lerp = HookLerp::default();
+    }
+    /// `Entity.getBoundingBox`: the same box as this client's own hook's.
+    pub(super) fn bounds(&self) -> Aabb {
+        bounds(self.position)
     }
     /// A server's update of another player's hook.
     pub(super) fn move_to(&mut self, target: [f64; 3], on_ground: bool) {
@@ -1954,6 +2006,115 @@ impl Game<'_> {
         self.remote_hooks.clear();
     }
 
+    /// The fishing hooks a command names in the level in place: this
+    /// player's bobber, a hosted world's guests' and the other players' a
+    /// server tracks to this client. Vanilla keeps each in the level's
+    /// entity list (`EntityLookup`); Horizon keeps them beside their owner,
+    /// so selectors list them from here.
+    pub(in crate::game) fn hook_ids(&self) -> Vec<u32> {
+        let guests = self.lan.iter().flat_map(|host| {
+            host.hub
+                .guests
+                .iter()
+                .filter(|g| host.hub.here(g))
+                .filter_map(|g| host.play.get(&g.conn)?.hook.as_ref())
+        });
+        command_hook_ids(self.hook.as_ref(), guests, &self.remote_hooks)
+    }
+
+    /// `Entity.getX/Y/Z` of the fishing hook a command names, when the level
+    /// in place still holds it.
+    pub(in crate::game) fn hook_at(&self, id: u32) -> Option<Vec3> {
+        if let Some(h) = self.hook.as_ref().filter(|h| h.id() == id) {
+            return Some(h.position);
+        }
+        if let Some(host) = self.lan.as_ref() {
+            for guest in host.hub.guests.iter().filter(|g| host.hub.here(g)) {
+                let hook = host.play.get(&guest.conn).and_then(|p| p.hook.as_ref());
+                if let Some(h) = hook.filter(|h| h.id() == id) {
+                    return Some(h.position);
+                }
+            }
+        }
+        self.remote_hooks
+            .iter()
+            .find(|h| h.id() == id)
+            .map(|h| h.position)
+    }
+
+    /// `Entity.getBoundingBox` of the fishing hook a command names.
+    pub(in crate::game) fn hook_bounds(&self, id: u32) -> Option<Aabb> {
+        if let Some(h) = self.hook.as_ref().filter(|h| h.id() == id) {
+            return Some(h.bounds());
+        }
+        if let Some(host) = self.lan.as_ref() {
+            for guest in host.hub.guests.iter().filter(|g| host.hub.here(g)) {
+                let hook = host.play.get(&guest.conn).and_then(|p| p.hook.as_ref());
+                if let Some(h) = hook.filter(|h| h.id() == id) {
+                    return Some(h.bounds());
+                }
+            }
+        }
+        self.remote_hooks
+            .iter()
+            .find(|h| h.id() == id)
+            .map(RemoteHook::bounds)
+    }
+
+    /// `FishingHook.addAdditionalSaveData`'s `HookedEntity` of the fishing
+    /// hook a command names: the entity it hooked, if any.
+    pub(in crate::game) fn hook_hooked(&self, id: u32) -> Option<u32> {
+        if let Some(h) = self.hook.as_ref().filter(|h| h.id() == id) {
+            return h.hooked();
+        }
+        if let Some(host) = self.lan.as_ref() {
+            for guest in host.hub.guests.iter().filter(|g| host.hub.here(g)) {
+                let hook = host.play.get(&guest.conn).and_then(|p| p.hook.as_ref());
+                if let Some(h) = hook.filter(|h| h.id() == id) {
+                    return h.hooked();
+                }
+            }
+        }
+        self.remote_hooks
+            .iter()
+            .find(|h| h.id() == id)
+            .and_then(RemoteHook::hooked)
+    }
+
+    /// `/kill` on a fishing hook: `Entity.discard` takes the bobber out of
+    /// the level and clears its owner's fishing state (`Player.fishing`),
+    /// through the tracking that already removes a hook the server drops.
+    pub(in crate::game) fn kill_hook(&mut self, id: u32) {
+        if self.remote.is_some() {
+            // The hooks a server tracks to this client.
+            self.remove_remote_hook(id);
+        } else {
+            // This player's own, or a hosted guest's.
+            self.remove_server_hook(id);
+        }
+    }
+
+    /// `/tp` on a fishing hook: `Entity.teleportTo` through
+    /// `TeleportCommand.performTeleport`, which leaves it still and on the
+    /// ground.
+    pub(in crate::game) fn teleport_hook(&mut self, id: u32, at: Vec3) {
+        if let Some(h) = self.hook.as_mut().filter(|h| h.id() == id) {
+            h.teleport_to(at);
+        }
+        if let Some(host) = self.lan.as_mut() {
+            for guest in host.hub.guests.iter().filter(|g| host.hub.here(g)) {
+                let conn = guest.conn;
+                let hook = host.play.get_mut(&conn).and_then(|p| p.hook.as_mut());
+                if let Some(h) = hook.filter(|h| h.id() == id) {
+                    h.teleport_to(at);
+                }
+            }
+        }
+        if let Some(h) = self.remote_hooks.iter_mut().find(|h| h.id() == id) {
+            h.teleport_to(at);
+        }
+    }
+
     /// Other players' hooks: the bobber and its line to the owner's hand
     /// (`FishingHookRenderer.getPlayerHandPos` in third person), as
     /// (hook, hand) this frame.
@@ -2335,6 +2496,22 @@ mod tests {
             Vec3::new(10.0, 2.0, 0.0),
         );
         assert_eq!(pulled, Vec3::new(1.5, 0.2, 0.0));
+    }
+
+    /// A bobber is an entity of the level to a selector though Horizon keeps
+    /// it beside its owner: `@e[type=minecraft:fishing_bobber]` lists this
+    /// player's, every hosted guest's and every hook a server tracks.
+    #[test]
+    fn a_selector_lists_a_hook_wherever_the_client_keeps_it() {
+        let own = Hook::remote(10, Vec3::ZERO);
+        let guest = Hook::remote(11, Vec3::ZERO);
+        let mut tracked = Vec::new();
+        super::push_remote_hook(&mut tracked, 12, 7, Vec3::ZERO, Vec3::ZERO);
+        assert_eq!(
+            super::command_hook_ids(Some(&own), [&guest], &tracked),
+            [10, 11, 12]
+        );
+        assert!(super::command_hook_ids(None, [], []).is_empty());
     }
 
     #[test]

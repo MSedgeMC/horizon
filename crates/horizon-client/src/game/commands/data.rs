@@ -376,6 +376,31 @@ impl Game<'_> {
                 set_key(&mut tag, "Fire", Tag::Short(0));
                 tag
             }
+            // A fishing bobber saves only the entity it hooked
+            // (FishingHook.addAdditionalSaveData); the rest is Entity's.
+            Target::Hook(id) => {
+                let uuid = self.uuid_for(id);
+                let position = self.hook_at(id)?;
+                let mut tag = self.other_to_nbt(
+                    &super::OtherEntity {
+                        id,
+                        kind: "minecraft:fishing_bobber".into(),
+                        position,
+                        yaw: 0.0,
+                        pitch: 0.0,
+                        item_transformation: None,
+                        interaction: None,
+                        knot_check: None,
+                        eye: None,
+                    },
+                    uuid,
+                );
+                crate::game::persist::write_static_entity_fields(&mut tag);
+                if let Some(hooked) = self.hook_hooked(id) {
+                    set_key(&mut tag, "HookedEntity", Tag::Int(hooked as i32));
+                }
+                tag
+            }
         })
     }
     /// `Entity.load` of new data (`EntityDataAccessor.setData`): the entity is

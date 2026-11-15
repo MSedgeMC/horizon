@@ -88,6 +88,11 @@ pub(super) enum Target {
     /// entity id in the level's `knot_ids` (game/leads.rs). Explicitly
     /// summoned knots are `Other`s.
     Knot(u32),
+    /// A fishing bobber (`minecraft:fishing_bobber`), by its entity id.
+    /// Vanilla keeps `FishingHook` in the level like any entity; Horizon
+    /// keeps it beside its owner (game/fishing.rs), so selectors list it
+    /// here rather than on the entity walk.
+    Hook(u32),
 }
 /// `Entity.setXRot`: reduce the angle before clamping the pitch.
 /// Runs `$body` on the moving entity `$t` names (one of `entity_lists!`'s
@@ -232,7 +237,8 @@ fn non_player_entity_id(t: Target) -> Option<i32> {
     | Target::Trident(id)
     | Target::Spawner(id)
     | Target::Cloud(id)
-    | Target::Knot(id)) = t
+    | Target::Knot(id)
+    | Target::Hook(id)) = t
     else {
         return None;
     };
@@ -590,6 +596,7 @@ impl Game<'_> {
             Target::Spawner(_) => "minecraft:ominous_item_spawner".into(),
             Target::Cloud(_) => "minecraft:area_effect_cloud".into(),
             Target::Knot(_) => "minecraft:leash_knot".into(),
+            Target::Hook(_) => "minecraft:fishing_bobber".into(),
         }
     }
     /// The name of the player the game acts for: a guest's own while their
@@ -933,6 +940,10 @@ impl Game<'_> {
         // The knots lead ties made (LeashFenceKnotEntity), each the one
         // entity its id names.
         candidates.extend(self.natural_knot_ids().into_iter().map(Target::Knot));
+        // Fishing bobbers (FishingHook): this player's, a hosted world's
+        // guests' and the other players' a server tracks. Vanilla keeps each
+        // in the level's entity list, so `@e` and `@e[type=…]` reach them.
+        candidates.extend(self.hook_ids().into_iter().map(Target::Hook));
         candidates
     }
     /// The loaded levels, in the order the server holds them: the
@@ -973,6 +984,7 @@ impl Game<'_> {
             Target::Spawner(id),
             Target::Cloud(id),
             Target::Knot(id),
+            Target::Hook(id),
         ]
         .into_iter()
         .find(|t| self.level_holds(*t))
@@ -1004,6 +1016,7 @@ impl Game<'_> {
             Target::Spawner(id) => self.ominous_spawners.iter().any(|s| s.id == id),
             Target::Cloud(id) => self.breath_clouds.iter().any(|c| c.id == id),
             Target::Knot(id) => self.natural_knot(id).is_some(),
+            Target::Hook(id) => self.hook_at(id).is_some(),
         }
     }
     /// Run `f` with the level that holds the entity a target names in place
@@ -1799,6 +1812,7 @@ impl Game<'_> {
                     c.at = pos;
                 }
             }
+            Target::Hook(id) => self.teleport_hook(id, v),
             Target::Frame(_) | Target::Painting(_) => self.teleport_hanging(t, v),
             // The commands leave a natural knot out (`without_knots`).
             Target::Knot(_) => {}
@@ -2357,6 +2371,7 @@ impl Game<'_> {
             Target::Trident(id) => self.tridents.retain(|t| t.id != id),
             Target::Spawner(id) => self.ominous_spawners.retain(|s| s.id != id),
             Target::Cloud(id) => self.breath_clouds.retain(|c| c.id != id),
+            Target::Hook(id) => self.kill_hook(id),
             // The commands leave a natural knot out (`without_knots`).
             Target::Knot(_) => {}
         }

@@ -75,6 +75,8 @@ impl Game<'_> {
             | Target::Dragon(_)
             | Target::Spawner(_)
             | Target::Cloud(_) => None,
+            // EntityType.FISHING_BOBBER's 0.25 by 0.25 box.
+            Target::Hook(id) => self.hook_bounds(id),
             // LeashFenceKnotEntity.recalculateBoundingBox, at the knot's centre.
             Target::Knot(id) => self.natural_knot(id).map(|fence| {
                 let knot = horizon_client::mobs::leash::knot_state(fence);
