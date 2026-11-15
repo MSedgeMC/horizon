@@ -162,6 +162,9 @@ impl Title {
     /// The first screen of a first launch (`addInitialScreens`).
     pub fn start_onboarding(&mut self) {
         self.mode = Mode::Onboarding(Onboarding::new());
+        // `setInitialFocus(narratorButton)`: the keyboard focus starts on the Narrator
+        // button, even though Horizon draws it inactive while it has no narrator.
+        self.focused_button = Some(NARRATOR);
     }
 
     /// `onClose`: Escape and Continue fade the screen out.
@@ -178,6 +181,8 @@ impl Title {
             && screen.closed(now)
         {
             self.mode = Mode::Main;
+            // The title is a new screen, whose own `setInitialFocus` starts the focus again.
+            self.focused_button = None;
             self.onboarding_finished = true;
         }
     }
@@ -359,5 +364,25 @@ mod tests {
         title.poll_onboarding(Instant::now() + Duration::from_secs(2));
         assert!(matches!(title.mode, Mode::Main));
         assert!(title.onboarding_finished);
+    }
+
+    /// `AccessibilityOnboardingScreen.setInitialFocus`: the Narrator button has the
+    /// keyboard focus when the screen opens, and a Tab steps on to the first enabled
+    /// button (the Narrator is inactive while Horizon has no narrator). Closing the
+    /// screen starts the title screen focus again.
+    #[test]
+    fn the_narrator_button_has_the_focus_when_the_screen_opens() {
+        let mut title = Title::new(
+            std::path::PathBuf::new(),
+            std::path::Path::new("/nonexistent/horizon-test-resources"),
+        );
+        title.start_onboarding();
+        assert_eq!(title.focused_button, Some(NARRATOR));
+        title.tab_dir(false, (854.0, 480.0));
+        assert_eq!(title.focused_button, Some(SOUNDS));
+        title.escape();
+        title.poll_onboarding(Instant::now() + Duration::from_secs(2));
+        assert!(matches!(title.mode, Mode::Main));
+        assert_eq!(title.focused_button, None);
     }
 }
