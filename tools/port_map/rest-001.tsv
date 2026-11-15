@@ -95,8 +95,8 @@ AdvancementProgress.revokeProgress	port	crates/horizon-client/src/advancements.r
 AdvancementProgress.isCriterionDone	port	crates/horizon-client/src/advancements.rs::Progress::has	criterion obtained
 AdvancementProgress.getPercent	port	crates/horizon-client/src/game/advancements_screen.rs::Game::adv_draw_hover	obtained over total requirement groups, drives the progress bar and icon frame
 AdvancementProgress.getProgressText	port	crates/horizon-client/src/game/advancements_screen.rs::Game::adv_draw_hover	advancements.progress text, only when there are more than one group
-AdvancementProgress.getRemainingCriteria	missing		minor: /advancement test is not implemented; cmd_advancement only grants and revokes
-AdvancementProgress.getCompletedCriteria	missing		minor: /advancement test is not implemented; cmd_advancement only grants and revokes
+AdvancementProgress.getRemainingCriteria	inline	crates/horizon-client/src/lan/advancements.rs::ServerAdvancements::write_progress	each criterion of the advancement is written with its obtained date or none, so the undone ones are the remaining list
+AdvancementProgress.getCompletedCriteria	inline	crates/horizon-client/src/lan/advancements.rs::ServerAdvancements::write_progress	the same walk writes the obtained ones with their date, the completed list; Progress::has is the per-criterion isDone
 AdvancementProgress.getFirstProgressDate	skip:java		used only by compareTo, which has no caller
 AdvancementProgress.compareTo	skip:java		Comparable with no vanilla caller
 AdvancementRequirements.test	port	crates/horizon-client/src/advancements.rs::Progress::done	every requirement group has a criterion obtained
@@ -127,7 +127,7 @@ TreeNodePosition.run	port	crates/horizon-client/src/advancements.rs::Tree::layou
 net/minecraft/advancements/predicates/BlockPredicate#matches	port	crates/horizon-client/src/advancements.rs::block	gap: minor: block-entity nbt and components are not checked; no vanilla advancement uses them
 net/minecraft/advancements/predicates/BlockPredicate#willMatchBlockEntity	missing		minor: block-entity nbt and components predicates are not read; no vanilla advancement uses them
 net/minecraft/advancements/predicates/BlockPredicate#matchesState	inline	crates/horizon-client/src/advancements.rs::block	block id and state properties
-net/minecraft/advancements/predicates/BlockPredicate#matchesBlockEntity	missing		minor: block-entity nbt and components are not read; no vanilla advancement uses them
+net/minecraft/advancements/predicates/BlockPredicate#matchesBlockEntity	inline	crates/horizon-client/src/advancements.rs::block	the nbt branch reads the block entity and rejects when compare_nbt does not hold; gap: minor: no DataComponentMatchers
 net/minecraft/advancements/predicates/BlockPredicate#matchesBlockEntityData	missing		minor: block-entity nbt is not read; no vanilla advancement uses it
 net/minecraft/advancements/predicates/BlockPredicate#matchesComponents	missing		minor: block-entity components are not read; no vanilla advancement uses them
 BlockPredicate.Builder.of	skip:data		datagen builder
