@@ -40,7 +40,7 @@ MatchBlock.blockMatches	skip:java		static builder
 MatchBlock.getReferencedContextParams	skip:data		validation metadata for context params
 MatchBlock.test	port	crates/horizon-items/src/items.rs::LootContext::condition	match_block arm: block id, state and property ranges; gap: minor: the block-entity part of the predicate is not read
 MatchTool.test	port	crates/horizon-items/src/items.rs::LootContext::condition	match_tool arm; gap: minor: item ids, tags and enchantment levels only, other ItemPredicate parts are not read
-TimeCheck	missing		no `time_check` arm in `loot.rs::condition`; no vanilla data file uses it, so only a datapack reaches it
+TimeCheck	port	crates/horizon-world/src/loot.rs::Context::condition	time_check arm: the level day time, wrapped by optional period, against value; block loot has the same arm in items.rs
 WeatherCheck.test	port	crates/horizon-client/src/advancements.rs::conditions	named command predicates compare both optional fields against Game View's effective weather; channeling remains a separate thunder-only caller
 NbtProviders	skip:data		registry bootstrap
 AggregateProvider	skip:java		codec only

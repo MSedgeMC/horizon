@@ -2080,6 +2080,10 @@ impl LootContext<'_> {
                 .flatten()
                 .all(|t| self.condition(t, random)),
             "minecraft:random_chance" => random.next_float() < Self::number(&c["chance"], random),
+            "minecraft:time_check" => horizon_world::loot::current_native_loot_place()
+                .as_ref()
+                .and_then(|place| place.level.as_ref())
+                .is_some_and(|level| horizon_world::loot::time_check_matches(c, level.day_time)),
             "minecraft:table_bonus" => {
                 // BonusLevelTableCondition: chances[min(level, len - 1)].
                 let level =

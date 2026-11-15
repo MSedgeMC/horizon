@@ -516,6 +516,35 @@ fn int_bounds(v: &Value, value: i32) -> bool {
     }
 }
 
+/// `MinMaxBounds.Longs.matches` (a number or `{min, max}`).
+fn long_bounds(v: &Value, value: i64) -> bool {
+    match v {
+        Value::Number(_) => int_value(v) == Some(value),
+        Value::Object(o) => {
+            o.get("min").and_then(int_value).is_none_or(|m| value >= m)
+                && o.get("max").and_then(int_value).is_none_or(|m| value <= m)
+        }
+        _ => false,
+    }
+}
+
+/// `TimeCheck.test`: the level's day time, wrapped by `period` when it is
+/// positive, matched against `value`. The level comes from the roll's
+/// place (`NativeLootPlace`); a roll without one has no level to read, so
+/// it does not match. The clock id is not selected: Horizon's level
+/// carries one day time.
+pub fn time_check_matches(condition: &Value, day_time: i64) -> bool {
+    let value = &condition["value"];
+    if value.is_null() {
+        return false;
+    }
+    let time = match int_value(&condition["period"]) {
+        Some(period) if period > 0 => day_time.rem_euclid(period),
+        _ => day_time,
+    };
+    long_bounds(value, time)
+}
+
 /// `ListOperation`: the list a `set_*` function's `values` and `mode` ask
 /// for over the list the component already had - `replace_all`,
 /// `replace_section` (`offset` and an optional `size`, default the new
@@ -1446,6 +1475,13 @@ impl<R: RandomSource> Context<'_, R> {
                     let chance = self.float(&c["chance"]);
                     self.random.next_float() < chance
                 }
+                // `TimeCheck`: the level's day time, wrapped by `period`
+                // and matched against `value`; a roll without a place has
+                // no level to read.
+                "minecraft:time_check" => current_native_loot_place()
+                    .as_ref()
+                    .and_then(|place| place.level.as_ref())
+                    .is_some_and(|level| time_check_matches(c, level.day_time)),
                 "minecraft:location_check" => {
                     let Some(biome) = self.biome else {
                         return false;
@@ -3043,6 +3079,54 @@ mod location_check_biome_tests {
         assert!(drops(&data, Some("minecraft:bamboo_jungle")));
         assert!(drops(&data, Some("minecraft:desert")));
         assert!(!drops(&data, Some("minecraft:savanna")));
+    }
+}
+
+#[cfg(test)]
+mod time_check_tests {
+    use super::*;
+
+    fn table(name: &str, condition: &str) -> LootData {
+        let root = std::env::temp_dir().join(format!("loot-time-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        std::fs::create_dir_all(&dir).unwrap();
+        let json = format!(
+            r#"{{"pools":[{{"rolls":1,"entries":[{{"type":"minecraft:item","name":"minecraft:stone","condition":{condition}}}]}}]}}"#
+        );
+        std::fs::write(dir.join("test.json"), json).unwrap();
+        std::fs::write(root.join("items.json"), "{}").unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+        data
+    }
+
+    fn drops(data: &LootData, day_time: i64) -> bool {
+        let place = NativeLootPlace {
+            level: Some(NativeLootLevel {
+                day_time,
+                ..NativeLootLevel::default()
+            }),
+            ..NativeLootPlace::default()
+        };
+        with_native_loot_place(place, || {
+            !data
+                .roll("minecraft:test", &mut LegacyRandom::new(1), 0.0, None, None)
+                .is_empty()
+        })
+    }
+
+    /// `TimeCheck.test`: the level's day time is matched against `value`,
+    /// and `period` wraps it before the match.
+    #[test]
+    fn time_check_matches_the_day_time_inside_the_range() {
+        let data = table(
+            "range",
+            r#"{"type":"minecraft:time_check","period":24000,"value":{"min":1000,"max":2000}}"#,
+        );
+        assert!(drops(&data, 1500), "inside the range");
+        assert!(!drops(&data, 2500), "outside the range");
+        assert!(drops(&data, 25000), "25000 wraps to 1000 with period 24000");
     }
 }
 
