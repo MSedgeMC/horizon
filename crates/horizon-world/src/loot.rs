@@ -519,17 +519,18 @@ fn json_tag(value: &Value) -> Option<Tag> {
         ),
     })
 }
-fn int_bounds(v: &Value, value: i32) -> bool {
+fn int_bounds(v: &Value, value: i32, int: &mut dyn FnMut(&Value) -> Option<i32>) -> bool {
     match v {
         Value::Null => true,
         Value::Number(n) => n.as_i64() == Some(i64::from(value)),
         Value::Object(o) => {
+            // `IntRange.test`: each present bound is a number provider.
             o.get("min")
-                .and_then(Value::as_i64)
-                .is_none_or(|m| i64::from(value) >= m)
+                .and_then(|m| int(m))
+                .is_none_or(|m| i64::from(value) >= i64::from(m))
                 && o.get("max")
-                    .and_then(Value::as_i64)
-                    .is_none_or(|m| i64::from(value) <= m)
+                    .and_then(|m| int(m))
+                    .is_none_or(|m| i64::from(value) <= i64::from(m))
         }
         _ => false,
     }
@@ -1309,9 +1310,9 @@ struct Context<'a, R> {
 }
 type Sink<'s, R> = dyn FnMut(&mut Context<'_, R>, LootStack) + 's;
 
-impl<R: RandomSource> Context<'_, R> {
+impl<'a, R: RandomSource> Context<'a, R> {
     /// A `LootContext.EntityTarget` parameter.
-    fn target(&self, name: &str) -> Option<&LootEntity> {
+    fn target(&self, name: &str) -> Option<&'a LootEntity> {
         let p = self.entity?;
         match name {
             "this" => Some(&p.this),
@@ -1366,8 +1367,9 @@ impl<R: RandomSource> Context<'_, R> {
         }
     }
     /// EntityPredicate.matches (false without an entity).
-    fn entity_matches(&self, p: &Value, e: Option<&LootEntity>) -> bool {
-        self.data.entity_matches(p, e)
+    fn entity_matches(&mut self, p: &Value, e: Option<&LootEntity>) -> bool {
+        let data = self.data;
+        data.entity_matches_with(p, e, &mut |v| Some(self.int(v)))
     }
     /// A number provider. An unknown type gives 0, as in items.rs `number`
     /// (a data pack's typo yields nothing rather than a full roll).
@@ -1995,8 +1997,9 @@ impl<R: RandomSource> Context<'_, R> {
         stack
     }
     /// ItemPredicate subset used by filtered modifiers and equipment.
-    fn item_matches(&self, p: &Value, stack: &LootStack) -> bool {
-        self.data.item_matches(p, stack)
+    fn item_matches(&mut self, p: &Value, stack: &LootStack) -> bool {
+        let data = self.data;
+        data.item_matches(p, stack, &mut |v| Some(self.int(v)))
     }
     /// EnchantmentHelper.selectEnchantment.
     fn select_enchantments(
@@ -3184,8 +3187,19 @@ mod location_check_biome_tests {
 }
 
 impl LootData {
-    /// `EntityPredicate.matches`: the existing pure matcher shared by loot contexts.
+    /// `EntityPredicate.matches`: the pure matcher shared by the item and
+    /// entity callers. A number-provider bound is not drawn here, so it stays
+    /// unchecked; the loot context reads it in `entity_matches_with`.
     pub fn entity_matches(&self, p: &Value, e: Option<&LootEntity>) -> bool {
+        self.entity_matches_with(p, e, &mut |v| v.as_i64().map(|n| n as i32))
+    }
+    /// The same, with `int` reading `IntRange`'s number-provider bounds.
+    fn entity_matches_with(
+        &self,
+        p: &Value,
+        e: Option<&LootEntity>,
+        int: &mut dyn FnMut(&Value) -> Option<i32>,
+    ) -> bool {
         let Some(e) = e else { return false };
         let Some(parts) = p.as_object() else {
             return true;
@@ -3215,7 +3229,7 @@ impl LootData {
                 e.living
                     && v.as_object().into_iter().flatten().all(|(slot, item)| {
                         e.item(slot)
-                            .is_some_and(|stack| self.item_matches(item, stack))
+                            .is_some_and(|stack| self.item_matches(item, stack, int))
                     })
             }
             // SlotsPredicate (EntitySlotsPredicate): every range must have an
@@ -3223,7 +3237,7 @@ impl LootData {
             "minecraft:slots" => v.as_object().into_iter().flatten().all(|(range, item)| {
                 slot_range_equipment(range).iter().any(|slot| {
                     e.item(slot)
-                        .is_some_and(|stack| self.item_matches(item, stack))
+                        .is_some_and(|stack| self.item_matches(item, stack, int))
                 })
             }),
             "minecraft:components" => v.as_object().into_iter().flatten().all(|(c, want)| match c
@@ -3245,23 +3259,28 @@ impl LootData {
                 .sheep
                 .as_ref()
                 .is_some_and(|(_, sheared)| v["sheared"].as_bool().is_none_or(|w| w == *sheared)),
-            "minecraft:type_specific/cube_mob" => {
-                e.cube_size.is_some_and(|size| int_bounds(&v["size"], size))
-            }
+            "minecraft:type_specific/cube_mob" => e
+                .cube_size
+                .is_some_and(|size| int_bounds(&v["size"], size, int)),
             // RaiderPredicate: no raid is running here.
             "minecraft:type_specific/raider" => e.captain.is_some_and(|captain| {
                 !v["has_raid"].as_bool().unwrap_or(false)
                     && captain == v["is_captain"].as_bool().unwrap_or(false)
             }),
-            "minecraft:vehicle" => self.entity_matches(v, e.vehicle.as_deref()),
+            "minecraft:vehicle" => self.entity_matches_with(v, e.vehicle.as_deref(), int),
             _ => false,
         })
     }
-    fn item_matches(&self, p: &Value, stack: &LootStack) -> bool {
+    fn item_matches(
+        &self,
+        p: &Value,
+        stack: &LootStack,
+        int: &mut dyn FnMut(&Value) -> Option<i32>,
+    ) -> bool {
         if !p["items"].is_null() && !self.item_in(&stack.item, &p["items"]) {
             return false;
         }
-        if !int_bounds(&p["count"], stack.count) {
+        if !int_bounds(&p["count"], stack.count, int) {
             return false;
         }
         if p["predicates"].get("minecraft:map_id").is_some() && !stack.map {
@@ -3291,10 +3310,10 @@ impl LootData {
                     Value::Null => stack
                         .enchantments
                         .iter()
-                        .any(|(_, l)| int_bounds(levels, *l)),
+                        .any(|(_, l)| int_bounds(levels, *l, int)),
                     set => data.holder_set("enchantment", set).iter().any(|name| {
                         let level = item_level(stack, name);
-                        level != 0 && int_bounds(levels, level)
+                        level != 0 && int_bounds(levels, level, int)
                     }),
                 }
             });
@@ -3447,5 +3466,55 @@ mod slots_predicate_tests {
             r#"{"minecraft:slots":{"armor.head":{"items":"minecraft:diamond_helmet"}}}"#,
         );
         assert!(!drops(&helmet, this));
+    }
+}
+
+#[cfg(test)]
+mod int_range_tests {
+    use super::*;
+
+    /// A one-pool table whose stone entry asks for `predicate` on `this`.
+    fn table(name: &str, predicate: &str) -> LootData {
+        let root =
+            std::env::temp_dir().join(format!("loot-int-range-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        fs::create_dir_all(&dir).unwrap();
+        let json = format!(
+            r#"{{"pools":[{{"rolls":1,"entries":[{{"type":"minecraft:item","name":"minecraft:stone",
+                "condition":{{"type":"minecraft:entity_properties","entity":"this","predicate":{predicate}}}}}]}}]}}"#
+        );
+        fs::write(dir.join("test.json"), json).unwrap();
+        fs::write(root.join("items.json"), "{}").unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let _ = fs::remove_dir_all(&root);
+        data
+    }
+
+    fn drops(data: &LootData, cube_size: i32) -> bool {
+        let params = EntityLootParams {
+            this: LootEntity {
+                cube_size: Some(cube_size),
+                ..LootEntity::new("minecraft:magma_cube")
+            },
+            ..Default::default()
+        };
+        !data
+            .roll_entity("minecraft:test", &mut LegacyRandom::new(1), &params)
+            .is_empty()
+    }
+
+    /// `IntRange.test`: a bound is a number provider, drawn from the loot
+    /// context random. A provider bound used to read as no bound at all, so a
+    /// cube of size 1 passed a minimum of 2.
+    #[test]
+    fn a_number_provider_bound_limits_the_cube_size() {
+        let data = table(
+            "cube",
+            r#"{"minecraft:type_specific/cube_mob":{"size":
+                {"min":{"type":"minecraft:uniform","min":2,"max":2}}}}"#,
+        );
+        assert!(!drops(&data, 1));
+        assert!(drops(&data, 2));
     }
 }

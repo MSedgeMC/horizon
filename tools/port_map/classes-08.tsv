@@ -64,8 +64,8 @@ FloatRangePredicate.Line.test	missing		minor: float range check with number-prov
 FloatRangePredicate.Line.validate	skip:data		validation at datapack load
 IntLimit.createLimiter	port	crates/horizon-world/src/loot.rs::Context::run	gap: minor: limit_count arm reads literal min and max only
 IntLimit.validate	skip:data		validation at datapack load
-IntRangePredicate.Line.createPredicate	inline	crates/horizon-world/src/loot.rs::int_bounds	gap: minor: literal bounds only; number-provider bounds are not evaluated
-IntRangePredicate.Line.test	port	crates/horizon-world/src/loot.rs::int_bounds	gap: minor: literal bounds only
+IntRangePredicate.Line.createPredicate	inline	crates/horizon-world/src/loot.rs::int_bounds	each bound is a number provider: a literal reads as itself, a uniform or binomial bound is drawn with the loot context random
+IntRangePredicate.Line.test	port	crates/horizon-world/src/loot.rs::int_bounds	the value is compared against each present bound; the pure item and entity matchers outside a loot context leave a provider bound unchecked
 IntRangePredicate.Line.validate	skip:data		validation at datapack load
 LootContextArg.ArgCodecBuilder	skip:java		codec builders for context arguments
 LootContextArg.Getter.get	skip:java		codec getter for a context argument
