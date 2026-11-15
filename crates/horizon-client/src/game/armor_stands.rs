@@ -1025,6 +1025,9 @@ impl Game<'_> {
                     true,
                 );
             }
+            // LivingEntity.aiStep's freezing step, after the blocks' effects
+            // and before pushEntities.
+            self.armor_stand_freeze_tick(i);
             // LivingEntity.aiStep calls pushEntities after travel. The stand's
             // own doPush is empty; only this shove runs.
             self.push_rideable_minecarts(i);
@@ -1037,6 +1040,62 @@ impl Game<'_> {
             self.break_armor_stand_by_anything(i);
         }
         Ok(())
+    }
+    /// `LivingEntity.aiStep`'s freezing step for the stand at `index`.
+    /// `PowderSnowBlock`'s `InsideBlockEffectType.FREEZE` adds one tick while a
+    /// stand with physics (not a marker, not `NoGravity`: either sets vanilla's
+    /// `noPhysics`, which keeps `applyEffectsFromBlocks` away) has powder snow
+    /// in its deflated box and `canFreeze`; otherwise
+    /// `setTicksFrozen(max(0, getTicksFrozen() - 2))` thaws it. A stand models
+    /// no field for the count, so it lives in the loaded `persist.raw`.
+    fn armor_stand_freeze_tick(&mut self, index: usize) {
+        let stand = &self.armor_stands[index];
+        let id = stand.id;
+        let Some(raw) = self.persist.raw.get(&id) else {
+            return;
+        };
+        let ticks = super::boats::saved_ticks_frozen(raw);
+        let mut in_snow = false;
+        if !stand.marker && !stand.no_gravity {
+            let box_at = stand.bounds().deflate(Vec3::new(1.0e-5, 1.0e-5, 1.0e-5));
+            let (lo, hi) = (box_at.min_position(), box_at.max_position());
+            'cells: for x in lo.x.floor() as i32..=hi.x.floor() as i32 {
+                for y in lo.y.floor() as i32..=hi.y.floor() as i32 {
+                    for z in lo.z.floor() as i32..=hi.z.floor() as i32 {
+                        if &*self.res.facts().get(self.world.block(x, y, z)).name
+                            == "minecraft:powder_snow"
+                        {
+                            in_snow = true;
+                            break 'cells;
+                        }
+                    }
+                }
+            }
+        }
+        let next = if in_snow && self.armor_stand_can_freeze(index) {
+            (ticks + 1).min(horizon_client::motion::PlayerMotion::TICKS_REQUIRED_TO_FREEZE)
+        } else {
+            (ticks - 2).max(0)
+        };
+        if next != ticks
+            && let Some(horizon_world::nbt::Tag::Compound(map)) = self.persist.raw.get_mut(&id)
+        {
+            super::boats::put_ticks_frozen(map, next);
+        }
+    }
+    /// `LivingEntity.canFreeze` for a stand: armor stands are not in
+    /// `#freeze_immune_entity_types`, and a worn armor piece in
+    /// `#freeze_immune_wearables` keeps it from freezing.
+    fn armor_stand_can_freeze(&self, index: usize) -> bool {
+        let immune = self
+            .res
+            .items()
+            .item_tags
+            .get("minecraft:freeze_immune_wearables");
+        !self.armor_stands[index].equipment[2..6]
+            .iter()
+            .flatten()
+            .any(|stack| immune.is_some_and(|items| items.contains(&*stack.item)))
     }
     /// The armor stands' share of `Shulker.onPeekAmountChange`: the opening
     /// lid of mob `shulker` moves every stand with physics (vanilla's
@@ -2821,6 +2880,69 @@ mod postbaseline_lodestone_controls {
                 .copied()
                 .collect::<std::collections::HashSet<_>>(),
             chunks
+        );
+    }
+}
+
+#[cfg(test)]
+mod ticks_frozen_tests {
+    use super::*;
+
+    fn ticks_frozen(game: &Game<'_>, id: u32) -> i32 {
+        game.persist
+            .raw
+            .get(&id)
+            .map_or(0, crate::game::boats::saved_ticks_frozen)
+    }
+
+    #[test]
+    fn powder_snow_warms_a_stand_a_tick_and_the_open_air_thaws_two() {
+        let Some(_root) = std::env::var_os("HORIZON_TEST_RESOURCES") else {
+            return;
+        };
+        let mut game = crate::game::native_machines::tests::server_game();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.block_ticks
+            .add_empty_chunk(BlockPos::new(0, 0, 0).chunk())
+            .unwrap();
+        assert!(game.run_command("forceload add 0 0"));
+        assert!(game.run_command("fill 0 199 0 15 199 15 stone"));
+        // A stand with physics keeps the block effects: in powder snow its
+        // deflated box meets the block, otherwise it is thawing in the open.
+        assert!(game.run_command(
+            r#"summon armor_stand 4.5 200.0 4.5 {UUID:[I;16909,0,0,1],TicksFrozen:60}"#
+        ));
+        assert!(game.run_command("setblock 8 200 8 powder_snow"));
+        assert!(game.run_command(
+            r#"summon armor_stand 8.5 200.0 8.5 {UUID:[I;16909,0,0,2],TicksFrozen:60}"#
+        ));
+        // A NoGravity stand has no physics in vanilla (`ArmorStand.hasPhysics`),
+        // so no block effect reaches it and it thaws even in powder snow.
+        assert!(game.run_command(
+            r#"summon armor_stand 12.5 200.0 8.5 {UUID:[I;16909,0,0,3],TicksFrozen:60,NoGravity:1b}"#
+        ));
+        assert!(game.run_command("setblock 12 200 8 powder_snow"));
+        let id_at = |game: &Game<'_>, x: f64| {
+            game.armor_stands
+                .iter()
+                .find(|a| a.position.x == x)
+                .unwrap()
+                .id
+        };
+        let (outside, inside, floating) =
+            (id_at(&game, 4.5), id_at(&game, 8.5), id_at(&game, 12.5));
+        for id in [outside, inside, floating] {
+            assert_eq!(ticks_frozen(&game, id), 60);
+        }
+        assert!(game.entity_ticking_area()(8, 8));
+        game.tick_armor_stands().unwrap();
+        assert_eq!(ticks_frozen(&game, outside), 58, "the open air thaws two");
+        assert_eq!(ticks_frozen(&game, inside), 61, "powder snow adds one");
+        assert_eq!(
+            ticks_frozen(&game, floating),
+            58,
+            "a no-physics stand thaws"
         );
     }
 }
