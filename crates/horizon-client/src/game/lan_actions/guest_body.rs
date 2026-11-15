@@ -247,7 +247,7 @@ impl Game<'_> {
                 }
             }
             // ServerGamePacketListenerImpl.handleMovePlayer:
-            // Player.checkMovementStatistics for each move.
+            // ServerPlayer.checkMovementStatistics for each move.
             for d in travelled {
                 game.movement_stats(Vec3::new(d[0], d[1], d[2]));
             }

@@ -530,7 +530,7 @@ impl Game<'_> {
     }
 }
 
-/// `TrialSpawner.findPlayerWithOminousEffect`: Trial Omen first, then Bad Omen.
+/// `TrialSpawnerStateData.findPlayerWithOminousEffect`: Trial Omen first, then Bad Omen.
 pub(super) fn omen_of(
     effects: &horizon_client::effects::PlayerEffects,
 ) -> Option<horizon_client::mobs::trial_spawner::Omen> {

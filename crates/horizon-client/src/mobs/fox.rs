@@ -606,7 +606,7 @@ fn teleport_randomly(
     }
 }
 
-/// `Entity.randomTeleport`: the drawn point drops to the first
+/// `LivingEntity.randomTeleport`: the drawn point drops to the first
 /// motion-blocking ground below it and takes the fox only if its box there
 /// is free and holds no liquid, on a block the consume effect allows.
 /// Otherwise the fox stays where it was.
@@ -1610,7 +1610,7 @@ mod consume_tests {
                 let mut events = Vec::new();
                 ai_step(&mut m, w, &mut events);
                 assert_ne!(m.position, Vec3::new(0.5, 1.0, 0.5), "the fruit moved it");
-                // `Entity.randomTeleport` drops the drawn height by one per
+                // `LivingEntity.randomTeleport` drops the drawn height by one per
                 // step until the block below it is ground: just above the stone.
                 assert!(
                     (1.0..2.0).contains(&m.position.y),

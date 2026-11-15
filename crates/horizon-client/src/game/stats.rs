@@ -313,7 +313,7 @@ impl Game<'_> {
         let d = p.position.subtract(self.previous_position);
         self.movement_stats(d);
     }
-    /// `Player.checkMovementStatistics` / `checkRidingStatistics` for one move.
+    /// `ServerPlayer.checkMovementStatistics` / `checkRidingStatistics` for one move.
     pub(super) fn movement_stats(&mut self, d: Vec3) {
         let Some(p) = self.player.as_ref() else {
             return;
