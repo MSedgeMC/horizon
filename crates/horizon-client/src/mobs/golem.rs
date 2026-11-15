@@ -352,11 +352,7 @@ fn gift_candidate(m: &mut Mob, w: &MobWorld) -> Option<u32> {
         }
         let d = s.position.distance_squared(m.position);
         // `forNonCombat().range(6)`: the range is scaled by visibility, floor 2.
-        let range = if s.has_effect("invisibility") {
-            2.0
-        } else {
-            6.0
-        };
+        let range = (6.0 * s.visibility_percent()).max(2.0);
         if d > range * range || best.is_some_and(|(b, _)| d >= b) || !m.sees(w, Who::Mob(s.id)) {
             continue;
         }
@@ -1102,13 +1098,17 @@ mod tests {
     fn an_invisible_neighbour_is_not_offered_a_flower_from_five_blocks() {
         let mut outcomes = Vec::new();
         if !with_test_world(&[], |w, types| {
-            for invisible in [false, true] {
+            // A visible villager at five; an unarmoured invisible one at five,
+            // out of its 6 x 0.07 (floored to 2) range; a fully armoured
+            // invisible one at three, inside its 6 x 0.7 = 4.2 range.
+            for (invisible, armored, x) in [(false, false, 5.5), (true, false, 5.5), (true, true, 3.5)]
+            {
                 let mut world = w.clone();
                 world.daylight = true;
                 let mut neighbour = Mob::new(
                     2,
-                    Arc::new(types.types["minecraft:copper_golem"].clone()),
-                    Vec3::new(5.5, 64.0, 0.5),
+                    Arc::new(types.types["minecraft:villager"].clone()),
+                    Vec3::new(x, 64.0, 0.5),
                     0.0,
                 );
                 if invisible {
@@ -1116,6 +1116,11 @@ mod tests {
                         .extra
                         .effects
                         .push(("minecraft:invisibility", 200, 0));
+                }
+                if armored {
+                    for slot in &mut neighbour.extra.armor {
+                        *slot = Some(crate::items::ItemStack::new("minecraft:diamond_helmet", 1));
+                    }
                 }
                 let seen = [neighbour.seen(None)];
                 let world = crate::mobs::MobWorld {
@@ -1157,8 +1162,9 @@ mod tests {
         }
         assert_eq!(
             outcomes,
-            vec![true, false],
-            "a visible neighbour at five is offered a flower; an invisible one is not"
+            vec![true, false, true],
+            "a visible neighbour at five and an armoured invisible one at three are offered a \
+             flower; an unarmoured invisible one at five is not"
         );
     }
 }

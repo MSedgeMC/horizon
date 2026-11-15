@@ -53,6 +53,16 @@ impl Mob {
                     .effects
                     .iter()
                     .any(|e| e.0 == "minecraft:invisibility"),
+            armor_cover: [
+                m.extra.head.is_some() || m.extra.armor[0].is_some(),
+                m.extra.chest.is_some() || m.extra.armor[1].is_some(),
+                m.extra.legs.is_some() || m.extra.armor[2].is_some(),
+                m.extra.feet.is_some() || m.extra.armor[3].is_some(),
+            ]
+            .iter()
+            .filter(|worn| **worn)
+            .count() as f32
+                / 4.0,
             panicking: m.ai.panicking,
             active_raid: raider::has_active_raid(m),
             opened_chest: m.extra.opened_chest,
@@ -99,12 +109,15 @@ impl Mob {
 impl Seen {
     /// `LivingEntity.getVisibilityPercent` for a mob target: 1, or
     /// ×0.7×armor cover (at least 0.1) while `isInvisible`. A mob does not
-    /// sneak (`isShiftKeyDown` is a player's) and its `getArmorCoverPercentage`
-    /// is 0, which the 0.1 floor turns into 0.07 - the sheep the evoker looks
-    /// for has no armour, and no worn `mob_visibility` either. `invisible` is
-    /// the flag or the effect: Horizon does not model vanilla's
-    /// `updateInvisibilityStatus` sync of the effect into the flag.
+    /// sneak (`isShiftKeyDown` is a player's) and a worn `mob_visibility`
+    /// enchantment is not read. `invisible` is the flag or the effect:
+    /// Horizon does not model vanilla's `updateInvisibilityStatus` sync of the
+    /// effect into the flag.
     pub fn visibility_percent(&self) -> f64 {
-        if self.invisible { 0.7 * 0.1 } else { 1.0 }
+        if self.invisible {
+            0.7 * f64::from(self.armor_cover).max(0.1)
+        } else {
+            1.0
+        }
     }
 }

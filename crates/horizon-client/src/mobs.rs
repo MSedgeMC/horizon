@@ -2385,6 +2385,9 @@ pub struct Seen {
     pub hurt_by: Option<(Who, i32)>,
     /// `Entity.isInvisible`: the flag, or the invisibility effect.
     pub invisible: bool,
+    /// `LivingEntity.getArmorCoverPercentage`: the worn armour pieces over
+    /// four, the armour term of `getVisibilityPercent`.
+    pub armor_cover: f32,
     /// `PathfinderMob.isPanicking`: a running panic goal or the brain's
     /// `IS_PANICKING` memory.
     pub panicking: bool,
