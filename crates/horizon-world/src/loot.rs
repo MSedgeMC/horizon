@@ -1913,6 +1913,31 @@ impl<R: RandomSource> Context<'_, R> {
                     stack.components.push((id.clone(), value.clone()));
                 }
             }
+            // SetContainerLootTable: an empty stack keeps no component; any
+            // other takes the table key and seed as minecraft:container_loot
+            // (SeededContainerLoot: loot_table and an optional seed, 0 when
+            // the function leaves it out). The block entity item code reads
+            // the component back as LootTable and LootTableSeed.
+            "minecraft:set_loot_table" => {
+                if stack.is_empty() {
+                    return stack;
+                }
+                let Some(table) = f["loot_table_id"].as_str() else {
+                    return stack;
+                };
+                let id = "minecraft:container_loot";
+                let mut loot = serde_json::Map::new();
+                loot.insert(
+                    "loot_table".to_owned(),
+                    Value::from(crate::datafix::dynamic::namespaced(table)),
+                );
+                let seed = f["seed"].as_i64().unwrap_or(0);
+                if seed != 0 {
+                    loot.insert("seed".to_owned(), Value::from(seed));
+                }
+                stack.components.retain(|(k, _)| k != id);
+                stack.components.push((id.to_owned(), Value::Object(loot)));
+            }
             // A mod's own kind: the hook changes the stack.
             k if k.contains(':') && !k.starts_with("minecraft:") => {
                 native_loot_function(k, f, &self.native_ctx(), &mut stack);
@@ -2586,6 +2611,60 @@ mod namespace_tests {
                 "author": "Cartographer",
                 "pages": [{"raw": "page two"}],
             })
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// SetContainerLootTable: a non-empty stack takes the table id and seed
+    /// as the minecraft:container_loot component; the codec default seed
+    /// (0) is left out.
+    #[test]
+    fn set_loot_table_writes_the_container_loot_component() {
+        let root =
+            std::env::temp_dir().join(format!("horizon-loot-container-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:chest",
+            "modifier": [{"type": "minecraft:set_loot_table", "loot_table_id": "minecraft:chests/simple_dungeon", "seed": 42}]}]}]}"#;
+        let files = [
+            ("items.json", r#"{"minecraft:chest": {}}"#),
+            ("data/minecraft/loot_table/chests/container.json", table),
+        ];
+        for (name, text) in files {
+            let path = root.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/container", 7, 27, None);
+        let chest = filled.iter().flatten().next().expect("a chest");
+        let component: Vec<_> = chest
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:container_loot")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", chest.components);
+        assert_eq!(
+            component[0].1,
+            serde_json::json!({"loot_table": "minecraft:chests/simple_dungeon", "seed": 42})
+        );
+        // The function seed defaults to 0, which the component leaves out.
+        fs::write(
+            root.join("data/minecraft/loot_table/chests/container.json"),
+            table.replace(r#", "seed": 42"#, ""),
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/container", 7, 27, None);
+        let chest = filled.iter().flatten().next().expect("a chest");
+        let component: Vec<_> = chest
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:container_loot")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", chest.components);
+        assert_eq!(
+            component[0].1,
+            serde_json::json!({"loot_table": "minecraft:chests/simple_dungeon"})
         );
         let _ = fs::remove_dir_all(&root);
     }
