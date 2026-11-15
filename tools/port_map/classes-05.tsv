@@ -34,7 +34,7 @@ DynamicGameEventListener.ifChunkExists	port	crates/horizon-client/src/game/sculk
 DynamicGameEventListener.move	skip:other		listeners are fixed block positions in Horizon; sculk blocks do not move
 DynamicGameEventListener.remove	port	crates/horizon-client/src/game/sculk.rs::Game::sculk_sync_index	drops the listener's index entry when its block is gone
 EntityPositionSource.getId	skip:java		accessor; Horizon's listeners hold the source as a Who (sculk.rs Info)
-EntityPositionSource.getPosition	port	crates/horizon-client/src/mobs/warden.rs::listen	gap: minor: covers the warden's eye-height listener only; no other position source is used
+EntityPositionSource.getPosition	port	crates/horizon-client/src/mobs/warden.rs::listen, crates/horizon-client/src/mobs/allay.rs::hears_jukebox	the warden's eye-height listener and the allay's jukebox and vibration sources read the entity's eye height (PositionSource::Entity); they are the position sources in use
 EntityPositionSource.getUuid	skip:java		accessor; Horizon holds the source as a Who
 EntityPositionSource.resolveEntity	skip:other		the source is a Who held by the listener, so there is no entity lookup to port
 EuclideanGameEventListenerRegistry.getPostableListenerPosition	inline	crates/horizon-client/src/game/sculk.rs::Game::post_game_event	the in-range distance test that picks the listeners
