@@ -5952,7 +5952,7 @@ impl Game<'_> {
     /// `right` the take uses) start as vanilla's, and every mod is called in
     /// turn and may change them. Set `canceled` to leave the anvil with no
     /// result and both costs at 0: later mods aren't called. A negative level
-    /// cost becomes 0 (`AnvilMenu.setCost`), and a result that costs 0 levels
+    /// cost becomes 0 (the `cost` slot stays 0 or more), and a result that costs 0 levels
     /// can't be taken. A material cost of 0 or less, or one above what `right`
     /// holds, takes the whole stack (none when the anvil only renames). Asked
     /// whenever the inputs or the name change while the left slot holds an

@@ -513,7 +513,7 @@ impl AnvilResult {
     /// NeoForge's `CommonHooks.onAnvilUpdate` once the mods answered
     /// `AnvilUpdateEvent` about this result (vanilla's): a cancel leaves no
     /// result and both costs at 0. Otherwise their output, their level cost
-    /// through `AnvilMenu.setCost` (a negative one is 0) and their material
+    /// through the menu's `cost` slot (a negative one is 0) and their material
     /// cost, where 0 or less is vanilla's 0 (`onTake` takes the whole right
     /// stack, unless the anvil only renames). `only_renaming` stays vanilla's.
     pub fn answer_update(
@@ -1560,7 +1560,7 @@ mod tests {
 
     /// The mods' answer to `AnvilUpdateEvent` replaces vanilla's result as
     /// `CommonHooks.onAnvilUpdate` sets it: a cancel empties the result and
-    /// both costs, `AnvilMenu.setCost` keeps the level cost at 0 or more, and
+    /// both costs, the menu's `cost` slot keeps the level cost at 0 or more, and
     /// a material cost below 1 is vanilla's 0. The rename flag stays vanilla's.
     #[test]
     fn an_anvil_update_answer_replaces_vanillas_result() {
