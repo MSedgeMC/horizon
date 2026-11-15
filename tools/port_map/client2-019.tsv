@@ -129,7 +129,7 @@ WorldCreationUiState.getNonEmptyList	skip:data		registry tag lookup
 WorldCreationUiState.WorldTypeEntry.describePreset	port	crates/horizon-client/src/title/create_world.rs::buttons	world type label: Default or Superflat
 WorldCreationUiState.WorldTypeEntry.isAmplified	inline	crates/horizon-client/src/title/create_world.rs::buttons	the amplified preset's help tooltip on the world type cycle button
 WorldOpenFlows.createFreshLevel	port	crates/horizon-client/src/game/world_loading.rs::WorldRequest::prepare	writes a fresh level.dat; gap: minor: vanilla uses it for the debug recreate and the demo world; no datapack dimensions
-WorldOpenFlows.createWorldAccess	port	crates/horizon-client/src/save.rs::SessionLock::acquire	takes the world's session lock as the access; gap: minor: no symlink warning
+WorldOpenFlows.createWorldAccess	port	crates/horizon-client/src/save.rs::SessionLock::acquire	takes the world's session lock as the access; a folder holding links is refused in Title::play with Alert::Symlink first
 WorldOpenFlows.createLevelFromExistingSettings	port	crates/horizon-client/src/game/world_session.rs::Game::open_world	starts the world with the given settings; the packs come from datapack::for_recreate and are installed before the world opens
 WorldOpenFlows.loadWorldStem	port	crates/horizon-client/src/game/world_loading.rs::WorldRequest::prepare	reads level data and generator settings and discovers the world's packs (datapack::discover_with_features); gap: minor: no safe-mode retry when a pack fails to load
 WorldOpenFlows.recreateWorldData	port	crates/horizon-client/src/title/create_world.rs::WorldOptions::of_world	reads the old world's settings for Re-Create; title.rs click_action arm 15 fills name, seed and mode
