@@ -12,8 +12,8 @@ serves the same commands as MCP tools. The launcher's MCP server offers them too
 
 | | Count |
 | --- | --- |
-| `horizon-ctl` commands | 96, in 8 groups (session, observe, move and look, act, screens and chat, multiplayer, world and cheats, scripting and benchmarks) |
-| MCP tools | 88 (8 commands are CLI only) |
+| `horizon-ctl` commands | 114, in 8 groups (session, observe, move and look, act, screens and chat, multiplayer, world and cheats, scripting and benchmarks) |
+| MCP tools | 106 (8 commands are CLI only) |
 | Destructive commands (need `--confirm`) | 3 |
 | Command names the game's socket answers | about 160, test hooks included (`horizon-ctl help --game`) |
 
