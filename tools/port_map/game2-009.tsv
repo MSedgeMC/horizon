@@ -2,7 +2,7 @@ SmithingTemplateItem.createArmorTrimTemplate	port	crates/horizon-client/src/game
 SmithingTemplateItem.createNetheriteUpgradeTemplate	port	crates/horizon-client/src/game/stations.rs::smithing_slot_icons	the netherite upgrade template: the 11 tool and armour icons in the base slot and the ingot in the additions slot
 SmithingTemplateItem.createNetheriteUpgradeIconList	port	crates/horizon-client/src/game/stations.rs::smithing_slot_icons	the 11 tool and armour icons the base slot cycles for a netherite upgrade template (smithing_slot_icons)
 SpawnEggItem.spawnMob	port	crates/horizon-client/src/game/creatures/spawn_eggs.rs::Game::use_spawn_egg	the egg spawns the mob on the clicked face and posts `minecraft:entity_place` there (the dispenser path posts it too); the egg is consumed and the ITEM_USED stat is awarded
-SpawnEggItem.spawnMob	port	crates/horizon-client/src/game/creatures/spawn_eggs.rs::Game::use_spawn_egg	gap: minor: no ENTITY_PLACE game event (sculk sensors do not hear the egg); consumes the egg and spawns the mob on the clicked face
+SpawnEggItem.spawnMob	port	crates/horizon-client/src/game/creatures/spawn_eggs.rs::Game::use_spawn_egg	the egg posts `minecraft:entity_place` at the clicked block, applies the item's components and awards the used statistic
 SpawnEggItem.getType	port	crates/horizon-client/src/game/creatures/spawn_eggs.rs::Game::use_spawn_egg	kind taken from the item id suffix (*_spawn_egg), not an ENTITY_DATA component
 TridentItem.createAttributes	skip:data		attack damage 8 and attack speed -2.9 are item table data (horizon-items attack_speed modifier)
 TridentItem.asProjectile	skip:other		ProjectileItem override that no code calls: no dispenser behaviour is registered for the trident in vanilla
@@ -19,7 +19,7 @@ PotionContents.getColorOptional	port	crates/horizon-client-core/src/potions.rs::
 PotionContents.hasEffects	inline	crates/horizon-client/src/game/potions.rs::Game::splash	a lingering cloud is made only when the potion has effects
 PotionContents.getPotionDescription	port	crates/horizon-client-render/src/brewing.rs::tooltip	effect name with potency; joined with a space, not the potion.withAmplifier translation
 PotionContents.onConsume	inline	crates/horizon-client/src/game/potions.rs::Game::finish_drinking	the potion's and custom effects at the stack's potion_duration_scale (stack.potion_duration_scale), then the bottle swap; instant effects run at once
-AttackRange.defaultFor	inline	crates/horizon-client/src/game/hand.rs::attack_range_contains	gap: minor: fixed reach 0 to 3 with a 0.3 margin; no entity interaction range attribute
+AttackRange.defaultFor	inline	crates/horizon-client/src/game/hand.rs::attack_range_contains	a stack's `attack_range` component, else 0 to 3 with a 0.3 hitbox margin; the player's `entity_interaction_range` attribute is read separately for interaction reach (`Game::interaction_range`)
 AttackRange.getClosesetHit	port	crates/horizon-client/src/game/hand.rs::GameHands::hit	gap: minor: uses the crosshair's entity or block, not the closest hit along the attack range
 AttackRange.effectiveMaxRange	inline	crates/horizon-client/src/game/hand.rs::attack_range_contains	creative or survival reach; the mob factor is not used
 BlockItemStateProperties.with	port	crates/horizon-client/src/game/block_items.rs::Game::picked_stack	gap: minor: writes only honey_level for beehives and bee nests (BeehiveBlock.getCloneItemStack)
@@ -44,10 +44,10 @@ BundleContents.Mutable.tryTransfer	port	crates/horizon-client/src/menu/bundle.rs
 BundleContents.Mutable.toggleSelectedItem	port	crates/horizon-items/src/bundle.rs::toggle_selected	selects the index, or clears the selection when it is selected already or out of range
 BundleContents.Mutable.indexIsOutsideAllowedBounds	inline	crates/horizon-items/src/bundle.rs::toggle_selected	the bounds test is the inside check
 BundleContents.Mutable.getStackedWeight	port	crates/horizon-items/src/bundle.rs::Weight::times	weight times a count
-BundleContents.Mutable.setItem	missing		minor: a slot write into a bundle (container setItem, reached by /item replace) skips the weight limit and merge; Horizon's /item command has no bundle handling
+BundleContents.Mutable.setItem	port	crates/horizon-client/src/game/commands/items/contents.rs::Game::contents_accepts	a slot write into a bundle checks the weight (`bundle::Contents::room_for`), the item's bundle eligibility and the component's filters before it is stored
 BundleContents.Mutable.addSlotWithItem	inline	crates/horizon-items/src/bundle.rs::try_insert	the append with its weight check and merge lives in try_insert; the /item command's container write still does not go through it
 BundleContents.Mutable.getWeightWithAddedItems	inline	crates/horizon-items/src/bundle.rs::Contents::try_insert	the weight after adding must stay at or below one, computed from room_for
-BundleContents.Mutable.mergeIdenticalStacks	inline	crates/horizon-items/src/bundle.rs::Contents::try_insert	gap: minor: merges on insert only; no flatten pass for container writes
+BundleContents.Mutable.mergeIdenticalStacks	inline	crates/horizon-client/src/game/commands/items/contents.rs::Component::store	the bundle write-back merges an entry into a later match with the same item and components, keeps the surviving order and drops air or empty slots
 BundleContents.Mutable.toImmutable	port	crates/horizon-items/src/bundle.rs::Contents::store	writes the contents and selection back into the component
 ChargedProjectiles.ofNonEmpty	port	crates/horizon-client/src/game/crossbow.rs::Game::tick_crossbow	loads the drawn ammo into the crossbow (Multishot draws three); empty stacks are not filtered here
 ChargedProjectiles.contains	port	crates/horizon-client/src/game/crossbow.rs::Game::shoot_crossbow	the firework rocket check that sets the shot power
