@@ -1975,7 +1975,7 @@ impl Game<'_> {
     pub(super) fn native_menu_background(&self, radius: &mut Option<f32>) {
         mod_api::dispatch_menu_background(self, mod_api::mods(), radius);
     }
-    /// `Screen.renderTransparentBackground`: draws the translucent dark background
+    /// `Screen.extractTransparentBackground`: draws the translucent dark background
     /// behind an in-game screen (inventory, container, creative, book, sign, editor).
     /// Set `canceled` (or return `Flow::Cancel`) to suppress the vanilla dark gradient,
     /// allowing a mod to draw its own background or apply menu background blur
@@ -3542,7 +3542,7 @@ impl Game<'_> {
     pub(super) fn native_screen_closing(&self, screen: &NativeScreenView<'_>) {
         mod_api::dispatch_screen_closing(self, mod_api::mods(), screen);
     }
-    /// The open screen has drawn itself and its tooltips (`Screen.render`,
+    /// The open screen has drawn itself and its tooltips (`Screen.extractRenderStateWithTooltipAndSubtitles`,
     /// the point of `ScreenEvent.Render.Post`): draw over it with
     /// `native_fill`, `native_sprite` and `native_text`, `screen.rect` being
     /// its container panel (or the whole window) and `screen.id` the screen
