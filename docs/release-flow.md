@@ -198,8 +198,8 @@ A pull request still runs its own parity job when it changes a harness script, a
 
 `.github/workflows/release.yml` is the batch train: it decides when a new Nightly goes out and starts
 `nightly build` (`.github/workflows/nightly-build.yml`, [Nightly channel](#nightly-channel)) on the commit it
-decided, which builds, signs and publishes it. It starts after every green `checks` or `parity-main` run of a push to
-main, every 10 minutes (so a batch waiting for merges to settle goes out without another merge), and by hand.
+decided, which builds, signs and publishes it. Since 2026-11-15 it runs only by hand (`gh workflow run release`):
+it no longer starts after a merge or on a timer (`on: workflow_dispatch` in the workflow).
 
 ```mermaid
 flowchart LR
@@ -207,8 +207,8 @@ flowchart LR
     checks -- green --> merge["merge queue<br/>(squash)"]
     merge --> main(["main"])
     main --> mainchecks{"checks and<br/>parity-main"}
-    mainchecks -- green --> decide{"decide<br/>tools/release_train.py"}
-    cron(["every 10 minutes"]) --> decide
+    mainchecks -. newest commit both passed .-> decide{"decide<br/>tools/release_train.py"}
+    manual(["by hand since 2026-11-15:<br/>gh workflow run release"]) --> decide
     decide -- "5 player-facing PRs settled 5 min,<br/>the oldest waited 6 h, or release-now" --> nightly["nightly build:<br/>that commit + the reviewers' picks"]
     decide -- otherwise --> wait(["wait"])
     nightly --> gate{"smoke test drew a world,<br/>no release-blocker is open"}
@@ -237,8 +237,8 @@ commits) since the commit the published Nightly was built on:
 - One Nightly build at a time: while one runs or waits, the train starts none. At most 12 builds a UTC day (the
   reviewers' `/nightly` builds count): past that the train waits for the next day, except for `release-now` and
   `force=true`.
-- A scheduled run takes main's newest commit where `checks` and `parity-main` passed (a later failed
-  parity-main batch doesn't change it); after a run of either, the commit it passed on, once both passed there.
+- A hand-started run takes main's newest commit where `checks` and `parity-main` passed (a later failed
+  parity-main batch doesn't change it).
 
 ### Nightly only
 
@@ -385,7 +385,7 @@ gh variable delete RELEASES_PAUSED           # back on; the next run catches up
 ```
 
 While paused, runs still decide and say why in their summary; `force=true` still starts a Nightly, but never past an
-open `release-blocker`. The reviewers' `/nightly` and the 20:17 UTC build still run: a line `paused` in
+open `release-blocker`. The reviewers' `/nightly` still runs: a line `paused` in
 `.github/trusted-reviewers.txt` stops the reviewers' commands.
 
 ### Rolling back
@@ -399,7 +399,8 @@ the same for a server.
 ## Launcher releases
 
 `.github/workflows/launcher.yml` releases the launcher the same way. It starts on a push to main that changes
-`launcher/`, `crates/horizon-prepare/` or `crates/horizon-theme/` (what the launcher builds in), every hour at :47,
+a path the launcher is built from (`launcher/`, `crates/horizon-prepare/`, `crates/horizon-theme/`, the other
+crates in the workflow's paths list, `packaging/` and the workflow itself), every 10 minutes at :07, :17, ...,
 and by hand; pushes to `launcher` and `launcher-*` branches only build.
 
 - `tools/release_train.py decide --kind launcher` counts the pull requests merged since the last published
@@ -444,11 +445,11 @@ launcher and the website read: both then look the newest launcher tags up one by
 ## Nightly channel
 
 `.github/workflows/nightly-build.yml` builds and publishes the Nightly, the only build players get since
-2026-10-28: when the batch train decides ([Game releases](#game-releases), with the commit as `base`), once a night
-(20:17 UTC) and when a trusted reviewer asks (#2681). It builds main's newest commit where
+2026-10-28: when the batch train decides ([Game releases](#game-releases), with the commit as `base`) and when a
+trusted reviewer asks (#2681). It builds main's newest commit where
 `checks` and `parity-main` passed, as a release does (or the `base` input), plus the pull requests the trusted
 reviewers picked, merged in their order; with none picked, that commit alone (`tools/ci/nightly.py pick`). No green
-commit (main's newest `checks` or `parity-main` run failed) builds nothing. A night with nothing new publishes nothing. A pull request goes in without a review: a trusted
+commit (main's newest `checks` or `parity-main` run failed) builds nothing. A run with nothing new publishes nothing. A pull request goes in without a review: a trusted
 reviewer or Ludovic can pick any open pull request to main, reviewed or not (Ludovic, 2026-10-30, at the Team's
 request, because they were often blocked on the launcher; from 2026-10-28 it needed an approving review at the
 head that is built). The guards stay: the pull request must be open and target main, it must leave the
@@ -514,8 +515,8 @@ comment on any issue or pull request (`.github/workflows/nightly-command.yml`, `
 - **The answer.** The workflow answers in the thread with one comment starting `🤖 Nightly:`: the set, the build's
   run, and later the published Nightly (or why it failed).
 - **The set** is `set.json` on the `nightly-state` branch: who asked, when, and each pull request at the head it had
-  then. A head is taken again only when someone asks again, never silently in between. The
-  scheduled run builds every pull request at that head and drops the merged, closed and refused ones; the notes say so.
+  then. A head is taken again only when someone asks again, never silently in between. Each
+  `nightly build` run takes every pull request at that head and drops the merged, closed and refused ones; the notes say so.
   `builds.jsonl` there records each build's set (for `nightly_stats.py`).
 - **Assembly.** `pick` (main's code) fetches each head and merges them onto main with `git merge-tree
   --write-tree`: git objects only, no working tree, so no file, hook or filter of theirs reaches the runner. The
@@ -523,12 +524,14 @@ comment on any issue or pull request (`.github/workflows/nightly-command.yml`, `
   Equal inputs give the same commit, so an unchanged set and main publish nothing new. On a conflict the build
   stops and answers which two pull requests conflict and where; a reviewer can then open an integration pull
   request from their fork that combines them, and pick that one instead.
-- **Old builds.** The scheduled run deletes the `nightly/build-*` branches older than 7 days (Ludovic,
-  2026-10-27), and lists each in its summary. It never deletes the newest build, a build a published `nightly` or
-  `nightly-<date>` release points to, or any other branch (`nightly.py prune-builds`).
+- **Old builds.** A scheduled run deletes the `nightly/build-*` branches older than 7 days (Ludovic,
+  2026-10-27), and lists each in its summary; it never deletes the newest build, a build a published `nightly` or
+  `nightly-<date>` release points to, or any other branch (`nightly.py prune-builds`). Since the build no longer
+  runs on a schedule, nothing prunes them automatically;
+  `python3 tools/ci/nightly.py prune-builds --days 7` does it.
 - **Refused.** A pull request that changes a path CODEOWNERS gives to the council (`.github/`, `tools/ci/`, the
   signing and update code, `launcher/src/backend.rs`, `launcher/links.json`…), more than 30 in a set, and more than
-  12 builds a day (the scheduled one always runs; 6 until 2026-10-28).
+  12 builds a day (6 until 2026-10-28).
 - **No repository role.** Reviewers need no permission on the repository: the list file and the workflow are the
   whole of it.
 - **The council stays in charge.**
