@@ -2158,3 +2158,65 @@ fn combined_content_is_snapshotted_with_its_exact_native_build() {
         "disabled mods leave no content in the next build"
     );
 }
+
+/// A player's Rebuild on Horizon (`--ignore-pins`) builds on the picked version's own commit;
+/// a build from the record it wrote keeps doing so (docs/native-mods.md), where an ordinary
+/// first build still follows the mods' pin.
+#[test]
+fn a_build_after_an_ignore_pins_rebuild_keeps_its_commit() {
+    let pinned = |id: &str, horizon: Option<&str>| Bundle {
+        id: id.into(),
+        version: "1".into(),
+        dir: PathBuf::new(),
+        horizon: horizon.map(str::to_owned),
+        mixins: None,
+        hooks: None,
+        injections: Vec::new(),
+        api: None,
+        mixins_content: false,
+    };
+    // A: what pin_probe pins; B: the commit of the Nightly the player picked, and that the
+    // --ignore-pins build compiled.
+    let record = |on_base: bool| About {
+        base: "nightly-2026-11-04-bbbbbbb".into(),
+        horizon: if on_base { B } else { A }.into(),
+        target: Target::Client,
+        base_horizon: Some(B.into()),
+        pinned_by: if on_base {
+            Vec::new()
+        } else {
+            vec!["pin_probe".into()]
+        },
+        on_base,
+        left_out: Vec::new(),
+    };
+    let mods = [
+        pinned("pin_probe", Some(A)),
+        pinned("native_crate_demo", None),
+    ];
+    let picked = || -> Result<String, String> { Ok(B.into()) };
+    let no_date = |_: &str| -> Result<String, String> { panic!("one pin: no date needed") };
+    let commit = |choice| pinned_revision(&mods, choice, picked, no_date).unwrap();
+
+    // The first ordinary build has no build to carry a choice from, so the pin chooses.
+    assert!(!builds_on_base(false, None));
+    assert_eq!(commit(false), (A.to_owned(), vec!["pin_probe".to_owned()]));
+    // A build from one that moved to the pin did not choose the base, so the pin still may.
+    assert!(!builds_on_base(false, Some(&record(false))));
+    // Rebuild on Horizon's own `on_base`, and a build from the record it wrote, keep the base.
+    assert!(builds_on_base(true, None));
+    assert!(builds_on_base(false, Some(&record(true))));
+    assert_eq!(commit(true), (B.to_owned(), Vec::new()));
+    // A build used again keeps the record it was first made with: the choice goes into it,
+    // so the next build reads the same.
+    let turned = dir("keep-on-base");
+    fs::write(
+        turned.join("native-mods.json"),
+        format!(r#"{{"base":"nightly-2026-11-04-bbbbbbb","horizon":"{A}","on_base":false}}"#),
+    )
+    .unwrap();
+    keep_on_base(&turned, true).unwrap();
+    assert!(about_in(&turned).unwrap().on_base);
+    keep_on_base(&turned, false).unwrap();
+    assert!(!about_in(&turned).unwrap().on_base);
+}

@@ -1355,6 +1355,18 @@ fn about_in(dir: &Path) -> Option<About> {
     })
 }
 
+/// Writes the `on_base` a build record in `dir` keeps: a build used again (one already made)
+/// keeps the record it was first made with, but a later rebuild reads the player's choice from
+/// it ("a rebuild from this build keeps doing so").
+fn keep_on_base(dir: &Path, on_base: bool) -> Result<(), String> {
+    let path = dir.join("native-mods.json");
+    let text = fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut json: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display()))?;
+    json["on_base"] = on_base.into();
+    fs::write(&path, json.to_string()).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// The Horizon commit the mods that pin one (`pins`: those naming no hook points' version) give a
 /// build, and which of them pin it. With `on_base`, the player chose the commit of the version the
 /// build starts from (`base`) whatever the pins say; with no pin, it is `base`'s too. Mods
@@ -2085,6 +2097,13 @@ impl From<Failed> for String {
     }
 }
 
+/// Whether a build keeps to the base's own commit instead of moving to the one mods pin: the
+/// player's Rebuild on Horizon (`on_base`), or the build it starts from having been one, since
+/// "a rebuild from this build keeps doing so" (docs/native-mods.md).
+fn builds_on_base(on_base: bool, built_on: Option<&About>) -> bool {
+    on_base || built_on.is_some_and(|a| a.on_base)
+}
+
 /// The pipeline both targets build with ([`build`], [`build_server`]): `folder`'s mods on the
 /// Horizon revision they pin (else `base`'s, the installed version whose game files the build
 /// reuses: a native build's own revision when it is one, [`base_for`]), compiled as `target`
@@ -2093,7 +2112,9 @@ impl From<Failed> for String {
 /// the profile and the target). A build already made is used again. Mods pinning different
 /// revisions build on the newest one, with the newest horizon-mixins they name, only when the
 /// player agreed to try (`anyway`): else the error starts with [`MISMATCH`] and says which.
-/// With `on_base`, every mod builds on `base`'s own commit, pinned or not (the player's choice).
+/// With `on_base`, every mod builds on `base`'s own commit, pinned or not (the player's
+/// choice, or the build this one starts from having been one); `try_base_first` is only this
+/// run trying `base`'s commit before any move.
 /// The mods in `skip` and those needing them are left out; with `isolate`, a mod that alone
 /// stops horizon-mixins or the compiler ends it with [`Failed::Mods`], so it can be left out too.
 /// Nothing of the player's outside the launcher's data is touched: no instance is edited and
@@ -2104,6 +2125,7 @@ fn pipeline(
     folder: &Path,
     anyway: bool,
     on_base: bool,
+    try_base_first: bool,
     profile: Profile,
     target: Target,
     progress: &impl Fn(Step),
@@ -2186,7 +2208,8 @@ fn pipeline(
     // A mod naming a hook points' version doesn't pin: it follows the others, else the game.
     let pins: Vec<Bundle> = mods.iter().filter(|b| b.hooks.is_none()).cloned().collect();
     let free = pins.iter().all(|b| b.horizon.is_none());
-    let on_base = on_base || built_on.as_ref().is_some_and(|a| a.on_base);
+    let chosen = builds_on_base(on_base, built_on.as_ref());
+    let on_base = chosen || try_base_first;
     // The commit of the release or Nightly the build starts from. A native build's own is that
     // of the version it started from when it recorded it; else, outside `on_base`, the commit it
     // compiled, so a rebuild stays on the Horizon it plays.
@@ -2462,7 +2485,7 @@ fn pipeline(
             "horizon": revision,
             "base_horizon": base_horizon,
             "pinned_by": pinned_by,
-            "on_base": on_base,
+            "on_base": chosen,
             "horizon_mixins": mixins,
             "hooks": mods.iter().find_map(|m| m.hooks),
             "rust": rust_toolchain::VERSION,
@@ -2487,7 +2510,9 @@ fn pipeline(
         })?;
         let _ = fs::remove_dir_all(real.join("programs"));
     } else {
-        // Used again: it counts as the newest of the builds kept (`prune`).
+        // Used again: it counts as the newest of the builds kept (`prune`), and keeps the
+        // choice this run made, which may differ from the one that first made it.
+        keep_on_base(&target.directory(&version), chosen)?;
         let _ = fs::write(target.directory(&version).join(".installed"), "");
     }
     let _ = fs::remove_dir_all(&incoming);
@@ -2558,7 +2583,9 @@ fn isolated(
 /// build stays). Returns the build's version; a build already made is used again. Mods pinning
 /// different revisions build on the newest one, with the newest horizon-mixins they name, only
 /// when the player agreed to try (`anyway`): else the error starts with [`MISMATCH`] and says
-/// which. With `on_base`, the player's Rebuild on Horizon, nothing moves off `base`'s commit.
+/// which. With `on_base`, the player's Rebuild on Horizon, nothing moves off `base`'s commit;
+/// a build started from one whose record says so keeps to it ("a rebuild from this build keeps
+/// doing so").
 pub fn build(
     base: &str,
     folder: &Path,
@@ -2572,14 +2599,18 @@ pub fn build(
         return Err(error);
     }
     logged(|| {
-        let run = |base: &str, on_base: bool| {
+        // The player's Rebuild on Horizon outlasts the build that made it: a rebuild from such
+        // a build keeps building on the base's own commit.
+        let chosen = builds_on_base(on_base, about(base).as_ref());
+        let run = |base: &str, choice: bool, try_base_first: bool| {
             isolated(
                 |skip| {
                     pipeline(
                         base,
                         folder,
                         anyway,
-                        on_base,
+                        choice,
+                        try_base_first,
                         profile,
                         Target::Client,
                         &progress,
@@ -2595,7 +2626,7 @@ pub fn build(
         };
         // The first build may fail outright when the mods made elsewhere are all it had (every
         // mod left out) or the ones left could not build without them: those mods still move it.
-        let (first, left) = match run(base, true) {
+        let (first, left) = match run(base, chosen, true) {
             Ok(built) => {
                 point(&built.version)?;
                 let left = built.left_out.clone();
@@ -2603,7 +2634,7 @@ pub fn build(
             }
             Err((error, left)) => (Err(error), left),
         };
-        let theirs = match on_base {
+        let theirs = match chosen {
             true => Vec::new(),
             false => made_elsewhere(&bundles(folder)?, &left),
         };
@@ -2614,7 +2645,7 @@ pub fn build(
         if !theirs.is_empty() {
             progress(Step::OnTheirHorizon(theirs));
             let origin = about(base).map_or_else(|| base.to_owned(), |a| a.base);
-            match (run(&origin, false), &built) {
+            match (run(&origin, false, false), &built) {
                 (Ok(moved), _) => {
                     point(&moved.version)?;
                     built = Ok(moved);
@@ -2698,6 +2729,7 @@ pub fn build_server(
             folder,
             anyway,
             on_base,
+            false,
             profile,
             Target::Server,
             &progress,
