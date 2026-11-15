@@ -2773,6 +2773,8 @@ mod namespace_tests {
             component["explosions"],
             serde_json::json!([{"shape": "ball", "colors": [1]}])
         );
+        let _ = fs::remove_dir_all(&root);
+    }
 
     /// `SetWritableBookPagesFunction`: the function's pages go through its
     /// `ListOperation` over the writable book content an earlier function
