@@ -1,14 +1,14 @@
 PlayerHurtEntityTrigger.TriggerInstance.playerHurtEntityWithDamage	skip:data		criterion factory; Horizon reads the criterion from the advancement JSON
 PlayerHurtEntityTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_player_hurt_entity	player, damage and victim predicates through advancements.rs damage and conditions
-PlayerInteractTrigger.trigger	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_item_entity	gap: player: fires player_interacted_with_entity only; player_sheared_equipment (remove_wolf_armor) is never fired
+PlayerInteractTrigger.trigger	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_item_entity	fires player_interacted_with_entity and player_sheared_equipment, the latter with the sheared stack and the entity (wolf armor and saddle shear)
 PlayerInteractTrigger.TriggerInstance.itemUsedOnEntity	skip:data		criterion factory
 PlayerInteractTrigger.TriggerInstance.equipmentSheared	skip:data		criterion factory; the sheared trigger it feeds is never fired, see PlayerInteractTrigger.trigger
 PlayerInteractTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_item_entity	item and entity predicates
 PlayerTrigger.TriggerInstance.located	skip:data		criterion factory
 PlayerTrigger.TriggerInstance.walkOnBlockWithEquipment	skip:data		criterion factory
-RecipeCraftedTrigger.trigger	port	crates/horizon-client/src/game/machines/crafter.rs::Game::crafter_eject	gap: player: only the crafter block fires; player crafting never fires recipe_crafted, so the trim and decorated pot advancements are not granted
+RecipeCraftedTrigger.trigger	port	crates/horizon-client/src/game/inventory_slots.rs::Game::award_crafted	award_crafted fires recipe_crafted with the recipe and its ingredient stacks; the crafter block fires it too
 RecipeCraftedTrigger.TriggerInstance.craftedItem	skip:data		criterion factory
-RecipeCraftedTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/machines/crafter.rs::recipe_matches	gap: minor: recipe id only; ingredient predicates are not checked
+RecipeCraftedTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_recipe_crafted	the recipe id (a string or a list) and the ingredients' item predicates against the used stacks
 RecipeUnlockedTrigger.unlocked	skip:data		criterion factory
 RecipeUnlockedTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::recipe_unlocked	matched by recipe id
 ShotCrossbowTrigger.TriggerInstance.shotCrossbow	skip:data		criterion factory
@@ -26,7 +26,7 @@ TargetBlockTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/a
 TradeTrigger.trigger	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_trade	fired from trading.rs
 TradeTrigger.TriggerInstance.tradedWithVillager	skip:data		criterion factory
 TradeTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_trade	villager and item predicates
-UsedEnderEyeTrigger.trigger	missing		minor: no 26.3 advancement uses used_ender_eye; ender eye use (end.rs) fires no trigger
+UsedEnderEyeTrigger.trigger	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_used_ender_eye	the squared distance from the player to the eye's target, fired when an ender eye is used (end.rs)
 UsedTotemTrigger.TriggerInstance.usedTotem	skip:data		criterion factory
 UsedTotemTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_item	fired from totem.rs
 UsingItemTrigger.TriggerInstance.lookingAt	skip:data		criterion factory
