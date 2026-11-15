@@ -8,6 +8,20 @@ pub(crate) fn generic(caption: &str, value: Text) -> Text {
 pub(crate) fn on_off(v: bool) -> Text {
     tr(if v { "options.on" } else { "options.off" })
 }
+/// `CommonComponents.optionStatus(name, value)`: the composed form, so a
+/// language can word the caption and the state together as one phrase. The
+/// boolean-only overload is `on_off`; `Options.chatScale`, `mipmapLevels` and
+/// `maxAnisotropyBit` use this one at zero.
+pub(crate) fn option_status(caption: &str, on: bool) -> Text {
+    Text::translate(
+        if on {
+            "options.on.composed"
+        } else {
+            "options.off.composed"
+        },
+        &[tr(caption)],
+    )
+}
 pub(crate) fn chat_px(caption: &str, px: f32) -> Text {
     Text::translate(
         "options.pixel_value",
@@ -51,4 +65,34 @@ pub(crate) fn from_slider(v: f32) -> f64 {
 pub(crate) fn set(s: &mut Settings, v: f32) {
     s.file
         .set("chatDelay", crate::options_file::V::Double(from_slider(v)));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `CommonComponents.optionStatus(name, false)`: the reachable zero-valued
+    /// options, Chat Scale and Mipmaps, say `options.off.composed` with the
+    /// caption, while a value keeps the generic caption-and-value label.
+    #[test]
+    fn a_zero_option_says_the_composed_off_label() {
+        let mut s = Settings::default();
+        s.chat_scale = 0.0;
+        let label = Opt::ChatScale.label(&s);
+        assert_eq!(label.translation_key(), Some("options.off.composed"));
+        // The composed key takes the caption as its one argument.
+        let source = label.component();
+        assert_eq!(source["with"][0]["translate"], "options.chat.scale");
+        s.mipmap_levels = 0;
+        assert_eq!(
+            Opt::Mipmaps.label(&s).translation_key(),
+            Some("options.off.composed")
+        );
+        // A nonzero Chat Scale is still options.percent_value with a value.
+        s.chat_scale = 0.5;
+        assert_eq!(
+            Opt::ChatScale.label(&s).translation_key(),
+            Some("options.percent_value")
+        );
+    }
 }

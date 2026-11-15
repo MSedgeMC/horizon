@@ -25,7 +25,7 @@ pub(crate) use widgets::{button, inactive};
 
 #[path = "options_ui_values.rs"]
 mod values;
-pub(crate) use values::{chat_delay_label, chat_px, generic, on_off, percent};
+pub(crate) use values::{chat_delay_label, chat_px, generic, on_off, option_status, percent};
 
 mod shell_pages;
 
@@ -591,7 +591,7 @@ impl Opt {
             ),
             Opt::Preset => generic(c, tr(&format!("options.graphics.{}", s.graphics_preset))),
             Opt::MaxAnisotropy => match s.file.int("maxAnisotropyBit") {
-                0 => generic(c, tr("options.off")),
+                0 => option_status(c, false),
                 bit => generic(c, Text::tr("options.multiplier", &[&(1 << bit)])),
             },
             Opt::ExclusiveMode => match s.video_modes.get(s.video_mode_index().max(0) as usize) {
@@ -612,7 +612,7 @@ impl Opt {
             },
             Opt::Mipmaps => {
                 if s.mipmap_levels == 0 {
-                    generic(c, tr("options.off"))
+                    option_status(c, false)
                 } else {
                     generic(c, Text::literal(s.mipmap_levels.to_string()))
                 }
@@ -639,7 +639,7 @@ impl Opt {
             Opt::TextBackgroundOpacity => percent(c, s.text_background_opacity),
             Opt::ChatScale => {
                 if s.chat_scale == 0.0 {
-                    generic(c, tr("options.off"))
+                    option_status(c, false)
                 } else {
                     percent(c, s.chat_scale)
                 }
