@@ -619,10 +619,8 @@ impl Game<'_> {
                 .unwrap_or(FISHING_TABLE);
             // The catch's loot context is in this level: a time_check there
             // reads the same clock a broken block's drops do.
-            let place = self.loot_place_at(
-                [hook.position.x, hook.position.y, hook.position.z],
-                None,
-            );
+            let place =
+                self.loot_place_at([hook.position.x, hook.position.y, hook.position.z], None);
             let items = horizon_world::loot::with_native_loot_place(place, || {
                 fishing_loot(
                     &loot,
