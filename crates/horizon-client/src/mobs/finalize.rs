@@ -2427,6 +2427,7 @@ pub fn species_variant_component(s: Species, variant: u8) -> Option<(&'static st
         Species::Wolf => "minecraft:wolf/variant",
         Species::Cat => "minecraft:cat/variant",
         Species::Frog => "minecraft:frog/variant",
+        Species::Fox => "minecraft:fox/variant",
         Species::Pig => "minecraft:pig/variant",
         Species::Cow => "minecraft:cow/variant",
         Species::Mooshroom => "minecraft:mooshroom/variant",
@@ -2517,6 +2518,7 @@ pub fn variant_name(s: Species, index: u8) -> &'static str {
             .copied()
             .unwrap_or("temperate"),
         Species::Mooshroom => ["red", "brown"].get(i).copied().unwrap_or("red"),
+        Species::Fox => ["red", "snow"].get(i).copied().unwrap_or("red"),
         Species::Horse => super::equine::VARIANT_NAMES
             .get(i)
             .copied()
@@ -2584,6 +2586,25 @@ mod tests {
         // Variant.DEFAULT is red: an unknown name, or an index past brown.
         assert_eq!(variant_index(Species::Mooshroom, "minecraft:temperate"), 0);
         assert_eq!(variant_name(Species::Mooshroom, 2), "red");
+    }
+    /// `Fox.get(DataComponents.FOX_VARIANT)`: a fox reports its variant as the
+    /// component, red or snow, and the name maps back to the index.
+    #[test]
+    fn a_fox_reports_its_variant_component() {
+        for (index, name) in [(0, "minecraft:red"), (1, "minecraft:snow")] {
+            assert_eq!(
+                species_variant_component(Species::Fox, index),
+                Some(("minecraft:fox/variant", name.to_owned()))
+            );
+            assert_eq!(variant_index(Species::Fox, name), index);
+            assert_eq!(
+                format!("minecraft:{}", variant_name(Species::Fox, index)),
+                name
+            );
+        }
+        // Fox.Variant.DEFAULT is red: an unknown name, or an index past snow.
+        assert_eq!(variant_index(Species::Fox, "minecraft:temperate"), 0);
+        assert_eq!(variant_name(Species::Fox, 2), "red");
     }
     /// `Horse.get(DataComponents.HORSE_VARIANT)` and
     /// `Llama.get(DataComponents.LLAMA_VARIANT)`: the coat colour a horse or a

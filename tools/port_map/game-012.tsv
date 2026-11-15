@@ -6,7 +6,7 @@ Fox.createAttributes	skip:data		attributes come from entity-types.json
 Fox.checkFoxSpawnRules	port	crates/horizon-client/src/mobs/spawn_rules.rs::check_spawn_rules	foxes_spawnable_on below and bright enough
 Fox.finalizeSpawn	port	crates/horizon-client/src/mobs/spawning.rs::finalize	a live spawn (natural, spawner, summon) takes the snow variant from the biome (snow_fox) and the mouth's item; gap: minor: the FoxGroupData rule (a baby from the second fox of a pack on) is only in Ctx::finalize, reached by structure mobs and the probe; no such rule was found in spawning.rs::finalize
 Fox.setTargetGoals	port	crates/horizon-client/src/mobs/fox.rs::register	red and snow target orders as goals gated on the variant read when the goal runs
-Fox.get	missing		minor: the fox/variant component is not reported (species_variant_component has no fox)
+Fox.get	port	crates/horizon-client/src/mobs/finalize.rs::species_variant_component	the fox/variant component, red (0) or snow (1)
 Fox.applyImplicitComponent	port	crates/horizon-client/src/entity_nbt.rs::apply_item_components	the `minecraft:fox/variant` name sets the variant (SNOW over RED)
 Fox.getTrustedEntities	port	crates/horizon-client/src/mobs/fox.rs::trusted_entities	the trusted list decides whom the avoid-player goal leaves alone (`Fox.trusts`); defending a trusted player (`DefendTrustedTargetGoal`) is still missing
 Fox.addTrustedEntity	port	crates/horizon-client/src/mobs/fox.rs::add_trusted_entity	the two DATA_TRUSTED_ID slots, first free then replacing the second; a baby fox made by using a fox spawn egg on a fox trusts that player (`Fox.onOffspringSpawnedFromEgg`)
