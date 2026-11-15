@@ -85,7 +85,7 @@ WrittenBookContent.resolveForItem	port	crates/horizon-client/src/game/books.rs::
 WrittenBookContent.resolve	port	crates/horizon-items/src/item_data.rs::WrittenBook::resolve	every page's selectors and scores become their text (`extra` and `with` recurse), and the book is marked resolved
 WrittenBookContent.markResolved	port	crates/horizon-items/src/item_data.rs::WrittenBook::resolve	the `resolved` component field is kept and written by the codec; a resolved book is never resolved again
 WrittenBookContent.resolvePage	port	crates/horizon-items/src/item_data.rs::resolve_page_tag	one page's component with its selectors and scores replaced, recursing into `extra` and `with`
-WrittenBookContent.isPageTooLarge	port	crates/horizon-items/src/item_data.rs::WrittenBook::resolve	a page whose resolved text passes 32767 characters cancels the resolution and only marks the book resolved
+WrittenBookContent.isPageTooLarge	port	crates/horizon-items/src/item_data.rs::WrittenBook::resolve	a page whose resolved component encodes past 32767 characters cancels the resolution and only marks the book resolved
 WrittenBookContent.getPages	port	crates/horizon-client/src/game/books.rs::view_pages	gap: minor: returns the stored pages; the filtered-text choice (filterEnabled) is not modelled
 WrittenBookContent.withReplacedPages	missing		minor: loot function set_written_book_pages is not in the loot modifiers, so a loot book gets no pages
 BookCloningRecipe.matches	port	crates/horizon-client/src/crafting.rs::Special::matches	BookCloning arm: one written book within the allowed generations, plus material

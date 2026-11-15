@@ -40,7 +40,7 @@ GsonHelper.fromJson	port	crates/horizon-world/src/datafix/json.rs::parse_strict	
 GsonHelper.parseArray	port	crates/horizon-world/src/datafix/json.rs::parse_strict	gap: minor: does not require the top-level value to be an array
 GsonHelper.writeValue	port	crates/horizon-world/src/datafix/json.rs::to_stable_string	gap: minor: always sorts keys; vanilla sorts only when a comparator is given
 GsonHelper.sortByKeyIfNeeded	inline	crates/horizon-world/src/datafix/json.rs::to_stable_string	key sort folded into the stable writer
-GsonHelper.encodesLongerThan	missing		minor: no 32767-character book page or component length check exists in crates; the limit is not enforced
+GsonHelper.encodesLongerThan	inline	crates/horizon-items/src/item_data.rs::encodes_longer_than	a written book page is held to 32767 characters of its encoded component (WrittenBookContent.isPageTooLarge), not its plain text; no component field applies vanilla's flat-size codec
 GsonHelper.CountedAppendable.accountChars	skip:java		character counter behind encodesLongerThan, which Horizon does not port
 GsonHelper.CountedAppendable.append	skip:java		character counter behind encodesLongerThan, which Horizon does not port
 HashOps.createNumeric	inline	crates/horizon-protocol/src/hash_ops.rs::HashOps::from_nbt	numeric component values hash through the create_byte/create_short/create_int/create_long/create_float/create_double call sites; from_nbt picks one by tag type

@@ -654,12 +654,22 @@ fn resolve_page_tag(tag: &Tag, text: &mut impl FnMut(&Tag) -> Option<String>) ->
     Tag::Compound(out)
 }
 
+/// `GsonHelper.encodesLongerThan`: whether the component's JSON encoding is past
+/// `limit` characters. `WrittenBookContent.isPageTooLarge` measures the encoded
+/// component, so styling, siblings and click or hover payloads count, not only
+/// the text the page shows.
+fn encodes_longer_than(tag: &Tag, limit: usize) -> bool {
+    serde_json::to_string(&horizon_client_core::scoreboard::tag_to_json(tag))
+        .is_ok_and(|json| json.chars().count() > limit)
+}
+
 impl WrittenBook {
     /// `WrittenBookContent.resolve` and `markResolved`: every page's
     /// selectors and scores become their text, and the book is marked
-    /// resolved. A page whose resolved text passes `WrittenBookContent`'s
-    /// 32767-character limit (`resolvePage`) cancels the resolution, and the
-    /// book is only marked resolved. True when the pages were rewritten.
+    /// resolved. A page whose resolved component encodes past
+    /// `WrittenBookContent`'s 32767-character limit (`resolvePage`) cancels
+    /// the resolution, and the book is only marked resolved. True when the
+    /// pages were rewritten.
     pub fn resolve(&mut self, mut text: impl FnMut(&Tag) -> Option<String>) -> bool {
         if self.resolved {
             return false;
@@ -673,7 +683,7 @@ impl WrittenBook {
         for tag in &self.page_tags {
             let resolved = resolve_page_tag(tag, &mut text);
             let plain = horizon_client_core::component::name_text(&resolved).plain();
-            if plain.chars().count() > 32767 {
+            if encodes_longer_than(&resolved, 32767) {
                 return false;
             }
             pages.push(plain);
@@ -2390,6 +2400,38 @@ mod tests {
             pages,
             Some(vec!["Please read the rules".to_owned(), "Two".to_owned()])
         );
+    }
+
+    /// `WrittenBookContent.isPageTooLarge` measures the page's encoded component
+    /// (`GsonHelper.encodesLongerThan`), not its plain text: a short text in
+    /// thousands of styled siblings is past the 32767-character limit.
+    #[test]
+    fn a_book_page_over_32767_encoded_characters_cancels_the_resolution() {
+        let styled = Tag::compound([
+            ("text", Tag::String("a".into())),
+            ("color", Tag::String("#123456".into())),
+        ]);
+        let page = |siblings: usize| {
+            Tag::compound([
+                ("text", Tag::String("".into())),
+                ("extra", Tag::List(vec![styled.clone(); siblings])),
+            ])
+        };
+        let book = |page: Tag| {
+            Tag::compound([
+                ("title", Tag::compound([("raw", Tag::String("Big".into()))])),
+                ("author", Tag::String("Server".into())),
+                ("pages", Tag::List(vec![page])),
+            ])
+        };
+        // The page shows 6000 characters, well under the limit; its component
+        // encodes far past it.
+        let mut big = written_book_from_tag(&book(page(6000)));
+        assert_eq!(big.pages[0].chars().count(), 6000);
+        assert!(!big.resolve(|_| None), "the encoded page is over 32767 characters");
+        // A short styled page still resolves.
+        let mut small = written_book_from_tag(&book(page(2)));
+        assert!(small.resolve(|_| None));
     }
 
     #[test]
