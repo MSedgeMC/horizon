@@ -266,10 +266,13 @@ pub(crate) fn plain(component: &serde_json::Value) -> String {
     out.trim().to_string()
 }
 
-/// `key:value` in a `key:value` per line file.
+/// `key:value` in a `key:value` per line file. A repeated key is the last line: `Options.load`
+/// puts every line into a `CompoundTag`, where a later value replaces an earlier one, and the
+/// game reads its other settings files the same way.
 fn line_value(text: &str, key: &str) -> Option<String> {
     text.lines()
-        .find_map(|l| l.strip_prefix(key)?.strip_prefix(':'))
+        .filter_map(|l| l.strip_prefix(key)?.strip_prefix(':'))
+        .last()
         .map(str::to_string)
 }
 
@@ -280,24 +283,20 @@ fn option_list(options: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Sets `key:value` in the file, or adds the line; every other line stays.
+/// Sets `key:value` in the file, or adds the line; every other line stays. The last line of a
+/// repeated key is the one replaced, since that is the one the reader keeps.
 fn set_line(path: &Path, key: &str, value: &str) -> Result<(), String> {
     let text = fs::read_to_string(path).unwrap_or_default();
-    let mut found = false;
-    let mut out: Vec<String> = text
-        .lines()
-        .map(
-            |l| match l.strip_prefix(key).and_then(|r| r.strip_prefix(':')) {
-                Some(_) if !found => {
-                    found = true;
-                    format!("{key}:{value}")
-                }
-                _ => l.to_string(),
-            },
-        )
-        .collect();
-    if !found {
-        out.push(format!("{key}:{value}"));
+    let lines: Vec<&str> = text.lines().collect();
+    let replace = lines.iter().rposition(|l| {
+        l.strip_prefix(key)
+            .and_then(|r| r.strip_prefix(':'))
+            .is_some()
+    });
+    let mut out: Vec<String> = lines.iter().map(|l| l.to_string()).collect();
+    match replace {
+        Some(i) => out[i] = format!("{key}:{value}"),
+        None => out.push(format!("{key}:{value}")),
     }
     let mut text = out.join("\n");
     text.push('\n');

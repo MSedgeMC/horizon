@@ -285,3 +285,30 @@ fn invalid_native_manifest_does_not_hide_a_valid_duplicate() {
     );
     fs::remove_dir_all(home).unwrap();
 }
+
+/// `Options.load` puts each line into a `CompoundTag` and reads options from that map, so a
+/// repeated key keeps its last line. Run against the 26.3 client jar with the same `Splitter`
+/// and `CompoundTag`, two `resourcePacks` lines keep the second; the launcher read the first,
+/// so it showed a pack as off that the game had on and rewrote the line the game ignores.
+#[test]
+fn a_repeated_option_is_the_last_line() {
+    let home = home("duplicate-options");
+    fs::write(
+        home.join("options.txt"),
+        "version:4786\nresourcePacks:[\"vanilla\"]\nresourcePacks:[\"vanilla\",\"file/Zed.zip\"]\nlang:fr_ch\n",
+    )
+    .unwrap();
+    let zed = list(&home, Kind::Resource)
+        .into_iter()
+        .find(|p| p.file == "Zed.zip")
+        .unwrap();
+    assert!(zed.enabled, "the game reads the last resourcePacks line");
+    set_enabled(&home, &zed, false).unwrap();
+    let options = fs::read_to_string(home.join("options.txt")).unwrap();
+    assert_eq!(
+        line_value(&options, "resourcePacks").as_deref(),
+        Some("[\"vanilla\"]")
+    );
+    assert!(!list(&home, Kind::Resource).into_iter().any(|p| p.enabled));
+    fs::remove_dir_all(&home).unwrap();
+}
