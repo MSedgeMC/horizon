@@ -1670,6 +1670,14 @@ impl Game<'_> {
                 map.insert(key.into(), v.clone());
             }
         }
+        // Entity.saveWithoutId writes `TicksFrozen` while positive and
+        // `Entity.load` reads it back; a projectile or orb models no field for
+        // it, so keep the loaded int here for its writer (`with_raw`).
+        if let Some(ticks) = horizon_client::save::number(tag.get("TicksFrozen"))
+            && ticks > 0
+        {
+            map.insert("TicksFrozen".into(), Tag::Int(ticks as i32));
+        }
         if !map.is_empty() {
             self.persist.raw.insert(id, Tag::Compound(map));
         }

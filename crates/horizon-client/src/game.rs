@@ -12667,6 +12667,8 @@ mod sulfur_prime_phase_tests;
 #[cfg(test)]
 mod test_pos_guest_tests;
 #[cfg(test)]
+mod ticks_frozen_tests;
+#[cfg(test)]
 mod vibration_source_tests;
 #[cfg(test)]
 mod vibration_tests;
