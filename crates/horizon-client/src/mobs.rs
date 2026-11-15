@@ -3998,7 +3998,7 @@ impl Mob {
             self.health = (self.health + amount).clamp(0.0, self.attrs.max_health);
         }
     }
-    /// `HealOrHarmMobEffect.applyInstantaneousEffect`: a harming effect hurts a
+    /// `HealOrHarmMobEffect.applyInstantenousEffect`: a harming effect hurts a
     /// living mob (6 << amplifier, magic) and heals an undead one, a healing effect
     /// the reverse (4 << amplifier), both scaled by `scale`.
     pub fn apply_heal_or_harm(&mut self, harm: bool, inverted: bool, amplifier: i32, scale: f64) {

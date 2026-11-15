@@ -942,7 +942,7 @@ mod tests {
         assert!(!tnt.on_ground);
     }
 
-    /// `Entity.collectAllColliders` (#7080): the world border's wall stops primed
+    /// `Entity.collectColliders` (#7080): the world border's wall stops primed
     /// TNT. A border of size 10 around (20, 20) has its east wall at x = 25;
     /// the TNT starts at x = 24 on the test scene's flat ground, 1.5 east.
     #[test]

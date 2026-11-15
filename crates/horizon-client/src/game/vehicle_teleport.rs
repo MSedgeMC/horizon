@@ -605,7 +605,7 @@ impl Game<'_> {
                 if host.hub.guests[i].vehicle != Some(vehicle) {
                     continue;
                 }
-                // Entity.sendTeleportTransitionToPlayers: the rider's
+                // Entity.sendTeleportTransitionToRidingPlayers: the rider's
                 // client moves the vehicle it drives itself, so it hears the
                 // vehicle's teleport (else its next MoveVehicle undoes it).
                 host.hub.guests[i].send(&C::TeleportEntity(play::TeleportEntity {
