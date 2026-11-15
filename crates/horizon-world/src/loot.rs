@@ -2816,6 +2816,75 @@ mod namespace_tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// SetContainerContents: `EmptyLootItem.createItemStack` emits no stack,
+    /// so a `minecraft:empty` entry takes no slot and later stacks shift
+    /// earlier. A count-0 stack from an item modifier is still emitted by
+    /// `LootTable.createStackSplitter`, and `ItemContainerContents.fromItems`
+    /// keeps its position as an unset slot, so the next stack keeps index 2.
+    #[test]
+    fn set_contents_keeps_entry_expansion_slot_positions() {
+        let root = std::env::temp_dir().join(format!(
+            "horizon-loot-contents-slots-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let shulker = |entries: serde_json::Value| {
+            serde_json::json!({
+                "pools": [{"rolls": 1, "entries": [{"type": "minecraft:item",
+                    "name": "minecraft:shulker_box", "modifier": [{
+                        "type": "minecraft:set_contents",
+                        "component": "minecraft:container",
+                        "entries": entries
+                    }]}]}]
+            })
+        };
+        let empty_entry = shulker(serde_json::json!([
+            {"type": "minecraft:item", "name": "minecraft:diamond"},
+            {"type": "minecraft:empty"},
+            {"type": "minecraft:item", "name": "minecraft:brick"}
+        ]));
+        let count_zero = shulker(serde_json::json!([
+            {"type": "minecraft:item", "name": "minecraft:diamond"},
+            {"type": "minecraft:item", "name": "minecraft:apple",
+             "modifier": [{"type": "minecraft:set_count", "count": 0}]},
+            {"type": "minecraft:item", "name": "minecraft:brick"}
+        ]));
+        let dir = root.join("data/minecraft/loot_table/chests");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("empty_entry.json"), empty_entry.to_string()).unwrap();
+        fs::write(dir.join("count_zero.json"), count_zero.to_string()).unwrap();
+        fs::write(
+            root.join("items.json"),
+            r#"{"minecraft:shulker_box": {}, "minecraft:chest": {}}"#,
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let component = |table: &str| {
+            let filled = data.fill(table, 7, 27, None);
+            let boxed = filled.iter().flatten().next().expect("a shulker box");
+            boxed
+                .components
+                .iter()
+                .find(|(k, _)| k == "minecraft:container")
+                .map(|(_, value)| value.clone())
+        };
+        assert_eq!(
+            component("minecraft:chests/empty_entry"),
+            Some(serde_json::json!([
+                {"slot": 0, "item": {"id": "minecraft:diamond"}},
+                {"slot": 1, "item": {"id": "minecraft:brick"}}
+            ]))
+        );
+        assert_eq!(
+            component("minecraft:chests/count_zero"),
+            Some(serde_json::json!([
+                {"slot": 0, "item": {"id": "minecraft:diamond"}},
+                {"slot": 2, "item": {"id": "minecraft:brick"}}
+            ]))
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
     /// `SetInstrumentFunction`: a goat horn from a loot table gets one of the options as its instrument.
     #[test]
     fn set_instrument_picks_one_of_its_options() {
