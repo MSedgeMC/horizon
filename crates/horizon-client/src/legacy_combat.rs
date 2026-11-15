@@ -24,7 +24,7 @@
 //!   cos(yaw) * i * 0.5)`, added to the motion as it is (26.3 halves it first, through `knockback`).
 use std::sync::Arc;
 
-/// `ToolMaterial.getDamageVsEntity` by the item id's material. Netherite and copper didn't
+/// `ToolMaterial.attackDamageBonus` by the item id's material. Netherite and copper didn't
 /// exist: netherite is one step above diamond and copper sits with stone, as 26.3 ranks them.
 fn material(name: &str) -> Option<f64> {
     Some(match name {

@@ -169,7 +169,7 @@ impl Scanner {
     pub fn games(&self) -> Vec<LanGame> {
         self.inner.games.lock().unwrap().clone()
     }
-    /// `LanServerList.takeDirty` with `updateNetworkServers`' new count: the
+    /// `LanServerList.takeDirtyServers` with `updateNetworkServers`' new count: the
     /// games found since the last call, with their place in [`games`](Self::games).
     pub fn take_found(&self) -> Vec<(usize, LanGame)> {
         let games = self.inner.games.lock().unwrap();
