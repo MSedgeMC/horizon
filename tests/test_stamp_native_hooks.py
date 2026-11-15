@@ -89,6 +89,17 @@ class StampTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / stamp.CATALOG).read_text())["hooks"], [])
         self.assertEqual(json.loads((self.root / stamp.CATALOG).read_text())["helpers"], fragment["helpers"])
 
+    def test_stale_constant_does_not_reuse_a_history_number(self):
+        self.git("add", ".")
+        self.git("commit", "-qm", "base")
+        source = self.root / stamp.SOURCE
+        source.write_text("//! API 8 adds old.\n//!\npub(crate) const NATIVE_HOOKS_API: u32 = 7;\n")
+        (self.root / stamp.DOCS).write_text("API 8 adds old.\n\n## What the launcher does\n")
+        self.fragment("next")
+        self.assertFalse(stamp.stamp(False))
+        self.assertIn("API 9 adds next.", source.read_text())
+        self.assertIn("NATIVE_HOOKS_API: u32 = 9;", source.read_text())
+
     def test_selected_fragments_keep_merge_order_and_others_stay_pending(self):
         self.git("add", ".")
         self.git("commit", "-qm", "base")

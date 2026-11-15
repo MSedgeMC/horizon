@@ -1890,6 +1890,10 @@
     {
       "name": "world_seed",
       "target": "horizon_client::game::native_world_seed::Game<'_>::native_world_seed"
+    },
+    {
+      "name": "client_entity_update",
+      "target": "horizon_client::game::native_client_entities::Game<'_>::native_client_entity_update"
     }
   ],
   "hooks": [

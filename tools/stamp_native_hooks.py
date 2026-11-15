@@ -47,7 +47,12 @@ def stamp(check, only=None):
     match = re.search(r"^pub\(crate\) const NATIVE_HOOKS_API: u32 = (\d+);$", source, re.M)
     if not match:
         raise ValueError("missing numeric NATIVE_HOOKS_API")
-    version = int(match.group(1))
+    # The source history is the record of numbers already assigned. A constant
+    # that lags it (a hook merged without its bump) must not reuse one.
+    assigned = [int(number) for number in re.findall(r"^//! API (\d+) adds ", source, re.M)]
+    if len(set(assigned)) != len(assigned):
+        raise ValueError("duplicate API number in source history")
+    version = max([int(match.group(1)), *assigned])
     names = {hook["name"] for hook in catalog["hooks"]}
     helper_names = {helper["name"] for helper in catalog.get("helpers", [])}
     extra = {}

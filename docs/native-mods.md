@@ -2308,6 +2308,8 @@ API 645 adds `native_terrain_surface(dimension, columns)` returns the generator'
 
 API 646 adds `native_camera_submersion(camera, fog_type)` runs when the camera's fluid submersion type is evaluated (`Camera.getFluidInCamera`), before fog and underwater screen overlays are prepared. Setting `fog_type` to `FogType::Atmospheric` clears underwater, lava and powder-snow fog and overlays (used e.g. by Freecam). Bundles need "hooks": 646.
 
+API 647 adds `native_client_entity_update(viewer, id, nbt)` changes only the synched data of the keys `nbt` has on a client-side entity (API 519), where `native_client_entity_set` sends every field; a key at its default is sent, and a display's `start_interpolation` goes with it.
+
 ## What the launcher does
 
 **Developing a mod?** Run `horizon-launcher settings native-profile dev` once, or pick "Dev build" in the Mods page's
