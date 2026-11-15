@@ -56,7 +56,7 @@ impl PackOverlay<'_> {
         })
     }
     /// The last pack's file for an id, which is the one
-    /// `ResourceManager.listMatchingResources` hands out.
+    /// `ResourceManager.listResources` hands out.
     pub fn top(files: &[Vec<u8>]) -> &[u8] {
         files.last().map(Vec::as_slice).unwrap_or_default()
     }
