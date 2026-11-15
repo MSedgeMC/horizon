@@ -2530,8 +2530,9 @@ mod pot_hopper_pending_loot_tests {
             "a packed pot is not a container until its table is rolled"
         );
 
-        // The first move reads the pot: the pinned table (seed 73) fills slot
-        // 0 with one stick, the table and seed leave, and the hopper takes it.
+        // The first move reads the pot: the pinned table (seed 73) rolls bread
+        // for the pot's one-slot fill, the table and seed leave, and the hopper
+        // takes it.
         game.tick_hopper((5, 199, 4));
         let rolled = spill::saved_entity(&game.world, [5, 200, 4]).expect("saved pot");
         assert!(rolled.get("LootTable").is_none(), "the table is consumed");
@@ -2545,7 +2546,7 @@ mod pot_hopper_pending_loot_tests {
         let held = slots[0].as_ref().map(|s| (s.item.to_string(), s.count));
         assert_eq!(
             held,
-            Some(("minecraft:stick".to_string(), 1)),
+            Some(("minecraft:bread".to_string(), 1)),
             "the hopper took the rolled item"
         );
         assert!(
