@@ -417,7 +417,7 @@ fn apply_registry_data(
     }
 }
 
-/// What another player's pose draws from: gliding (Entity.isFallFlying, flag
+/// What another player's pose draws from: gliding (LivingEntity.isFallFlying, flag
 /// 0x80 of the shared flags), the pose (swimming), Riptide's spin
 /// (LivingEntity.isAutoSpinAttack, flag 4) and a loaded crossbow in the
 /// hand (the held stack comes with SetEquipment).
