@@ -822,6 +822,12 @@ impl Game<'_> {
             movement,
             kind: m.kind.id.clone(),
             position: [m.position.x, m.position.y, m.position.z],
+            cube_size: (m.extra.size > 0
+                && matches!(
+                    m.kind.id.as_str(),
+                    "minecraft:slime" | "minecraft:magma_cube" | "minecraft:sulfur_cube"
+                ))
+            .then_some(m.extra.size),
             on_fire: m.fire_ticks > 0,
             baby: m.is_baby(),
             on_ground: m.on_ground,

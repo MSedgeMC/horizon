@@ -696,6 +696,9 @@ pub struct EntityView {
     pub blocks_set_on_fire: i32,
     pub fishing_open_water: Option<bool>,
     pub variant: Option<String>,
+    /// Slime, magma cube and sulfur cube size (`AbstractCubeMob.getSize`); None
+    /// for every other entity.
+    pub cube_size: Option<i32>,
     /// The data components the entity reports (`Entity.get`): id and value.
     pub components: Vec<(String, String)>,
     /// `Entity.get(CUSTOM_NAME)`: the live Text component, preserving styles
@@ -1167,6 +1170,9 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             "minecraft:type_specific/fishing_hook" => p["in_open_water"]
                 .as_bool()
                 .is_none_or(|want| e.fishing_open_water == Some(want)),
+            "minecraft:type_specific/cube_mob" => e
+                .cube_size
+                .is_some_and(|size| range_i(&p["size"], i64::from(size))),
             "minecraft:components" => components(p, e),
             // `TeamPredicate.matches`: a non-null effective team whose name
             // equals the string exactly.
@@ -2420,6 +2426,29 @@ mod tests {
             kind: kind.into(),
             ..Default::default()
         }
+    }
+    /// `CubeMobPredicate.matches`: a cube mob's size in the predicate's bounds;
+    /// an entity that is not a cube mob never matches.
+    #[test]
+    fn a_cube_mob_predicate_reads_the_size() {
+        let predicate = |size: serde_json::Value| {
+            json!({"minecraft:type_specific/cube_mob": {"size": size}})
+        };
+        let cube = |size: Option<i32>| EntityView {
+            cube_size: size,
+            ..mob("minecraft:slime")
+        };
+        assert!(entity(&predicate(json!(2)), &cube(Some(2)), &Flat, [0.0; 3]));
+        assert!(entity(
+            &predicate(json!({"min": 2, "max": 4})),
+            &cube(Some(3)),
+            &Flat,
+            [0.0; 3]
+        ));
+        assert!(!entity(&predicate(json!(1)), &cube(Some(2)), &Flat, [0.0; 3]));
+        // A cow is not a cube mob, and a slime whose size is not known fails.
+        assert!(!entity(&predicate(json!(2)), &mob("minecraft:cow"), &Flat, [0.0; 3]));
+        assert!(!entity(&predicate(json!(2)), &cube(None), &Flat, [0.0; 3]));
     }
     /// `TeamPredicate.matches`: the effective team's name, exactly.
     #[test]
