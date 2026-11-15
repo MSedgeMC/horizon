@@ -74,7 +74,7 @@ Ease.inOutQuint	inline	crates/horizon-world/src/environment_timeline.rs::EASINGS
 Ease.outBounce	port	crates/horizon-world/src/environment_timeline.rs::out_bounce	the 7.5625 branches at 0.36363637 and 0.72727275, the third test in double as the bytecode widens it
 Ease.outElastic	inline	crates/horizon-world/src/environment_timeline.rs::EASINGS	the "out_elastic" entry: 0 and 1 first, else 2^(-10x) * sin((10x-0.75) * 2pi/3) + 1
 Ease.outExpo	inline	crates/horizon-world/src/environment_timeline.rs::EASINGS	the "out_expo" entry: 1 at 1, else 1 - 2^(-10x)
-EasingType.cubicBezier	inline	crates/horizon-client-render/src/environment.rs::Environment::load_dimension	reads the four control points of a cubic_bezier ease; gap: minor: no range check, see CubicBezierControls.validate
+EasingType.cubicBezier	inline	crates/horizon-client-render/src/environment.rs::Environment::load_dimension	reads the four control points of a cubic_bezier ease; Easing::parse checks x1 and x2 are in 0-1 (horizon-world/src/environment_timeline.rs, EasingType.CubicBezierControls.validate)
 EasingType.CubicBezier.curveFromControls	inline	crates/horizon-client-render/src/environment.rs::Easing::apply	the curve coefficients closure
 EasingType.CubicBezier.solveT	inline	crates/horizon-client-render/src/environment.rs::Easing::apply	Newton steps with the 1e-5 tolerance
 EasingType.CubicBezier.solveTBisect	inline	crates/horizon-client-render/src/environment.rs::Easing::apply	bisection fallback when Newton does not converge
