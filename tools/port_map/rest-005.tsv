@@ -125,7 +125,7 @@ Commands.<init>	port	crates/horizon-command/src/vanilla.rs::build	registers the 
 Commands.mapSource	inline	crates/horizon-client/src/game/commands/execute.rs::Game::with_source	source mapped onto the parse
 Commands.performPrefixedCommand	port	crates/horizon-client/src/game/commands.rs::Game::run_command	the leading slash is trimmed by the callers
 Commands.finishParsing	port	crates/horizon-client/src/game/commands.rs::Game::syntax_failure	parse error with the <--[HERE] context
-Commands.executeCommandInContext	port	crates/horizon-client/src/game/commands/execute.rs::Game::run_chain	gap: minor: max_command_forks is not enforced
+Commands.executeCommandInContext	port	crates/horizon-client/src/game/commands/execute.rs::Game::run_execute	the fork limit is max_command_forks: a modifier may not bring the sources to that many
 Commands.validate	skip:debug		startup check of the command tree
 Commands.createCompilationContext	skip:data		datapack compile-time context
 ParserUtils.readWhile	port	crates/horizon-command/src/lib.rs::Reader::read_unquoted_string	reads while characters are allowed
