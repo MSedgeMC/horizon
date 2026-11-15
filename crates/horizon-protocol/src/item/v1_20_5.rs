@@ -479,7 +479,7 @@ mod tests {
         );
         let id = "minecraft:random_spawn_bonus";
         assert_eq!(modifier_id(modifier_uuid(id), modifier_name(id)), id);
-        // Independently encoded with Java UUID.nameUUIDFromBytes using UTF-8.
+        // Independently encoded with Java's name-based UUIDv3 using UTF-8.
         assert_eq!(
             modifier_uuid("horizon:custom"),
             0x3e28e6c2e6603577b8e69e191403de58

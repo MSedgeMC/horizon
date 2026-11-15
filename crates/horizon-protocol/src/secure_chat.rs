@@ -35,7 +35,7 @@ pub struct ProfileKey {
 }
 
 impl ProfileKey {
-    /// Data.signedPayload: the profile id, the expiry and the key.
+    /// The signed payload: the profile id, the expiry and the key.
     fn signed_payload(&self, profile: u128) -> Vec<u8> {
         let mut out = Vec::with_capacity(24 + self.key.len());
         out.extend_from_slice(&profile.to_be_bytes());
@@ -43,7 +43,7 @@ impl ProfileKey {
         out.extend_from_slice(&self.key);
         out
     }
-    /// Data.validateSignature with the services' profile-key keys
+    /// Signature validation with the services' profile-key keys
     /// (SignatureValidator.from(keySet, PROFILE_KEY): any of them, SHA1withRSA).
     pub fn signed_by(&self, services: &[RsaPublicKey], profile: u128) -> bool {
         let payload = self.signed_payload(profile);
@@ -51,7 +51,7 @@ impl ProfileKey {
             .iter()
             .any(|k| k.verify(SignatureHash::Sha1, &payload, &self.signature))
     }
-    /// Data.hasExpired.
+    /// Whether the profile key has expired.
     pub fn has_expired(&self, now: i64) -> bool {
         self.expires_at < now
     }
@@ -396,7 +396,7 @@ impl MessageValidator {
     }
 }
 
-/// Arrays.hashCode(byte[]).
+/// Java's byte-array hash code.
 fn java_hash(bytes: &[u8]) -> i32 {
     bytes.iter().fold(1i32, |h, &b| {
         h.wrapping_mul(31).wrapping_add(i32::from(b as i8))
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(&p[60..63], "hé".as_bytes());
         assert_eq!(&p[63..67], &1i32.to_be_bytes());
         assert_eq!(p.len(), 67 + 256);
-        // Instant.getEpochSecond floors.
+        // Java instant epoch seconds floor.
         let before = Body {
             timestamp: -1,
             ..body
@@ -738,7 +738,7 @@ mod tests {
 
     #[test]
     fn checksums_follow_java_hash_codes() {
-        // Arrays.hashCode(new byte[]{-1}) = 31 + (-1) = 30.
+        // Java's byte-array hash code for {-1} is 31 + (-1) = 30.
         assert_eq!(java_hash(&[0xff]), 30);
         assert_eq!(checksum(&[]), 1);
         let one = [sig(0)];
