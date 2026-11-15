@@ -571,6 +571,22 @@ impl Projectile {
     pub fn aabb(&self) -> Aabb {
         self.bounds()
     }
+    /// `AbstractArrow.getSlot(0)`: an arrow's slot 0 is its pickup stack, the
+    /// accessor `/item` and `if items` reach through `Slot::Projectile`.
+    pub fn slot_item(&self) -> Option<&crate::items::ItemStack> {
+        self.arrow.as_ref().map(|a| &a.pickup_item)
+    }
+    /// The write half of `AbstractArrow.getSlot(0)`: replace the pickup stack.
+    /// False for a projectile with no arrow state, which has no slot 0.
+    pub fn set_slot_item(&mut self, stack: crate::items::ItemStack) -> bool {
+        match self.arrow.as_mut() {
+            Some(arrow) => {
+                arrow.pickup_item = stack;
+                true
+            }
+            None => false,
+        }
+    }
     /// The arrow's own random from now on (`Entity.random`).
     pub fn with_arrow_random(mut self, random: horizon_core::random::EntityRandom) -> Self {
         if let Some(a) = self.arrow.as_mut() {

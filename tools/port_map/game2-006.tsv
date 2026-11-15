@@ -68,7 +68,7 @@ AbstractArrow.tryPickup	port	crates/horizon-client/src/arrows.rs::ArrowState::pl
 AbstractArrow.setFlag	port	crates/horizon-client/src/projectiles.rs::Projectile::set_critical	gap: minor: only the critical flag; the no-physics flag is a plain field
 AbstractArrow.setPickupItemStack	port	crates/horizon-client/src/arrows.rs::ArrowState::set_item	an empty stack falls back to the default pickup item
 AbstractArrow.isNoPhysics	inline	crates/horizon-client/src/arrows.rs::Ticker::tick	no_physics is a field read by the tick
-AbstractArrow.getSlot	missing		an arrow's pickup stack is not addressable as an entity slot, so item commands on an arrow do nothing
+AbstractArrow.getSlot	port	crates/horizon-client/src/game/commands/items.rs::Game::slots_named	slot 0 (`contents`, `container.0`, `hotbar.0`) reads and writes the pickup stack through Projectile::slot_item; other projectiles have no slot 0
 AbstractArrow.Pickup.byOrdinal	port	crates/horizon-client/src/arrows.rs::Pickup::from_byte	out of range is DISALLOWED
 Arrow.updateColor	port	crates/horizon-client/src/projectiles.rs::Projectile::arrow_effect_color	the tipped arrow's opaque potion colour for its flight and hit particles (-1 for none)
 Arrow.makeParticle	port	crates/horizon-client/src/game/remote_projectiles.rs::Game::arrow_makeparticle	ticked in #3514; `Arrow.makeParticle` is cited at crates/horizon-client/src/game/remote_projectiles.rs:218

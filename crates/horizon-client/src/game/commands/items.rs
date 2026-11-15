@@ -34,6 +34,8 @@ pub(in crate::game) enum Slot {
     Frame(u32),
     /// A dropped item's stack: `ItemEntity.getSlot(0)`, the `contents` slot.
     Item(u32),
+    /// A projectile's slot 0 (`AbstractArrow.getSlot(0)`): the pickup stack.
+    Projectile(u32),
     /// A chest or hopper minecart's slot (`ContainerEntity.getChestVehicleSlot`).
     Cart(u32, usize),
     Block([i32; 3], usize),
@@ -89,6 +91,15 @@ fn matches_name(pattern: &str, name: &str) -> bool {
         Some(prefix) => name.starts_with(&format!("{prefix}.")),
         None => pattern == name,
     }
+}
+
+/// `SlotRanges`' names that reach an entity's slot 0: `contents`,
+/// `container.0` and `hotbar.0`. An entity whose `getSlot(0)` is null has no
+/// slot under any of them.
+fn entity_slot_zero(name: &str) -> bool {
+    matches_name(name, "contents")
+        || matches_name(name, "container.0")
+        || matches_name(name, "hotbar.0")
 }
 
 impl Game<'_> {
@@ -213,11 +224,15 @@ impl Game<'_> {
             // `ItemEntity.getSlot(0)`: `contents`, `container.0` and `hotbar.0`
             // are all slot 0 (`SlotRanges`), and it holds the stack.
             Owner::Entity(Target::Item(id)) => {
-                if matches_name(name, "contents")
-                    || matches_name(name, "container.0")
-                    || matches_name(name, "hotbar.0")
-                {
+                if entity_slot_zero(name) {
                     add(Slot::Item(*id));
+                }
+            }
+            // `AbstractArrow.getSlot(0)`: an arrow's slot 0 is its pickup
+            // stack, under the same entity slot-0 names.
+            Owner::Entity(Target::Projectile(id)) => {
+                if entity_slot_zero(name) {
+                    add(Slot::Projectile(*id));
                 }
             }
             // `getChestVehicleSlot` takes any index below `getContainerSize`.
@@ -490,6 +505,13 @@ impl Game<'_> {
                 .iter()
                 .find(|e| e.id == *id)
                 .map(|e| e.stack.clone())
+                .filter(|s| &*s.item != "minecraft:air" && s.count > 0),
+            Slot::Projectile(id) => self
+                .creatures
+                .projectiles
+                .iter()
+                .find(|p| p.id == *id)
+                .and_then(|p| p.slot_item().cloned())
                 .filter(|s| &*s.item != "minecraft:air" && s.count > 0),
             Slot::Cart(id, i) => self.cart_slots(*id)?.get(*i).cloned().flatten(),
             Slot::Block(p, i) => self
@@ -802,6 +824,17 @@ impl Game<'_> {
                 }
                 None => false,
             },
+            Slot::Projectile(id) => {
+                match self.creatures.projectiles.iter_mut().find(|p| p.id == *id) {
+                    // `AbstractArrow.getSlot(0)`'s setter: the pickup stack.
+                    Some(projectile) => projectile.set_slot_item(
+                        stack
+                            .filter(|s| &*s.item != "minecraft:air" && s.count > 0)
+                            .unwrap_or_else(|| ItemStack::new("minecraft:air", 0)),
+                    ),
+                    None => false,
+                }
+            }
             Slot::Frame(id) => match self.item_frames.iter().position(|f| f.id == *id) {
                 Some(i) => {
                     self.set_frame_item(i, stack);
@@ -3018,3 +3051,46 @@ mod set_custom_data_tests {
 
 #[cfg(test)]
 mod item_entity_contents_tests;
+
+#[cfg(test)]
+mod projectile_entity_slot_tests {
+    use super::*;
+    use crate::projectiles::{Projectile, ProjectileKind};
+    use horizon_core::geometry::Vec3;
+
+    /// `AbstractArrow.getSlot(0)`: an arrow's slot 0 is its pickup stack,
+    /// named `contents`, `container.0` or `hotbar.0`; any other projectile
+    /// has no slot 0 (`/item` on it must do nothing).
+    #[test]
+    fn an_arrows_slot_zero_is_its_pickup_stack() {
+        assert!(entity_slot_zero("contents"));
+        assert!(entity_slot_zero("container.0"));
+        assert!(entity_slot_zero("hotbar.0"));
+        assert!(!entity_slot_zero("container.1"));
+        let mut arrow = Projectile::new(
+            ProjectileKind::Arrow {
+                base_damage: 2.0,
+                critical: false,
+                effect: None,
+            },
+            Vec3::ZERO,
+            None,
+        );
+        assert_eq!(
+            arrow.slot_item().map(|s| (&*s.item, s.count)),
+            Some(("minecraft:arrow", 1))
+        );
+        assert!(arrow.set_slot_item(ItemStack::new("minecraft:stone", 1)));
+        assert_eq!(
+            arrow.slot_item().map(|s| &*s.item),
+            Some("minecraft:stone")
+        );
+        let mut wither = Projectile::new(
+            ProjectileKind::WitherSkull { dangerous: false },
+            Vec3::ZERO,
+            None,
+        );
+        assert!(wither.slot_item().is_none());
+        assert!(!wither.set_slot_item(ItemStack::new("minecraft:stone", 1)));
+    }
+}
