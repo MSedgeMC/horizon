@@ -141,7 +141,7 @@ impl Game<'_> {
         self.swing_arm();
     }
 
-    /// `Player.canInteractWithEntity(box, 3.0)` as the server checks an
+    /// `Player.isWithinEntityInteractionRange(box, 3.0)` as the server checks an
     /// attack packet: the projectile's box within the reach plus 3 of the eyes.
     pub(super) fn within_interaction_range(&self, i: usize) -> bool {
         let (Some(eye), Some(p)) = (self.eye_position(), self.creatures.projectiles.get(i)) else {
