@@ -34,6 +34,7 @@ pub enum RegionError {
     InvalidBindings,
     InvalidTickState(BlockStateId),
     MissingChunk([i32; 2]),
+    ChunkBelowStatus([i32; 2]),
     Terrain(TerrainError),
     Biome(BiomeRegionError),
     BiomesNotGenerated([i32; 2]),
@@ -70,6 +71,8 @@ pub struct TerrainRegion<'r, B: TerrainBlockStates> {
     /// `schedule_block_tick`'s recent states and their blocks' default states
     /// (the registry resolves those by name).
     tick_defaults: Vec<(BlockStateId, BlockStateId)>,
+    /// When set, every chunk this region hands out must have reached it.
+    required_status: Option<crate::chunk_status::ChunkStatus>,
 }
 /// Where each chunk of a region sits in its list: a grid over the chunks'
 /// bounding box while it is small (the usual square of neighbours), else a
@@ -174,6 +177,7 @@ impl<'r, B: TerrainBlockStates> TerrainRegion<'r, B> {
             block_queries: None,
             world_seed: None,
             tick_defaults: Vec::new(),
+            required_status: None,
             min_y,
             height,
             generation: WorldGenerationContext::with_generator(
@@ -199,6 +203,14 @@ impl<'r, B: TerrainBlockStates> TerrainRegion<'r, B> {
             tags: bindings.tags.clone(),
         });
         Ok(self)
+    }
+    /// Require every chunk the region reads or writes to have reached
+    /// `status`, as a WorldGenRegion rejects a chunk that has not reached its
+    /// generating step's status. Without it the region is status-agnostic, as
+    /// the generation stages that build their own chunks are.
+    pub fn with_required_status(mut self, status: crate::chunk_status::ChunkStatus) -> Self {
+        self.required_status = Some(status);
+        self
     }
     /// Supply the world seed (WorldGenLevel.getSeed) for seed-derived features.
     pub fn with_world_seed(mut self, seed: i64) -> Self {
@@ -254,16 +266,37 @@ impl<'r, B: TerrainBlockStates> TerrainRegion<'r, B> {
     }
     #[inline]
     pub fn chunk(&self, x: i32, z: i32) -> Result<&TerrainChunk<'r, B>, RegionError> {
-        match self.index(x, z) {
-            Some(i) => Ok(&self.chunks[i]),
-            None => Err(RegionError::MissingChunk([x, z])),
+        let Some(i) = self.index(x, z) else {
+            return Err(RegionError::MissingChunk([x, z]));
+        };
+        let chunk = &self.chunks[i];
+        self.check_required_status(x, z, chunk)?;
+        Ok(chunk)
+    }
+    fn check_required_status(
+        &self,
+        x: i32,
+        z: i32,
+        chunk: &TerrainChunk<'r, B>,
+    ) -> Result<(), RegionError> {
+        if self
+            .required_status
+            .is_some_and(|required| chunk.highest_generated_status() < required)
+        {
+            return Err(RegionError::ChunkBelowStatus([x, z]));
         }
+        Ok(())
     }
     pub fn chunk_mut(&mut self, x: i32, z: i32) -> Result<&mut TerrainChunk<'r, B>, RegionError> {
-        match self.index(x, z) {
-            Some(i) => Ok(&mut self.chunks[i]),
-            None => Err(RegionError::MissingChunk([x, z])),
+        let Some(i) = self.index(x, z) else {
+            return Err(RegionError::MissingChunk([x, z]));
+        };
+        let required = self.required_status;
+        let chunk = &mut self.chunks[i];
+        if required.is_some_and(|required| chunk.highest_generated_status() < required) {
+            return Err(RegionError::ChunkBelowStatus([x, z]));
         }
+        Ok(chunk)
     }
     #[inline]
     pub fn block(&self, [x, y, z]: [i32; 3]) -> Result<BlockStateId, RegionError> {
@@ -699,5 +732,114 @@ where
         flags: i32,
     ) -> Result<bool, Self::Error> {
         self.write_block(position, state, flags)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chunk_status::ChunkStatus;
+    use crate::heightmap::HeightmapState;
+    use crate::nbt::Tag;
+    use crate::registry::BlockRegistry;
+    use horizon_core::position::ChunkPos;
+
+    #[derive(Clone, Copy)]
+    struct State(u32);
+    impl HeightmapState for State {
+        fn is_air(self) -> bool {
+            self.0 < 2
+        }
+        fn is_air_block(self) -> bool {
+            self.0 == 0
+        }
+        fn has_fluid(self) -> bool {
+            self.0 == 3
+        }
+        fn blocks_motion_in_heightmap(self) -> bool {
+            self.0 == 2
+        }
+        fn blocks_motion_in_heightmap_no_leaves(self) -> bool {
+            self.0 == 2
+        }
+    }
+    struct Properties;
+    impl crate::worldgen::terrain::TerrainBlockStates for Properties {
+        type State = State;
+        fn heightmap_state(&self, id: BlockStateId) -> Self::State {
+            State(id.0)
+        }
+    }
+    fn registry() -> BlockRegistry {
+        BlockRegistry::from_nbt(&Tag::compound([
+            ("DataVersion", Tag::Int(crate::DATA_VERSION)),
+            (
+                "states",
+                Tag::List(vec![
+                    Tag::compound([("id", Tag::String("minecraft:air".into()))]),
+                    Tag::compound([("id", Tag::String("minecraft:void_air".into()))]),
+                    Tag::compound([("id", Tag::String("minecraft:stone".into()))]),
+                    Tag::compound([("id", Tag::String("minecraft:water".into()))]),
+                ]),
+            ),
+            (
+                "defaults",
+                Tag::compound([
+                    ("minecraft:air", Tag::Int(0)),
+                    ("minecraft:void_air", Tag::Int(1)),
+                    ("minecraft:stone", Tag::Int(2)),
+                    ("minecraft:water", Tag::Int(3)),
+                ]),
+            ),
+        ]))
+        .unwrap()
+    }
+    fn chunk(
+        position: ChunkPos,
+        stage: crate::worldgen::terrain::PreLightChunkStage,
+        registry: &BlockRegistry,
+    ) -> crate::worldgen::terrain::TerrainChunk<'_, Properties> {
+        let mut chunk =
+            crate::worldgen::terrain::TerrainChunk::new(position, -64, 16, registry, Properties)
+                .unwrap();
+        chunk.set_generation_stage(stage);
+        chunk
+    }
+
+    /// A region whose caller names Terrain hands out only chunks that have
+    /// reached it, for reads and writes alike; the default region is
+    /// status-agnostic, as the stages that build their own chunks are.
+    #[test]
+    fn a_required_status_rejects_a_chunk_below_it() {
+        let registry = registry();
+        let chunks = vec![
+            chunk(
+                ChunkPos::new(0, 0),
+                crate::worldgen::terrain::PreLightChunkStage::Empty,
+                &registry,
+            ),
+            chunk(
+                ChunkPos::new(1, 0),
+                crate::worldgen::terrain::PreLightChunkStage::Terrain,
+                &registry,
+            ),
+        ];
+        let region = TerrainRegion::new(chunks, WorldGenerationContext::new(-64, 16, 0)).unwrap();
+        assert!(region.chunk(0, 0).is_ok());
+        let mut region = region.with_required_status(ChunkStatus::Terrain);
+        assert!(matches!(
+            region.chunk(0, 0),
+            Err(RegionError::ChunkBelowStatus([0, 0]))
+        ));
+        assert!(region.chunk(1, 0).is_ok());
+        assert!(matches!(
+            region.chunk_mut(0, 0),
+            Err(RegionError::ChunkBelowStatus([0, 0]))
+        ));
+        assert!(region.chunk_mut(1, 0).is_ok());
+        assert!(matches!(
+            region.chunk(2, 0),
+            Err(RegionError::MissingChunk([2, 0]))
+        ));
     }
 }

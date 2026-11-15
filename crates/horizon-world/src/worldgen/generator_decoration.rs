@@ -439,6 +439,7 @@ impl Decoration {
             biomes.push(chunk.biomes().clone());
         }
         let terrain = TerrainRegion::new(chunks, generation)
+            .map(|region| region.with_required_status(PreLightChunkStage::Terrain.status()))
             .and_then(|region| region.with_block_bindings(&self.bindings))
             .map(|region| region.with_world_seed(seed));
         let terrain = match terrain {
