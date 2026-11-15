@@ -5163,6 +5163,9 @@ impl Game<'_> {
                 self.clock.set_frozen(p.frozen);
             }
             C::TickingStep(p) => self.clock.set_frozen_ticks_to_run(p.steps),
+            // handleSelectAdvancementsTab: the server picks the shown tab, or
+            // closes the screen when it has none.
+            C::SelectAdvancementsTab(p) => self.select_advancements_tab(p.tab.as_deref()),
             C::UpdateAdvancements(p) => {
                 let icons = p
                     .added

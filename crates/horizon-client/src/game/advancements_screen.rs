@@ -120,6 +120,28 @@ pub(super) struct AdvUi {
     from_pause: bool,
     last_frame: Option<Instant>,
 }
+impl AdvUi {
+    /// `ClientAdvancements.setSelectedTab`: the server picks the root tab to
+    /// show. A root the tree does not have leaves the choice alone; a null tab
+    /// clears it, and a different tab starts centred again.
+    pub(super) fn set_server_tab(&mut self, tree: &Tree, tab: Option<&str>) {
+        let Some(tab) = tab else {
+            self.tab = None;
+            self.scroll = None;
+            return;
+        };
+        let Some(root) = tree
+            .find_id(tab)
+            .filter(|&i| tree.list[i].parent.is_none())
+        else {
+            return;
+        };
+        if self.tab != Some(root) {
+            self.scroll = None;
+        }
+        self.tab = Some(root);
+    }
+}
 /// What the current frame shows: tabs, the visible widgets of the
 /// selected one (tree order) and its bounds.
 struct View {
@@ -173,6 +195,15 @@ impl Game<'_> {
             self.screen = Screen::Playing;
             self.capture(true);
         }
+    }
+    /// `ClientPacketListener.handleSelectAdvancementsTab`: the server keeps a
+    /// tab for the player, opening the screen on it, or closes the screen when
+    /// it has none.
+    pub(super) fn select_advancements_tab(&mut self, tab: Option<&str>) {
+        if tab.is_none() && self.screen == Screen::Advancements {
+            self.close_advancements();
+        }
+        self.adv_ui.set_server_tab(&self.adv.tree, tab);
     }
     fn adv_cache(&mut self) {
         if self
@@ -841,8 +872,53 @@ impl Game<'_> {
 #[cfg(test)]
 mod seen_advancement_tests {
     use super::*;
+    use horizon_client::advancements::Advancement;
     use horizon_protocol::buf::{Codec, Reader, Writer};
     use horizon_protocol::packets::play::SeenAdvancements;
+
+    fn tree_with_roots() -> Tree {
+        let mut tree = Tree::default();
+        for (i, id) in [
+            "minecraft:story/root",
+            "minecraft:nether/root",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            tree.by_id.insert(id.to_owned(), i);
+            tree.list.push(Advancement {
+                id: id.to_owned(),
+                parent: None,
+                display: None,
+                criteria: Vec::new(),
+                requirements: Vec::new(),
+                rewards: Default::default(),
+            });
+        }
+        tree
+    }
+
+    /// `ClientAdvancements.setSelectedTab`: the server picks a root tab, an
+    /// unknown tab or a non-root leaves the choice alone, and no tab clears it.
+    #[test]
+    fn the_server_selects_a_root_tab_and_no_tab_clears_it() {
+        let tree = tree_with_roots();
+        let mut ui = AdvUi::default();
+        ui.set_server_tab(&tree, Some("minecraft:nether/root"));
+        assert_eq!(ui.tab, Some(1));
+        assert_eq!(ui.scroll, None);
+        ui.scroll = Some((4.0, 5.0));
+        ui.set_server_tab(&tree, Some("minecraft:end/root"));
+        assert_eq!(ui.tab, Some(1), "an unknown tab leaves the choice");
+        assert_eq!(ui.scroll, Some((4.0, 5.0)));
+        ui.set_server_tab(&tree, Some("minecraft:story/root"));
+        assert_eq!(ui.tab, Some(0));
+        assert_eq!(ui.scroll, None, "a new tab starts centred");
+        ui.scroll = Some((1.0, 2.0));
+        ui.set_server_tab(&tree, None);
+        assert_eq!(ui.tab, None, "no tab clears the choice");
+        assert_eq!(ui.scroll, None);
+    }
 
     /// `ServerboundSeenAdvancementsPacket.openedTab` and `closedScreen`: an
     /// opened tab is action 0 with its advancement id, a closed screen action

@@ -43,7 +43,7 @@ ClientPacketListener.openDemoIntroScreen	skip:other		demo mode only (GameEvent 5
 ClientPacketListener.startWaitingForNewLevel	inline	crates/horizon-client/src/game/remote.rs::Game::enter_remote_dimension	the tracker starts and the LevelLoadingScreen draws until the player's section is shown
 ClientPacketListener.handleMapItemData	port	crates/horizon-client/src/game/maps.rs::Game::remote_map_item_data	
 ClientPacketListener.handleUpdateAdvancementsPacket	port	crates/horizon-client/src/game/advancements.rs::Game::remote_advancements	UpdateAdvancements arm passes the added icons
-ClientPacketListener.handleSelectAdvancementsTab	missing		minor: the server's advancement tab choice is ignored
+ClientPacketListener.handleSelectAdvancementsTab	port	crates/horizon-client/src/game/advancements_screen.rs::Game::select_advancements_tab	the server's root tab opens the screen on it, and no tab closes the screen
 ClientPacketListener.handleCommands	port	crates/horizon-client/src/game/remote.rs::Game::handle_packet	Commands arm: command tree from the packet, merged with Horizon's own
 ClientPacketListener.handleStopSoundEvent	port	crates/horizon-client/src/game/remote.rs::Game::handle_packet	StopSound arm: audio stop_sounds
 ClientPacketListener.handleUpdateRecipes	skip:data		Horizon reads recipes from its own tables; the server's list is not read
