@@ -2443,7 +2443,7 @@ impl ArmorStand {
     }
     /// LivingEntity.travel (armor stands have no other movement): clamp tiny
     /// velocity components (`LivingEntity.aiStep`), move by the velocity (a
-    /// landing stops the fall, `Block.updateEntityMovementAfterFallOn`, and a
+    /// landing stops the fall, `Block.fallOn`, and a
     /// wall collision zeros that horizontal axis), let the blocks it is inside
     /// push it (`push`: a bubble column), then in water the 0.8 slowdown and
     /// `getFluidFallingAdjustedMovement`, in air gravity 0.08, ground/air
@@ -3366,7 +3366,7 @@ mod world_border_tests {
         );
     }
 
-    /// `Entity.collectColliders` (#7080): the world border's wall stops an
+    /// `Entity.collectAllColliders` (#7080): the world border's wall stops an
     /// item and an experience orb as it stops the player. A border of size
     /// 10 around (20, 20) has its east wall at x = 25; each body starts at
     /// x = 24 on the flat ground of the test scene, moving 1.5 east.
@@ -4348,7 +4348,7 @@ mod armor_stand_motion_tests {
         assert!((stand.velocity.y - (0.2 - 0.08) * f64::from(0.98f32)).abs() < 1e-9);
     }
 
-    /// `Entity.collectColliders` (#7080): the world border's wall stops an
+    /// `Entity.collectAllColliders` (#7080): the world border's wall stops an
     /// armor stand as it stops the player. A border of size 10 around
     /// (20, 20) has its east wall at x = 25; the stand starts at x = 24 on the
     /// test scene's flat ground, moving 1.5 east.

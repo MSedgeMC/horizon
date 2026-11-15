@@ -236,7 +236,7 @@ impl Game<'_> {
     }
 
     /// A use of a game master block on a server's client, which opens the
-    /// screen itself (`BlockEntity.usedBy`) while the server only answers the
+    /// screen itself (`StructureBlockEntity.usedBy`) while the server only answers the
     /// click. The block at `pos`, when the player may use it.
     pub(super) fn open_block_editor_if_editable(&mut self, pos: Pos) {
         if !self.can_use_game_master_blocks() {

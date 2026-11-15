@@ -103,7 +103,7 @@ pub enum OpenScreen {
 /// What the game does for `KeyboardHandler.keyPress`.
 pub trait DebugHost {
     fn screen(&self) -> OpenScreen;
-    /// `DebugScreenEntries.toggleDebugOverlay`.
+    /// `DebugScreenEntryList.toggleDebugOverlay`.
     fn toggle_overlay(&mut self);
     /// `Minecraft.pauseGame(suppressPauseMenu)`.
     fn pause_game(&mut self, without_menu: bool);
