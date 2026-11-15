@@ -268,6 +268,10 @@ pub struct Projectile {
     /// `Entity.remainingFireTicks`: a thrown projectile that flew through a
     /// fire block burns for 160 ticks, with the flame drawn over it.
     pub fire_ticks: i32,
+    /// `Entity.baseTick`'s fire damage destroyed it this tick
+    /// (`ShulkerBullet.hurtServer`); the caller plays the hurt effects. Set by
+    /// [`Projectile::tick`] and cleared by the caller, false on every other tick.
+    pub fire_destroyed: bool,
     /// `Entity.DATA_AIR_SUPPLY_ID`, saved as a short but tracked as an int.
     pub air_supply: i32,
     /// `Entity.hasVisualFire`: an optional saved flag independent of burning.
@@ -337,6 +341,11 @@ pub trait ProjectileWorld {
     /// `Entity.isInWater` as `updateFluidInteraction` sets it: some water
     /// block's surface reaches the bottom of the box (deflated by 0.001).
     fn in_water(&self, bounds: Aabb) -> bool;
+    /// `Entity.isInLava`: the box touches lava (`Entity.collidedWithFluid`).
+    /// `Entity.baseTick` skips its 1 fire damage while this is true.
+    fn in_lava(&self, _bounds: Aabb) -> bool {
+        false
+    }
     /// `velocity` after the currents of the water and the lava the box
     /// touches (`EntityFluidInteraction.applyCurrentTo`): a projectile is
     /// pushed by fluids like any entity (`Entity.isPushedByFluid`).
@@ -558,6 +567,7 @@ impl Projectile {
             no_gravity: false,
             on_ground: false,
             fire_ticks: 0,
+            fire_destroyed: false,
             air_supply: 300,
             has_visual_fire: false,
             fall_distance: 0.0,
@@ -653,10 +663,13 @@ impl Projectile {
                 | ProjectileKind::Thrown(_)
         )
     }
-    /// `Entity.isOnFire`. `WitherSkull.isOnFire` always returns false.
+    /// `Entity.isOnFire`. `WitherSkull.isOnFire` and `ShulkerBullet.isOnFire`
+    /// always return false, even while fire ticks remain.
     pub fn on_fire(&self) -> bool {
-        !matches!(self.kind, ProjectileKind::WitherSkull { .. })
-            && (self.fire_ticks > 0 || self.synced_fire)
+        !matches!(
+            self.kind,
+            ProjectileKind::WitherSkull { .. } | ProjectileKind::ShulkerBullet { .. }
+        ) && (self.fire_ticks > 0 || self.synced_fire)
     }
     /// `Entity.igniteForTicks`: the longer fire wins.
     pub fn ignite_for_ticks(&mut self, ticks: i32) {
@@ -670,7 +683,8 @@ impl Projectile {
     }
     /// `Entity.baseTick` counts down active fire after block effects. The two
     /// item fireballs then renew their own flame in `AbstractHurtingProjectile.tick`.
-    fn fire_tick(&mut self, w: &impl ProjectileWorld, client_side: bool) {
+    /// True when the tick's fire damage destroyed the projectile.
+    fn fire_tick(&mut self, w: &impl ProjectileWorld, client_side: bool) -> bool {
         if !(self.is_thrown()
             || self.kind == ProjectileKind::ExperienceBottle
             || self.is_fireball()
@@ -679,7 +693,7 @@ impl Projectile {
                 ProjectileKind::WindCharge | ProjectileKind::BreezeWindCharge
             ))
         {
-            return;
+            return false;
         }
         let previous_fire_ticks = self.fire_ticks;
         if self.in_fire(w) {
@@ -704,9 +718,9 @@ impl Projectile {
             // isOnFire=false, even when its saved remainingFireTicks is positive.
             self.fire_ticks = 0;
         }
-        if self.fire_ticks > 0 {
-            self.fire_ticks -= 1;
-        }
+        // `Entity.baseTick`: a burning entity is hurt for 1 whenever its fire
+        // reaches a multiple of 20, then the fire counts down.
+        let destroyed = self.fire_damage_tick(w, client_side);
         if sync_fire {
             // Entity.setSharedFlagOnFire runs before the fireball's own ignition.
             self.synced_fire = self.fire_ticks > 0 || self.has_visual_fire;
@@ -714,6 +728,28 @@ impl Projectile {
         if self.kind.is_item_fireball() {
             self.ignite_for_ticks(20);
         }
+        destroyed
+    }
+    /// `Entity.baseTick`'s fire phase (Entity.java:554-562): while fire ticks
+    /// remain, a multiple of 20 takes 1 damage (unless in lava), then a tick
+    /// burns off it. No projectile entity type is `fireImmune` (`EntityTypes`),
+    /// and only `ShulkerBullet.hurtServer` destroys its entity; the base
+    /// `Projectile.hurtServer` and `AbstractHurtingProjectile.hurtServer`
+    /// return false and the projectile flies on. True when it was destroyed.
+    fn fire_damage_tick(&mut self, w: &impl ProjectileWorld, client_side: bool) -> bool {
+        self.fire_destroyed = false;
+        if self.fire_ticks <= 0 {
+            return false;
+        }
+        // `Entity.isInLava` is false on the entity's first tick (`firstTick`).
+        let in_lava = self.age > 1 && w.in_lava(self.bounds());
+        let destroyed = !client_side
+            && self.fire_ticks % 20 == 0
+            && !in_lava
+            && matches!(self.kind, ProjectileKind::ShulkerBullet { .. });
+        self.fire_ticks -= 1;
+        self.fire_destroyed = destroyed;
+        destroyed
     }
     /// `Entity.checkInsideBlocks`: the blocks under the box, deflated by 1e-7
     /// so a box sitting exactly on a block boundary is not inside it.
@@ -1195,6 +1231,16 @@ impl Projectile {
     }
     /// `ShulkerBullet.tick`.
     fn tick_bullet(&mut self, w: &impl ProjectileWorld, impact: bool) -> (bool, Hit) {
+        // `super.tick()`'s base fire phase comes before the move, and
+        // `applyEffectsFromBlocks` after it clears any fire no block lit this
+        // tick because `ShulkerBullet.isOnFire()` is always false. Horizon
+        // lights no block fire on a bullet, so a saved `Fire` decides one base
+        // tick only.
+        let burned = self.fire_damage_tick(w, false);
+        self.fire_ticks = 0;
+        if burned {
+            return (false, Hit::None);
+        }
         let target = self.target_box(w);
         let ProjectileKind::ShulkerBullet { delta, .. } = &mut self.kind else {
             return (false, Hit::None);
@@ -1483,14 +1529,20 @@ impl Projectile {
             self.position,
             self.bounds(),
         );
-        self.fire_tick(w, client_side);
+        let destroyed = self.fire_tick(w, client_side);
         self.stuck_tick(w, from);
         if !base_first {
             self.tick_shoot_event();
         }
         // WindCharge.tick: after AbstractHurtingProjectile.tick.
         self.no_deflect_ticks = self.no_deflect_ticks.saturating_sub(1);
-        result
+        if destroyed {
+            // `ShulkerBullet.tick` hits only while the bullet is alive, so one
+            // the fire killed hits nothing this tick.
+            (false, Hit::None)
+        } else {
+            result
+        }
     }
     /// `Projectile.deflect`, which `WindCharge` refuses while its
     /// `noDeflectTicks` last.
@@ -2131,6 +2183,43 @@ mod tests {
         assert_eq!(p.fire_ticks, 159);
         p.tick(&air);
         assert_eq!(p.fire_ticks, 158);
+    }
+
+    /// `/summon minecraft:shulker_bullet ~ ~ ~ {Fire:300s}`: the `Fire` short
+    /// is 300 ticks, and `Entity.baseTick` hurts a burning entity for 1 whenever
+    /// the count is a multiple of 20, so on its first tick (Entity.java:554-562).
+    /// `ShulkerBullet.hurtServer` destroys it, which is the sweep's "No entity
+    /// was found"; a bullet with no fire is never hurt and keeps flying.
+    #[test]
+    fn a_burning_shulker_bullet_dies_on_its_first_tick_and_a_cold_one_does_not() {
+        let bullet = || {
+            Projectile::new(
+                ProjectileKind::ShulkerBullet {
+                    target: None,
+                    dir: None,
+                    steps: 0,
+                    delta: [0.0; 3],
+                    seed: 0,
+                },
+                Vec3::new(0.5, 100.5, 0.5),
+                None,
+            )
+        };
+        let air = Empty(vec![]);
+        let mut burning = bullet();
+        burning.fire_ticks = 300;
+        let (keep, hit) = burning.tick(&air);
+        assert!(
+            !keep,
+            "the first tick's fire damage destroys the bullet"
+        );
+        assert_eq!(hit, Hit::None);
+        assert!(burning.fire_destroyed);
+
+        let mut cold = bullet();
+        assert!(cold.tick(&air).0, "a bullet with no fire is kept");
+        assert!(cold.tick(&air).0);
+        assert!(!cold.fire_destroyed);
     }
 
     #[test]

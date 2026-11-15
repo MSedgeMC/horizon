@@ -121,12 +121,10 @@ impl Game<'_> {
         true
     }
 
-    /// `ShulkerBullet.hurtServer` from a player's blow: the hurt sound, fifteen crit
-    /// particles (`sendParticles`, spread 0.2) and `destroy`. The blow is
-    /// `Player.attack` on a target that is not a mob: its sounds, then the swing.
-    pub(super) fn hit_shulker_bullet(&mut self, host: Option<&LanHost>, i: usize) {
-        let p = self.creatures.projectiles.remove(i);
-        let at = [p.position.x, p.position.y, p.position.z];
+    /// `ShulkerBullet.hurtServer`'s hurt half: the hurt sound and fifteen crit
+    /// particles (`sendParticles`, spread 0.2), before `destroy`. A player's
+    /// blow and `Entity.baseTick`'s fire damage both take it.
+    pub(super) fn hurt_shulker_bullet(&mut self, host: Option<&LanHost>, at: [f64; 3]) {
         self.audio
             .play("minecraft:entity.shulker_bullet.hurt", Some(at), 1.0, 1.0);
         if let Some(ty) = horizon_client::particles::ParticleType::from_name("crit") {
@@ -135,6 +133,14 @@ impl Game<'_> {
                 .send_particles(&options, at, [0.2, 0.2, 0.2], 0.0, 15);
             self.lan_level_particles(host, &options, at, [0.2, 0.2, 0.2], 0.0, 15, None);
         }
+    }
+    /// `ShulkerBullet.hurtServer` from a player's blow: the hurt sound, fifteen crit
+    /// particles (`sendParticles`, spread 0.2) and `destroy`. The blow is
+    /// `Player.attack` on a target that is not a mob: its sounds, then the swing.
+    pub(super) fn hit_shulker_bullet(&mut self, host: Option<&LanHost>, i: usize) {
+        let p = self.creatures.projectiles.remove(i);
+        let at = [p.position.x, p.position.y, p.position.z];
+        self.hurt_shulker_bullet(host, at);
         let (_, _, _, magic) = self.melee_damage("minecraft:shulker_bullet", false);
         self.vehicle_attack_sounds(p.aabb(), magic.then_some(p.id as i32));
         self.reset_attack_strength();

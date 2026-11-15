@@ -50,6 +50,10 @@ impl ProjectileWorld for ProjWorld<'_, '_> {
     fn in_water(&self, bounds: Aabb) -> bool {
         self.w.fluids(bounds, bounds.max_position().y).in_water
     }
+    /// `Entity.isInLava`: the fluid heights over the projectile's box.
+    fn in_lava(&self, bounds: Aabb) -> bool {
+        self.w.fluids(bounds, bounds.max_position().y).in_lava
+    }
     fn pushed_by_currents(&self, bounds: Aabb, velocity: Vec3) -> Vec3 {
         self.w.pushed_by_currents(bounds, velocity)
     }

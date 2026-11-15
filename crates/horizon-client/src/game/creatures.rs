@@ -4257,6 +4257,9 @@ impl Game<'_> {
         let mut trails = Vec::new();
         let mut bubble_tops = Vec::new();
         let mut snow_contacts = Vec::new();
+        // Where each bullet destroyed by `Entity.baseTick`'s fire damage was
+        // when the hurt landed, for its hurt sound and particles.
+        let mut fire_destroyed = Vec::new();
         let mut keep_flags = vec![true; projectiles.len()];
         let mut winds = std::mem::take(&mut self.creatures.pickable_projectile_targets);
         // The impacts the mods may cancel (`native_projectile_impact`), on a server.
@@ -4425,6 +4428,12 @@ impl Game<'_> {
                         })
                     }
                 };
+                if p.fire_destroyed {
+                    p.fire_destroyed = false;
+                    // `Entity.baseTick`'s hurt is at the tick's start, before
+                    // the move (`ShulkerBullet.tick` calls `super.tick` first).
+                    fire_destroyed.push([at.x, at.y, at.z]);
+                }
                 if (p.is_thrown() && !matches!(p.kind, ProjectileKind::LlamaSpit))
                     || p.is_arrow() && p.arrow.as_ref().is_none_or(|a| !a.no_physics)
                 {
@@ -4532,6 +4541,11 @@ impl Game<'_> {
                     super::deflect::aim_deflect(wind, look, owner, owner_uuid, guest);
                 }
             }
+        }
+        // `ShulkerBullet.hurtServer` for each bullet the fire destroyed: the
+        // hurt sound and its fifteen crit particles, at the tick's start.
+        for at in fire_destroyed {
+            self.hurt_shulker_bullet(None, at);
         }
         self.creatures.pickable_projectile_targets = winds;
         for (block, position, movement) in snow_contacts {
