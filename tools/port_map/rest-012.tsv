@@ -112,15 +112,15 @@ VecDelta.Stepped.tryEncode	inline	crates/horizon-client/src/lan/entity.rs::try_e
 VecDelta.Linear.decode	inline	crates/horizon-client/src/game/remote.rs::Game::handle_packet	MoveEntity arms: the delta applied to the tracked position (VecDelta::end)
 VecDelta.Stepped.decode	inline	crates/horizon-client/src/game/remote.rs::Game::handle_packet	MoveEntity arms: each step applied to the previous step's position, with its ticks
 VecDeltaCodec.isDeltaTooBig	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::send_changes	the i16 range check on each delta
-VecDeltaCodec.tryEncode	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::send_changes	gap: minor: linear positions only; stepped paths are not encoded
+VecDeltaCodec.tryEncode	port	crates/horizon-client/src/lan/entity.rs::try_encode	send_changes encodes the position path: a linear target or the tracked steps, each a short delta from the base
 ClientIntent.byId	missing		minor: an unknown handshake intent is not rejected; the intent stays a raw number in handshake.rs
 ClientIntent.id	skip:other		constants STATUS, LOGIN and TRANSFER in handshake.rs
 ClientIntentionPacket.write	port	crates/horizon-protocol/src/buf.rs::write	packet! Intention {protocol, host, port, intent}
-ClientboundCustomQueryPacket.readUnknownPayload	missing		minor: no 1 MiB cap on unknown login query payloads; CustomQuery keeps the raw data
+ClientboundCustomQueryPacket.readUnknownPayload	port	crates/horizon-protocol/src/packets/login.rs::MAX_QUERY_PAYLOAD	the payload is RestN<MAX_QUERY_PAYLOAD>: exactly 1,048,576 bytes is read and one more is refused
 ClientboundCustomQueryPacket.write	port	crates/horizon-protocol/src/buf.rs::write	packet! CustomQuery {transaction, channel Ident, data Rest}
 ClientboundHelloPacket.write	port	crates/horizon-protocol/src/buf.rs::write	login hello packet! fields in vanilla order
 ServerboundCustomQueryAnswerPacket.read	port	crates/horizon-protocol/src/buf.rs::read	gap: minor: payload stays raw (Opt<Rest>); no per-channel reader
-ServerboundCustomQueryAnswerPacket.readUnknownPayload	missing		minor: no 1 MiB cap on unknown login query answers; the payload stays raw
+ServerboundCustomQueryAnswerPacket.readUnknownPayload	port	crates/horizon-protocol/src/packets/login.rs::MAX_QUERY_PAYLOAD	the payload is Opt<RestN<MAX_QUERY_PAYLOAD>>: exactly 1,048,576 bytes is read and one more is refused
 ServerboundCustomQueryAnswerPacket.write	port	crates/horizon-protocol/src/buf.rs::write	packet! CustomQueryAnswer {transaction, payload Opt<Rest>}
 ServerboundHelloPacket.write	port	crates/horizon-protocol/src/buf.rs::write	login start packet! name and profile id
 ServerboundKeyPacket.write	port	crates/horizon-protocol/src/buf.rs::write	login key packet! encrypted secret and challenge
