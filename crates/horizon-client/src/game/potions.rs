@@ -1987,7 +1987,7 @@ impl Game<'_> {
             return;
         }
         let duration_scale = f64::from(stack.potion_duration_scale());
-        // Every player in range (`ThrownSplashPotion.applySplash` over
+        // Every player in range (`ThrownSplashPotion.onHitAsPotion` over
         // `LivingEntity`s, the players among them).
         self.for_each_player(|g| g.splash_on_player(&effects, at, age, owner, duration_scale));
         // Mobs take the instant effects (undead invert healing and harming).
