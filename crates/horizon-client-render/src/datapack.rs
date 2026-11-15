@@ -518,7 +518,9 @@ impl Function {
         !self.parameters.is_empty()
     }
     /// `MacroFunction.instantiate`: the command lines with the arguments
-    /// substituted. The error is the translation key and its arguments.
+    /// substituted. The error is the translation key and its arguments; an
+    /// over-long macro expansion carries vanilla's own message, as
+    /// `StringTemplate.substitute` throws it without a translation key.
     pub fn instantiate(
         &self,
         arguments: Option<&Tag>,
@@ -541,14 +543,13 @@ impl Function {
                 values.insert(p, stringify(v));
             }
         }
-        Ok(self
-            .lines
+        self.lines
             .iter()
             .map(|l| match l {
-                FunctionLine::Command(c) => c.clone(),
-                FunctionLine::Macro(t) => substitute(t, &values),
+                FunctionLine::Command(c) => Ok(c.clone()),
+                FunctionLine::Macro(t) => substitute(t, &values).map_err(|m| (m, Vec::new())),
             })
-            .collect())
+            .collect()
     }
 }
 /// `MacroFunction.stringify`.
@@ -576,7 +577,12 @@ fn decimal(v: f64) -> String {
         s.to_owned()
     }
 }
-fn substitute(template: &str, values: &BTreeMap<&str, String>) -> String {
+/// `StringTemplate.substitute`: replaces the `$(name)` placeholders. Vanilla
+/// checks the accumulated builder after every segment/argument pair and once
+/// more for the trailing segment (`StringTemplate.java:63,70`), so a macro
+/// expansion over 2,000,000 characters fails the `/function` call with
+/// `CommandFunction.checkCommandLineLength`'s message.
+fn substitute(template: &str, values: &BTreeMap<&str, String>) -> Result<String, String> {
     let mut out = String::new();
     let mut rest = template;
     while let Some(i) = rest.find("$(") {
@@ -587,6 +593,7 @@ fn substitute(template: &str, values: &BTreeMap<&str, String>) -> String {
                 if let Some(v) = values.get(&after[..j]) {
                     out.push_str(v);
                 }
+                check_command_line_length(&out)?;
                 rest = &after[j + 1..];
             }
             None => {
@@ -596,7 +603,8 @@ fn substitute(template: &str, values: &BTreeMap<&str, String>) -> String {
         }
     }
     out.push_str(rest);
-    out
+    check_command_line_length(&out)?;
+    Ok(out)
 }
 fn macro_parameters(line: &str) -> Result<Vec<String>, String> {
     let mut out = Vec::new();
@@ -1354,6 +1362,31 @@ mod tests {
         // A plain function needs no arguments.
         let plain = parse_function("a:p", "say 1").unwrap();
         assert_eq!(plain.instantiate(None).unwrap(), ["say 1"]);
+    }
+
+    /// `StringTemplate.substitute` (`StringTemplate.java:63,70`) applies
+    /// `CommandFunction.checkCommandLineLength` to the expanded line: an
+    /// argument that pushes a macro past 2,000,000 characters fails the
+    /// `/function` call with vanilla's message, while a normal macro expands.
+    /// Only instantiation fails; the macro function itself loaded already.
+    #[test]
+    fn a_macro_expansion_over_two_million_characters_fails_the_call() {
+        let f = parse_function("a:long", "$say $(v)").unwrap();
+        let huge = Tag::String("a".repeat(2_000_000).as_str().into());
+        let args = Tag::compound([("v", huge)]);
+        let error = f.instantiate(Some(&args)).unwrap_err().0;
+        let preview: String = "say "
+            .chars()
+            .chain(std::iter::repeat('a'))
+            .take(512)
+            .collect();
+        assert_eq!(
+            error,
+            format!("Command too long: 2000004 characters, contents: {preview}...")
+        );
+        // A normal macro still expands.
+        let args = Tag::compound([("v", Tag::String("hi".into()))]);
+        assert_eq!(f.instantiate(Some(&args)).unwrap(), ["say hi"]);
     }
 
     /// `StringTemplate.fromString` throws "No variables in macro" for a `$`

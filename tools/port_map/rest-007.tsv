@@ -19,7 +19,7 @@ MacroFunction.substituteAndParse	port	crates/horizon-client-render/src/datapack.
 MacroFunction.MacroEntry.instantiate	port	crates/horizon-client-render/src/datapack.rs::Function::instantiate	gap: minor: substitutes only; a parse error is raised when the line runs, not as commands.function.error.parse
 StringTemplate.fromString	port	crates/horizon-client-render/src/datapack.rs::macro_parameters	gap: minor: keeps the variable names only, and accepts a $ line with no $(name) (vanilla rejects it)
 StringTemplate.isValidVariableName	inline	crates/horizon-client-render/src/datapack.rs::macro_parameters	checks ASCII letters, digits and _; Java also accepts other Unicode letters and digits
-StringTemplate.substitute	port	crates/horizon-client-render/src/datapack.rs::substitute	gap: minor: no 2,000,000-character length check
+StringTemplate.substitute	port	crates/horizon-client-render/src/datapack.rs::substitute	the expanded line is checked after each segment/argument pair and once at the end, with CommandFunction.checkCommandLineLength's 2,000,000-character limit and "Command too long" message
 ArgumentTypeInfos.register	skip:data		bootstrap registration of argument type infos
 ArgumentTypeInfos.byClass	skip:java		lookup by Java class; Horizon's argument types are an enum
 ArgumentUtils.createNumberFlags	inline	crates/horizon-client/src/lan/commands.rs::properties	the min and max presence bits are written inline in properties
