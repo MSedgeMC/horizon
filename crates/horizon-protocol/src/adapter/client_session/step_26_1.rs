@@ -37,7 +37,7 @@ pub(super) fn clientbound(state: State, id: i32, payload: &[u8]) -> Result<Optio
         (State::Play, cb::SET_PLAYER_TEAM) => Some(team(payload)?),
         // ADD_ENTITY and REMOVE_ENTITIES are laid out alike. 26.1's spectate_entity needs the UUID of each
         // entity added, which the session keeps (translate's v26_1 does the same the other way).
-        // ADD_ENTITY's (id, UUID) are kept by `ClientSession::track_entities`.
+        // ADD_ENTITY's (id, UUID) are kept by the client session's `track_entities`.
         _ => None,
     })
 }

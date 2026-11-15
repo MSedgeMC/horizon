@@ -78,7 +78,7 @@ fn states_down(ids: &Ids, states: &Paletted, old_bits: u8) -> Paletted {
     Paletted::from_values(&values, Strategy::Blocks, old_bits)
 }
 
-/// 26.2's ClientboundLightUpdatePacketData: each mask as `BitSet.toLongArray` (a VarInt count of longs),
+/// 26.2's ClientboundLightUpdatePacketData: each mask in the long-array form Java's `BitSet` gives (a VarInt count of longs),
 /// where 26.3 sends `toByteArray` (the same bits as little-endian bytes); the layers as they are.
 fn light_down(light: &chunk::LightData, w: &mut Writer) {
     for mask in [
@@ -93,7 +93,7 @@ fn light_down(light: &chunk::LightData, w: &mut Writer) {
     chunk::Layers::write(&light.block, w);
 }
 
-/// A mask's bytes as the longs `BitSet.toLongArray` gives: none past the last set bit.
+/// A mask's bytes in the long-array form Java's `BitSet` gives: none past the last set bit.
 fn mask_longs(bytes: &[u8]) -> Vec<i64> {
     let mut longs: Vec<i64> = bytes
         .chunks(8)

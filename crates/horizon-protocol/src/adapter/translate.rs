@@ -809,7 +809,7 @@ pub(super) fn chunk(session: &Session, ids: &'static Ids, payload: &[u8]) -> Res
     Ok(w.data)
 }
 
-/// 26.2's ClientboundLightUpdatePacketData: its four masks are `BitSet.toLongArray` (a VarInt count of
+/// 26.2's ClientboundLightUpdatePacketData: its four masks are in the long-array form Java's `BitSet` gives (a VarInt count of
 /// longs); 26.3 sends `toByteArray`, the same bits as little-endian bytes without trailing zeros.
 fn light(r: &mut Reader) -> Result<crate::chunk::LightData> {
     let mut mask = || -> Result<Vec<u8>> {

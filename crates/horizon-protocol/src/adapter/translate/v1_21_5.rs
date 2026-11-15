@@ -25,8 +25,8 @@ pub(super) fn clientbound(
     let buffer = r.byte_array(r.remaining())?;
     let mut sections = Reader::new(&buffer);
     let mut out = Writer::new();
-    // 1.21.5's Data.getSerializedSize still counts two VarInt long-array lengths per section,
-    // but Data.write uses writeFixedSizeLongArray. ClientboundLevelChunkPacketData allocates that
+    // 1.21.5's chunk-section serialized-size method still counts two VarInt long-array lengths per section,
+    // but its write uses writeFixedSizeLongArray. ClientboundLevelChunkPacketData allocates that
     // larger size and transmits the unused zero-filled tail. 1.21.6 fixed the size calculation.
     let mut padding = 0;
     while sections.remaining() > padding {

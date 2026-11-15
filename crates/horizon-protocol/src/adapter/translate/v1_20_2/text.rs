@@ -740,7 +740,7 @@ mod tests {
             w.string(json);
             read_component(&mut Reader::new(&w.data))
         };
-        // Actual 764 FriendlyByteBuf.readComponent accepts one strict value and ignores
+        // The 1.20.4 friendly-buffer component reader accepts one strict value and ignores
         // following input. It coerces primitive literals and Style's primitive booleans.
         for (json, expected) in [
             (r#""x" junk"#, "x"),

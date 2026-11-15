@@ -27,7 +27,7 @@ use crate::{
 
 /// The pinned clientbound packet `id` (`payload` in 26.1's layout) in 1.21.11's layout; `None` when laid out
 /// alike. ADD_ENTITY and REMOVE_ENTITIES are alike: the entity kinds [`entity_data`] needs are the caller's to
-/// keep, as translate keeps them in its `Session::kinds`.
+/// keep, as translate keeps them in its session's `kinds`.
 pub(super) fn clientbound(state: State, id: i32, payload: &[u8]) -> Result<Option<Vec<u8>>> {
     use packet_ids::play::clientbound as cb;
     Ok(match (state, id) {
