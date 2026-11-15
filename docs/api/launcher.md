@@ -6,14 +6,14 @@ accounts, settings, mods, modpacks and hosted servers, from a terminal or over M
 
 ## Overview
 
-Every page of the launcher has a command, and every command but three has an MCP tool with the same arguments; a tool
+Every page of the launcher has a command, and every command but nine has an MCP tool with the same arguments; a tool
 runs the command with `--json`. Tools that change the player's things for good need `confirm: true`; with No AI on,
 the MCP server is off.
 
 | | Count |
 | --- | --- |
-| Commands | 46: versions, installs, play, the server, notes, links, accounts, settings, logs, updates, data collection, modpacks, mods, hosted servers, MCP, benchmark |
-| MCP tools | 43, plus the game's tools as `game_<tool>` ([agent-control.md](agent-control.md)) |
+| Commands | 96: versions, installs, play, the server, notes, links, accounts, settings, logs, updates, data collection, modpacks, mods, hosted servers, MCP, benchmark |
+| MCP tools | 87, plus the game's tools as `game_<tool>` ([agent-control.md](agent-control.md)) |
 | Modpack formats it imports | 3: a Modrinth `.mrpack`, a CurseForge zip, an instance folder |
 
 ## Guide
