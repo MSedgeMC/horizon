@@ -66,6 +66,21 @@ class ShrinkTests(unittest.TestCase):
         self.assertEqual(read['cmd'], '/data get entity 46555a5a-0000-0002-0000-000000000001')
 
 
+class KnownTests(unittest.TestCase):
+    def test_a_filed_group_is_reported_under_its_issue_and_a_new_one_is_not(self):
+        self.assertEqual(fuzz.known('persist|trident|live|damage')[1], 14823)
+        self.assertEqual(fuzz.known('persist|end_crystal|reloaded|Rotation[]')[1], 16128)
+        self.assertEqual(fuzz.known('persist|pig|live|TicksFrozen')[1], 16100)
+        self.assertIsNone(fuzz.known('persist|pig|live|Air'))
+        self.assertIsNone(fuzz.known('persist|trident|live|Air'))
+        filed = {'signature': 'persist|trident|live|damage', 'seeds': [1, 2], 'known': {'issue': 14823, 'why': 'w'}}
+        fresh = {'signature': 'persist|pig|live|Air', 'seeds': [3], 'known': None}
+        by_issue, new, fixed = fuzz.classified([filed, fresh])
+        self.assertEqual(list(by_issue), [14823])  # known groups under their issue
+        self.assertEqual([g['signature'] for g in new], ['persist|pig|live|Air'])  # only the rest as new
+        self.assertEqual([entry[1] for entry in fixed], [16100, 16128])  # the entries that did not diverge
+
+
 class FamilyTests(unittest.TestCase):
     def test_a_seed_gives_one_runnable_scenario(self):
         families.KNOWN.update({'entity': {'pig': {'PersistenceRequired': '0b', 'Air': '300s', 'Motion': ['0.0d'] * 3},

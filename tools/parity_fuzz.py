@@ -38,6 +38,18 @@ ALLOWED = [
     (r'next_weather_age', 'absolute game time'),
 ]
 
+# Divergences that are already filed: a group signature (family|subject|reloaded or live|first field, built in
+# Runner.run) and its issue. A round reports these under their issue and only the rest as new; a pattern matches
+# the signature whole, `\w+` standing for a part an issue does not pin (reloaded or live). An entry that matches
+# no group this round is printed as fixed, so the table does not keep a closed issue.
+KNOWN = [
+    (r'persist\|trident\|\w+\|(?:damage|crit|PierceLevel)', 14823,
+     'a trident saves damage 2.0d, crit 0b and PierceLevel 0b, whatever it loaded'),
+    (r'persist\|\w+\|\w+\|TicksFrozen', 16100, 'a mob freezes and thaws twice a tick'),
+    (r'persist\|end_crystal\|\w+\|(?:Motion|Rotation)(?:\[\])?', 16128,
+     'an end crystal saves Motion and Rotation as zero'),
+]
+
 
 def area(slot):
     return AREA_X + 48 * slot, FLOOR_Y, AREA_Z
@@ -125,6 +137,23 @@ def normalise(path):
 
 def allowed(path):
     return any(re.fullmatch(pattern, normalise(path)) for pattern, _ in ALLOWED)
+
+
+def known(signature):
+    """The KNOWN entry a group signature is filed under, or None when it is a new divergence."""
+    return next((entry for entry in KNOWN if re.fullmatch(entry[0], signature)), None)
+
+
+def classified(report_groups):
+    """The report's groups as ({issue: [known group]}, [new group], [KNOWN entry no group matched])."""
+    by_issue = {}
+    for group in report_groups:
+        if group['known']:
+            by_issue.setdefault(group['known']['issue'], []).append(group)
+    new = [group for group in report_groups if not group['known']]
+    matched = {group['signature'] for group in report_groups if group['known']}
+    fixed = [entry for entry in KNOWN if not any(re.fullmatch(entry[0], sig) for sig in matched)]
+    return by_issue, new, fixed
 
 
 def compare(vanilla, rust):
@@ -419,15 +448,26 @@ def main():
     report = {'scenarios': len(scenarios), 'invalid': invalid, 'diverging': len(failing), 'groups': []}
     for sig, members in sorted(groups.items(), key=lambda g: -len(g[1])):
         scenario, result = shrunk[sig]
+        entry = known(sig)
         report['groups'].append({
-            'signature': sig, 'seeds': [s['seed'] for s, _ in members], 'scenario': scenario,
+            'signature': sig, 'known': ({'issue': entry[1], 'why': entry[2]} if entry else None),
+            'seeds': [s['seed'] for s, _ in members], 'scenario': scenario,
             'commands': [op['cmd'] if op['op'] == 'cmd' else json.dumps({k: v for k, v in op.items() if k != 'step'})
                          for op in render(scenario, 0)],
             'differences': result.get('crash') or [[cmd, d[:8]] for s, cmd, d in result['failures'] if s == sig][:3]})
+    by_issue, new, fixed = classified(report['groups'])
+    report['fixed'] = [entry[1] for entry in fixed]
     lab.write_json(work / 'report.json', report)
     print(f'{len(failing)} diverging scenarios in {len(groups)} groups ({runner.batches} harness runs):')
-    for group in report['groups']:
-        print(f'  {len(group["seeds"]):3d}  {group["signature"]}')
+    for issue, filed in sorted(by_issue.items()):
+        print(f'  #{issue} {filed[0]["known"]["why"]}: {sum(len(g["seeds"]) for g in filed)} scenarios')
+        for group in filed:
+            print(f'    {len(group["seeds"]):3d}  {group["signature"]}')
+    print(f'  {len(new)} new ({sum(len(g["seeds"]) for g in new)} scenarios):')
+    for group in new:
+        print(f'    {len(group["seeds"]):3d}  {group["signature"]}')
+    if fixed:
+        print('  fixed, remove from KNOWN: ' + ', '.join(f'#{issue} ({why})' for _, issue, why in fixed))
     print(f'report: {work / "report.json"}')
 
 
