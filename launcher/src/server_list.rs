@@ -155,13 +155,21 @@ impl List {
         Ok(server)
     }
 
-    /// Writes the list as the game does: a new file first, the old one kept as `servers.dat_old`.
+    /// Writes the list as the game does: the shown servers, then the hidden ones, to a new file
+    /// first, the old one kept as `servers.dat_old`.
     pub fn save(&self, home: &Path) -> Result<(), String> {
+        // `ServerList.save` writes its `serverList` and then its `hiddenServerList`, so two blocks
+        // that were interleaved in the file come back out as two blocks.
+        let entries = self
+            .entries
+            .iter()
+            .filter(|e| !hidden(e))
+            .chain(self.entries.iter().filter(|e| hidden(e)));
         let root = NamedTag {
             name: "".into(),
             tag: Tag::compound([(
                 "servers",
-                Tag::List(self.entries.iter().cloned().map(Tag::Compound).collect()),
+                Tag::List(entries.cloned().map(Tag::Compound).collect()),
             )]),
         };
         let bytes = nbt::write_named(&root, Limits::default()).map_err(|e| e.to_string())?;

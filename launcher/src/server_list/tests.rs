@@ -398,3 +398,62 @@ fn entries_of(bytes: &[u8]) -> Vec<Tag> {
         other => panic!("no servers list: {other:?}"),
     }
 }
+
+/// `ServerList.save` writes its `serverList`, then its `hiddenServerList` (26.3
+/// `client/net/minecraft/client/multiplayer/ServerList.java`), so two blocks that were
+/// interleaved in the file come back out as two blocks. Run against the real class (an instance
+/// made without its constructor, its two lists filled and its `gameDirectory` set): `load()` and
+/// `save()` turn `[hidden, shown]` into `[shown, hidden]`, and `add()` puts the new server after
+/// the shown ones.
+#[test]
+fn a_saved_list_puts_the_shown_servers_before_the_hidden_ones() {
+    let home = scratch("order");
+    let hidden = Tag::compound([
+        ("name", s("Direct")),
+        ("ip", s("direct.example")),
+        ("acceptedCodeOfConduct", Tag::Int(7)),
+        ("hidden", Tag::Byte(1)),
+    ]);
+    let shown = Tag::compound([
+        ("name", s("Friends")),
+        ("ip", s("friends.example")),
+        ("hidden", Tag::Byte(0)),
+    ]);
+    let root = NamedTag {
+        name: "".into(),
+        tag: Tag::compound([("servers", Tag::List(vec![hidden.clone(), shown.clone()]))]),
+    };
+    fs::write(
+        home.join(FILE),
+        nbt::write_named(&root, Limits::default()).unwrap(),
+    )
+    .unwrap();
+
+    let mut list = List::load(home.as_path());
+    list.add("Hub", "hub.example").unwrap();
+    list.save(home.as_path()).unwrap();
+
+    let after = entries(home.as_path());
+    let names: Vec<String> = after
+        .iter()
+        .filter_map(|t| match t {
+            Tag::Compound(c) => Some(text(c, "name")),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        names,
+        ["Friends", "Hub", "Direct"],
+        "the shown servers, the new one after them, then the hidden ones"
+    );
+    assert_eq!(after[0], shown, "a shown entry keeps its fields");
+    assert_eq!(after[2], hidden, "the hidden entry keeps its fields");
+    assert_eq!(
+        list.servers()
+            .into_iter()
+            .map(|s| s.name)
+            .collect::<Vec<_>>(),
+        ["Friends", "Hub"],
+        "the Multiplayer list order is unchanged"
+    );
+}
