@@ -78,17 +78,46 @@ fn level_dat(path: &Path) -> Option<Tag> {
     Some(nbt::read_named(&raw, Limits::default()).ok()?.0.tag)
 }
 
+/// `LevelVersion.parse`'s `Dynamic.asLong(0)`: milliseconds since the epoch, before it when
+/// negative, and the epoch when the number does not fit a `SystemTime` at all.
+fn epoch_millis(millis: i64) -> SystemTime {
+    let span = Duration::from_millis(millis.unsigned_abs());
+    if millis < 0 {
+        UNIX_EPOCH.checked_sub(span).unwrap_or(UNIX_EPOCH)
+    } else {
+        UNIX_EPOCH.checked_add(span).unwrap_or(UNIX_EPOCH)
+    }
+}
+
+/// `NbtOps.getBooleanValue`: any number tag, and true when its `doubleValue` is not zero (so
+/// a fractional hardcore flag is still set).
+fn nonzero(tag: Option<&Tag>) -> bool {
+    match tag {
+        Some(Tag::Byte(v)) => *v != 0,
+        Some(Tag::Short(v)) => *v != 0,
+        Some(Tag::Int(v)) => *v != 0,
+        Some(Tag::Long(v)) => *v != 0,
+        Some(Tag::Float(bits)) => f32::from_bits(*bits) != 0.0,
+        Some(Tag::Double(bits)) => f64::from_bits(*bits) != 0.0,
+        _ => false,
+    }
+}
+
 fn read(path: &Path) -> Option<World> {
     let dat = path.join("level.dat");
-    let changed = fs::metadata(&dat).and_then(|m| m.modified()).ok()?;
+    fs::metadata(&dat).ok()?;
     let folder = path.file_name()?.to_string_lossy().into_owned();
     let root = level_dat(&dat);
     let data = root.as_ref().and_then(|r| r.get("Data"));
     let field = |key: &str| data.and_then(|d| d.get(key));
     let number = |tag: Option<&Tag>| match tag {
         Some(Tag::Byte(v)) => i64::from(*v),
+        Some(Tag::Short(v)) => i64::from(*v),
         Some(Tag::Int(v)) => i64::from(*v),
         Some(Tag::Long(v)) => *v,
+        // `Dynamic.asLong` truncates a float toward zero, as Java's `Number.longValue` does.
+        Some(Tag::Float(bits)) => f32::from_bits(*bits) as i64,
+        Some(Tag::Double(bits)) => f64::from_bits(*bits) as i64,
         _ => 0,
     };
     let text = |tag: Option<&Tag>| match tag {
@@ -96,8 +125,8 @@ fn read(path: &Path) -> Option<World> {
         _ => None,
     };
     // 26.3 keeps hardcore with the difficulty; older saves at the top of Data.
-    let hardcore = number(field("difficulty_settings").and_then(|d| d.get("hardcore"))) != 0
-        || number(field("hardcore")) != 0;
+    let hardcore = nonzero(field("difficulty_settings").and_then(|d| d.get("hardcore")))
+        || nonzero(field("hardcore"));
     let mode = match (hardcore, number(field("GameType"))) {
         (true, _) => "Hardcore",
         (_, 1) => "Creative",
@@ -105,10 +134,9 @@ fn read(path: &Path) -> Option<World> {
         (_, 3) => "Spectator",
         _ => "Survival",
     };
-    let last_played = match number(field("LastPlayed")) {
-        millis if millis > 0 => UNIX_EPOCH + Duration::from_millis(millis as u64),
-        _ => changed,
-    };
+    // `LevelVersion.parse` reads it with `Dynamic.asLong(0)`: absent or not a number is the
+    // epoch, never the file's own timestamp.
+    let last_played = epoch_millis(number(field("LastPlayed")));
     let icon = path.join("icon.png");
     Some(World {
         name: text(field("LevelName"))

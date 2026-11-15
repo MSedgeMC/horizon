@@ -121,6 +121,52 @@ fn lists_what_each_world_is() {
     fs::remove_dir_all(&home).unwrap();
 }
 
+/// `LevelVersion.parse` reads `LastPlayed` with `Dynamic.asLong(0)` and `LevelSettings.parse`
+/// reads a hardcore flag through `NbtOps.getBooleanValue`, which is any number whose
+/// `doubleValue` is not zero. Run against the real 26.3 classes: Long 1700000000123, Int 12345,
+/// Short 123, Byte 7, Float 1.7e9f -> 1700000000 and Double -1.5 -> -1, while absent and a
+/// string give 0; `getBooleanValue` is true for 0.5 as a float. The launcher read only Byte,
+/// Int and Long numbers and used level.dat's timestamp for a missing `LastPlayed`.
+#[test]
+fn last_played_is_read_as_the_game_reads_a_number() {
+    let home = scratch("last-played");
+    world(&home, "Short", vec![("LastPlayed", Tag::Short(123))]);
+    world(
+        &home,
+        "Float",
+        vec![("LastPlayed", Tag::Float(1_700_000_000f32.to_bits()))],
+    );
+    world(&home, "Absent", vec![("LevelName", name("Absent"))]);
+    world(
+        &home,
+        "Fractional hardcore",
+        vec![(
+            "difficulty_settings",
+            Tag::compound([("hardcore", Tag::Float(0.5f32.to_bits()))]),
+        )],
+    );
+
+    assert_eq!(
+        find(&home, "Short").unwrap().last_played,
+        UNIX_EPOCH + Duration::from_millis(123)
+    );
+    assert_eq!(
+        find(&home, "Float").unwrap().last_played,
+        UNIX_EPOCH + Duration::from_millis(1_700_000_000)
+    );
+    assert_eq!(
+        find(&home, "Absent").unwrap().last_played,
+        UNIX_EPOCH,
+        "asLong(0), not the file's own timestamp"
+    );
+    assert_eq!(
+        find(&home, "Fractional hardcore").unwrap().mode,
+        "Hardcore",
+        "a fractional number is still a set flag"
+    );
+    fs::remove_dir_all(&home).unwrap();
+}
+
 #[test]
 fn a_backup_is_named_and_laid_out_as_vanillas() {
     let home = scratch("backup");
