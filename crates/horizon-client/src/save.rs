@@ -124,6 +124,7 @@ pub fn chunks_with_block_entities<'a, N: std::hash::BuildHasher>(
         .collect()
 }
 
+use crate::block_entity_nbt::component as nbt_component;
 use horizon_client_core::nbt_value::string;
 pub use horizon_client_core::nbt_value::{float, number, text};
 /// Insert or replace a key of a compound tag.
@@ -765,7 +766,7 @@ pub fn encode_block_entity(
                 entries.push(("patterns", crate::banner::layers_to_nbt(&b.layers)));
             }
             if let Some(name) = &b.name {
-                entries.push(("CustomName", string(name)));
+                entries.push(("CustomName", name.clone()));
             }
         }
         BlockEntity::CreakingHeart(h) => {
@@ -868,7 +869,8 @@ pub fn block_entity_data(
 pub fn decode_banner(tag: &Tag) -> crate::containers::Banner {
     crate::containers::Banner {
         layers: crate::banner::layers_from_nbt(tag.get("patterns")),
-        name: text(tag.get("CustomName")),
+        // `parseCustomNameSafe`: the component codec keeps a name's style.
+        name: tag.get("CustomName").and_then(nbt_component),
         components: match tag.get("components") {
             Some(Tag::Compound(c)) => c.clone(),
             _ => Compound::new(),
@@ -1867,16 +1869,14 @@ fn decode_column(
                             horizon_world::attachments::Attachments::from_nbt(data.clone()),
                         ));
                     }
-                    let name = if matches!(
-                        be.1,
-                        crate::containers::BlockEntity::Banner(_)
-                            | crate::containers::BlockEntity::Sign(_)
-                            | crate::containers::BlockEntity::Mod(_)
-                    ) {
-                        text(e.get("CustomName")).map(|name| string(&name))
-                    } else {
-                        e.get("CustomName")
-                            .and_then(crate::block_entity_nbt::component)
+                    // A banner keeps its name in its model (`decode_banner`).
+                    let name = match &be.1 {
+                        crate::containers::BlockEntity::Banner(_) => None,
+                        crate::containers::BlockEntity::Sign(_)
+                        | crate::containers::BlockEntity::Mod(_) => {
+                            text(e.get("CustomName")).map(|name| string(&name))
+                        }
+                        _ => e.get("CustomName").and_then(nbt_component),
                     };
                     if let Some(name) = name {
                         chunk.block_names.push((be.0, name));
@@ -3751,6 +3751,8 @@ pub struct Level {
     pub world_spawn: Option<[i32; 3]>,
     /// The world spawn's yaw and pitch (`setworldspawn`'s rotation).
     pub world_spawn_angle: [f32; 2],
+    /// The world spawn's dimension (`level.dat` `spawn.dimension`); the Overworld when unset.
+    pub world_spawn_dimension: Option<String>,
     pub difficulty: String,
     pub hardcore: bool,
     /// `difficulty_settings.locked` (LevelData.isDifficultyLocked).
@@ -3863,21 +3865,7 @@ impl Level {
             ..Self::default()
         };
         // 26.3: spawn {pos: [I; x, y, z], dimension, yaw, pitch}; older: SpawnX/Y/Z.
-        level.world_spawn = match data.get("spawn").and_then(|s| s.get("pos")) {
-            Some(Tag::IntArray(p)) if p.len() == 3 => Some([p[0], p[1], p[2]]),
-            _ => data.get("SpawnX").map(|_| {
-                [
-                    n(data.get("SpawnX")) as i32,
-                    n(data.get("SpawnY")) as i32,
-                    n(data.get("SpawnZ")) as i32,
-                ]
-            }),
-        };
-        let angle = |k: &str| match data.get("spawn").and_then(|s| s.get(k)) {
-            Some(Tag::Float(b)) => f32::from_bits(*b),
-            _ => 0.0,
-        };
-        level.world_spawn_angle = [angle("yaw"), angle("pitch")];
+        level.read_world_spawn(data);
         if let Some(d) = data.get("difficulty_settings") {
             level.difficulty = text(d.get("difficulty")).unwrap_or_else(|| "normal".into());
             level.hardcore = n(d.get("hardcore")) != 0;
@@ -4502,7 +4490,7 @@ impl Level {
                 "spawn",
                 Tag::compound([
                     ("pos", Tag::IntArray(spawn.to_vec())),
-                    ("dimension", string("minecraft:overworld")),
+                    ("dimension", string(self.spawn_dimension())),
                     ("yaw", Tag::Float(self.world_spawn_angle[0].to_bits())),
                     ("pitch", Tag::Float(self.world_spawn_angle[1].to_bits())),
                 ]),
@@ -7148,7 +7136,7 @@ mod tests {
     fn banner_block_entity_round_trips() {
         let banner = crate::containers::Banner {
             layers: vec![crate::banner::BannerLayer::new("minecraft:creeper", "lime")],
-            name: Some("Flag".into()),
+            name: Some(string("Flag")),
             components: [("minecraft:rarity".into(), string("uncommon"))].into(),
         };
         let tag = encode_block_entity(
