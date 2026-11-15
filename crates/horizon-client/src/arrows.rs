@@ -183,6 +183,9 @@ pub struct ArrowState {
     /// until the first block hit sets it back to `entity.arrow.hit`.
     pub crossbow_hit_sound: bool,
     pub no_physics: bool,
+    /// `AbstractArrow.canHitEntity`'s exemption: a deflected arrow may strike
+    /// its owner before it has left it.
+    pub deflected: bool,
     /// `Arrow.ID_EFFECT_COLOR` as a client has it from its server (-1: none).
     pub effect_color: i32,
     /// `AbstractArrow.getPierceLevel`.
@@ -283,6 +286,7 @@ impl ArrowState {
             fired_from_weapon: None,
             crossbow_hit_sound: false,
             no_physics: false,
+            deflected: false,
             effect_color: -1,
             pierce: 0,
             pierced: Vec::new(),
@@ -387,6 +391,8 @@ pub struct ArrowScene<'a, 'r> {
     pub mob_griefing: bool,
     pub tnt_explodes: bool,
     pub owners: &'a dyn OwnerLookup,
+    /// `Projectile.canHitEntity`'s shooter rule, as the game answers it.
+    pub can_attack: &'a dyn ShooterRule,
 }
 /// `EntityReference.getEntity` for an owner the arrow only knows by UUID.
 pub trait OwnerLookup {
@@ -396,6 +402,17 @@ pub trait OwnerLookup {
 impl OwnerLookup for () {
     fn non_player_entity(&self, _: [i32; 4]) -> bool {
         false
+    }
+}
+/// `Entity.doTeamsAllowDamage` from an arrow's shooter: whether the arrow's
+/// owner (`Projectile.getOwner`) may attack `who`. `()` allows everyone, as a
+/// world with no teams does.
+pub trait ShooterRule {
+    fn can_attack(&self, owner: Option<Who>, who: Who) -> bool;
+}
+impl ShooterRule for () {
+    fn can_attack(&self, _: Option<Who>, _: Who) -> bool {
+        true
     }
 }
 impl ArrowScene<'_, '_> {
@@ -683,6 +700,7 @@ pub fn deflect_reverse(velocity: &mut Vec3, yaw: &mut f32, st: &mut ArrowState) 
     let k = -power * 0.5;
     *velocity = Vec3::new(v.x * k, v.y * k, v.z * k);
     *yaw += rotation;
+    st.deflected = true;
     if velocity.length_squared() < 1.0e-7 {
         if st.pickup == Pickup::Allowed {
             st.events.push(ArrowEvent::Drop);
@@ -714,6 +732,7 @@ pub fn finish_entity_hit(p: &mut Projectile, scene: &ArrowScene, outcome: Entity
         EntityHit::Refused => ticker.turn_back(),
         EntityHit::Dodged => {}
         EntityHit::Deflected => {
+            ticker.st.deflected = true;
             // The deflection comes before `onHitEntity` adds the entity to
             // `piercingIgnoreEntityIds`.
             if ticker.st.pierce > 0 {
@@ -975,8 +994,14 @@ impl Ticker<'_, '_, '_, '_> {
         let mut best: Option<(Who, Vec3, f64)> = None;
         // ThrownTrident.findHitEntity: none once it has dealt damage.
         let targets = if self.st.dealt_damage { &[] } else { targets };
+        let owner = self.p.owner;
+        let scene = self.scene;
         for (who, b) in targets {
-            if Some(*who) == self.p.owner && !self.p.left_owner || !b.intersects(area) {
+            if !self
+                .p
+                .can_hit_entity(*who, |target| scene.can_attack.can_attack(owner, target))
+                || !b.intersects(area)
+            {
                 continue;
             }
             // canHitEntity: not an entity a piercing arrow has gone through.

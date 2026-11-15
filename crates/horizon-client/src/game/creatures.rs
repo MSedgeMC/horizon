@@ -4898,6 +4898,7 @@ impl Game<'_> {
             mob_griefing: self.ui.rules.bool("mob_griefing"),
             tnt_explodes: self.ui.rules.bool("tnt_explodes"),
             owners: self,
+            can_attack: self,
         }
     }
     /// Dispatch with the projectile's actual owner context, including a guest shooter.

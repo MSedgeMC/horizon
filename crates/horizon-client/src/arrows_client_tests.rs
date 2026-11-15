@@ -165,6 +165,7 @@ fn run_in(
         mob_griefing: rules.mob_griefing,
         tnt_explodes: true,
         owners: rules.owners,
+        can_attack: &(),
     };
     let mut p = Projectile::new(
         ProjectileKind::Arrow {

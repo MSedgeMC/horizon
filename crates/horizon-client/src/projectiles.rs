@@ -344,6 +344,13 @@ pub trait ProjectileWorld {
         velocity
     }
     fn targets(&self) -> &[(Who, Aabb)];
+    /// `Projectile.canHitEntity`'s shooter rule: whether the projectile's
+    /// owner may attack `who` (`Entity.doTeamsAllowDamage`, the rule the melee
+    /// paths already read). True by default, for an ownerless projectile and
+    /// for a world that knows no teams.
+    fn can_attack(&self, _owner: Option<Who>, _who: Who) -> bool {
+        true
+    }
     /// `Level.getMinY() - 64` (`Entity.checkBelowWorld`); the Overworld's
     /// unless the world says otherwise.
     fn below_world_y(&self) -> f64 {
@@ -1221,7 +1228,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if Some(*who) == self.owner && !self.left_owner {
+            if !self.target_allowed(w, *who) {
                 continue;
             }
             if let Some(at) = b.inflate(Vec3::new(margin, margin, margin)).clip(from, end) {
@@ -1542,6 +1549,29 @@ impl Projectile {
     fn hit_margin(&self) -> f64 {
         f64::from(((self.age as i32 - 2) as f32 / 20.0).clamp(0.0, 0.3))
     }
+    /// `Projectile.canHitEntity`: whether the projectile may strike `who`.
+    /// The shooter itself is refused until the projectile has left it, and
+    /// `AbstractArrow.canHitEntity` exempts a no-physics arrow (a loyalty
+    /// trident's return) or a deflected one. Otherwise `can_attack` is the
+    /// shooter's own rule, so a projectile is never spent on an entity its
+    /// shooter cannot attack.
+    pub fn can_hit_entity(&self, who: Who, can_attack: impl FnOnce(Who) -> bool) -> bool {
+        if Some(who) == self.owner {
+            return self.left_owner || self.owner_hit_exempt();
+        }
+        can_attack(who)
+    }
+    /// `Projectile.canHitEntity` against a world's target list.
+    fn target_allowed(&self, w: &impl ProjectileWorld, who: Who) -> bool {
+        self.can_hit_entity(who, |target| w.can_attack(self.owner, target))
+    }
+    /// `AbstractArrow.canHitEntity`'s owner exemption: an arrow in no-physics
+    /// flight or one that was deflected may strike its owner.
+    fn owner_hit_exempt(&self) -> bool {
+        self.arrow
+            .as_ref()
+            .is_some_and(|a| a.no_physics || a.deflected)
+    }
     fn tick_inner(&mut self, w: &impl ProjectileWorld, impact: bool) -> (bool, Hit) {
         // `Entity.setOldPosAndRot` (the previous position and rotation the
         // renderer interpolates from), kept across the `impact` flag's arrival
@@ -1606,7 +1636,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if Some(*who) == self.owner && !self.left_owner {
+            if !self.target_allowed(w, *who) {
                 continue;
             }
             let inflated = b.inflate(Vec3::new(margin, margin, margin));
@@ -3053,6 +3083,111 @@ mod arrow_color_tests {
             .potion_extra
             .push(("custom_color".into(), Tag::Int(0x8012_3456u32 as i32)));
         assert_eq!(color(&plain), 0x8012_3456u32 as i32);
+    }
+}
+
+#[cfg(test)]
+mod can_hit_entity_tests {
+    use super::*;
+
+    /// A world whose shooter and target are on teams, so `can_attack` answers
+    /// as the game's melee rule does: `Entity.doTeamsAllowDamage` over the two
+    /// teams.
+    struct TeamWorld {
+        targets: Vec<(Who, Aabb)>,
+        shooter: Option<crate::scoreboard::Team>,
+        target: Option<crate::scoreboard::Team>,
+    }
+    impl ProjectileWorld for TeamWorld {
+        fn clip(&self, _: Vec3, _: Vec3) -> Option<(Vec3, [i32; 3], [i32; 3])> {
+            None
+        }
+        fn in_water(&self, _: Aabb) -> bool {
+            false
+        }
+        fn targets(&self) -> &[(Who, Aabb)] {
+            &self.targets
+        }
+        fn can_attack(&self, owner: Option<Who>, _who: Who) -> bool {
+            owner.is_some()
+                && crate::scoreboard::teams_allow_damage(
+                    self.shooter.as_ref(),
+                    self.target.as_ref(),
+                )
+        }
+    }
+    fn team(name: &str, friendly_fire: bool) -> crate::scoreboard::Team {
+        crate::scoreboard::Team {
+            name: name.to_owned(),
+            display_name: crate::scoreboard::literal(name),
+            color: None,
+            allow_friendly_fire: friendly_fire,
+            see_friendly_invisibles: true,
+            prefix: crate::scoreboard::literal(""),
+            suffix: crate::scoreboard::literal(""),
+            nametag_visibility: crate::scoreboard::Visibility::Always,
+            death_message_visibility: crate::scoreboard::Visibility::Always,
+            collision_rule: crate::scoreboard::CollisionRule::Always,
+            players: Default::default(),
+        }
+    }
+    #[test]
+    fn a_projectile_skips_what_its_shooter_cannot_attack_and_a_deflected_arrow_hits_its_owner() {
+        // `Projectile.canHitEntity`: the melee `Entity.doTeamsAllowDamage`
+        // rule is consulted once for every candidate target, so an ally is
+        // flown through; `AbstractArrow.canHitEntity` exempts a deflected
+        // arrow's owner.
+        let boxed = |x: f64| Aabb::new(Vec3::new(x, 100.0, 0.0), Vec3::new(x + 0.2, 101.0, 1.0));
+        let red = team("red", false);
+        let blue = team("blue", false);
+        let mut snowball = Projectile::new(
+            ProjectileKind::Snowball,
+            Vec3::new(0.0, 100.5, 0.5),
+            Some(Who::Player),
+        );
+        snowball.velocity = Vec3::new(0.5, 0.0, 0.0);
+        snowball.age = 5;
+        let ally = TeamWorld {
+            targets: vec![(Who::Mob(7), boxed(0.4))],
+            shooter: Some(red.clone()),
+            target: Some(red.clone()),
+        };
+        let mut missed = snowball.clone();
+        assert_eq!(missed.tick(&ally).1, Hit::None, "an ally is not hit");
+        let enemy = TeamWorld {
+            targets: vec![(Who::Mob(7), boxed(0.4))],
+            shooter: Some(red.clone()),
+            target: Some(blue),
+        };
+        let mut hit = snowball;
+        assert!(
+            matches!(hit.tick(&enemy).1, Hit::Entity { who: Who::Mob(7), .. }),
+            "a non-ally is hit"
+        );
+        // The owner is refused while the arrow is inside it, unless deflected.
+        let mut arrow = Projectile::new(
+            ProjectileKind::Arrow {
+                base_damage: 2.0,
+                critical: false,
+                effect: None,
+            },
+            Vec3::new(0.0, 100.5, 0.5),
+            Some(Who::Player),
+        );
+        arrow.velocity = Vec3::new(0.5, 0.0, 0.0);
+        arrow.age = 5;
+        let own = TeamWorld {
+            targets: vec![(Who::Player, boxed(0.4))],
+            shooter: Some(red.clone()),
+            target: Some(red),
+        };
+        let mut blocked = arrow.clone();
+        assert_eq!(blocked.tick(&own).1, Hit::None, "the shooter is not hit");
+        arrow.arrow.as_mut().unwrap().deflected = true;
+        assert!(
+            matches!(arrow.tick(&own).1, Hit::Entity { who: Who::Player, .. }),
+            "a deflected arrow hits its owner"
+        );
     }
 }
 crate::impl_joined!(Projectile);
