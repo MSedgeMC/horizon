@@ -2916,7 +2916,7 @@ impl Game<'_> {
                         self.spawn_item_own(stack, at, 10);
                     }
                 }
-                // `LevelWriter.setBlockAndUpdate`: neighbour and shape updates, so a crop
+                // `Level.setBlockAndUpdate`: neighbour and shape updates, so a crop
                 // above trampled farmland breaks and drops.
                 MobEvent::SetBlock { pos, state } => self.level_set(pos, state)?,
                 MobEvent::EndermanPlaceBlock {

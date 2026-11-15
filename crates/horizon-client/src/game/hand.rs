@@ -516,7 +516,7 @@ impl Game<'_> {
             .iter()
             .any(|k| self.movement_key_held(*k))
     }
-    /// `MultiPlayerGameMode.useItem`'s bookkeeping around the game's
+    /// `MultiPlayerGameMode.startUseItem`'s bookkeeping around the game's
     /// use: nothing starts while a block is being broken or the hands are
     /// busy, and `LocalPlayer.itemUsed` drops the hand after a use that
     /// swung and spent (or, with infinite materials, kept) the item, or that
