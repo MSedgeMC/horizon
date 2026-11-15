@@ -42,12 +42,14 @@ description, authors, licence and source as they were; a signature when the entr
 
 ```
 <!-- owner-update
+format: v2
 id: coords_hud
 version: 0.1.0
 sha256: <hex>
 file: coords_hud-0.1.0.hmod
 submitter: alice
-hmac: <hex HMAC-SHA256 with REGISTRY_UPDATE_KEY of "owner-update-v1\n<id>\n<version>\n<sha256>\n<file>\n<submitter>">
+submitter_id: 123456
+hmac: <hex HMAC-SHA256 with REGISTRY_UPDATE_KEY of "owner-update-v2\n<id>\n<version>\n<sha256>\n<file>\n<submitter>\n<submitter_id>">
 -->
 ```
 
