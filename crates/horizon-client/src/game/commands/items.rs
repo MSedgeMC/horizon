@@ -3081,10 +3081,7 @@ mod projectile_entity_slot_tests {
             Some(("minecraft:arrow", 1))
         );
         assert!(arrow.set_slot_item(ItemStack::new("minecraft:stone", 1)));
-        assert_eq!(
-            arrow.slot_item().map(|s| &*s.item),
-            Some("minecraft:stone")
-        );
+        assert_eq!(arrow.slot_item().map(|s| &*s.item), Some("minecraft:stone"));
         let mut wither = Projectile::new(
             ProjectileKind::WitherSkull { dangerous: false },
             Vec3::ZERO,
