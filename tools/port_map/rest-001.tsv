@@ -95,8 +95,8 @@ AdvancementProgress.revokeProgress	port	crates/horizon-client/src/advancements.r
 AdvancementProgress.isCriterionDone	port	crates/horizon-client/src/advancements.rs::Progress::has	criterion obtained
 AdvancementProgress.getPercent	port	crates/horizon-client/src/game/advancements_screen.rs::Game::adv_draw_hover	obtained over total requirement groups, drives the progress bar and icon frame
 AdvancementProgress.getProgressText	port	crates/horizon-client/src/game/advancements_screen.rs::Game::adv_draw_hover	advancements.progress text, only when there are more than one group
-AdvancementProgress.getRemainingCriteria	inline	crates/horizon-client/src/lan/advancements.rs::ServerAdvancements::write_progress	each criterion of the advancement is written with its obtained date or none, so the undone ones are the remaining list
-AdvancementProgress.getCompletedCriteria	inline	crates/horizon-client/src/lan/advancements.rs::ServerAdvancements::write_progress	the same walk writes the obtained ones with their date, the completed list; Progress::has is the per-criterion isDone
+AdvancementProgress.getRemainingCriteria	inline	crates/horizon-client/src/game/advancements.rs::Game::grant_advancement	GRANT without a criterion walks the advancement's criteria and grants each; an already obtained one is a no-op, so the undone criteria are the ones acted on
+AdvancementProgress.getCompletedCriteria	inline	crates/horizon-client/src/game/advancements.rs::Game::revoke_advancement	REVOKE without a criterion walks the advancement's criteria and revokes each; Progress::done is the per-criterion test
 AdvancementProgress.getFirstProgressDate	skip:java		used only by compareTo, which has no caller
 AdvancementProgress.compareTo	skip:java		Comparable with no vanilla caller
 AdvancementRequirements.test	port	crates/horizon-client/src/advancements.rs::Progress::done	every requirement group has a criterion obtained
