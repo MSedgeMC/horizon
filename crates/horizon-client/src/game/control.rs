@@ -151,13 +151,14 @@ impl Game<'_> {
             atlas: horizon_client::gfx::capture::AtlasCheck::of(&self.pack.render),
         }
     }
-    /// The frame summary, with Horizon's own passes' median GPU times while they are timed.
+    /// The frame summary, with the renderer's passes' median GPU times while they are timed: the
+    /// shader pack's and Horizon's own, so a pack author sees every stage `gpu_ms` holds.
     fn summary_with_passes(&self) -> Value {
         let mut summary = self.frame_stats.summary();
         let passes = self
             .renderer
             .as_ref()
-            .map(|r| r.own_pass_times())
+            .map(|r| merged_pass_times(r.shader_pass_times(), r.own_pass_times()))
             .unwrap_or_default();
         if !passes.is_empty() {
             summary["gpu_passes"] = Value::Object(
@@ -1883,6 +1884,22 @@ mod tests {
     }
 
     #[test]
+    fn a_summary_lists_the_packs_passes_and_sums_a_name_horizon_also_uses() {
+        let passes = merged_pass_times(
+            vec![("shadow".into(), 0.25), ("HUD".into(), 0.5)],
+            vec![("HUD".into(), 0.5), ("World".into(), 1.0)],
+        );
+        assert_eq!(
+            passes,
+            [
+                ("shadow".to_owned(), 0.25),
+                ("HUD".to_owned(), 1.0),
+                ("World".to_owned(), 1.0),
+            ]
+        );
+    }
+
+    #[test]
     fn gpu_passes_detail_replies_detail_and_on_turns_it_off_again() {
         let support = pack_timing::DetailSupport {
             parts: pack_timing::PartsMode::SeparatePasses,
@@ -1976,4 +1993,17 @@ mod tests {
             assert!(parse(args).is_err(), "{args:?}");
         }
     }
+}
+
+/// The GPU pass times a summary lists: the shader pack's passes and Horizon's own. A name both
+/// timers use is reported once, with their times added, so `gpu_ms` stays accounted for.
+fn merged_pass_times(pack: Vec<(String, f32)>, own: Vec<(String, f32)>) -> Vec<(String, f32)> {
+    let mut passes = pack;
+    for (name, ms) in own {
+        match passes.iter_mut().find(|(seen, _)| *seen == name) {
+            Some((_, total)) => *total += ms,
+            None => passes.push((name, ms)),
+        }
+    }
+    passes
 }
