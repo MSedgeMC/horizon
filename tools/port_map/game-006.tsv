@@ -10,7 +10,7 @@ Leashable.isLeashed	inline	crates/horizon-client/src/mobs/leash.rs::tick	the mob
 Leashable.setDelayedLeashHolderId	inline	crates/horizon-client/src/game/remote.rs::Game::handle_packet	SetEntityLink arm: a holder id not known yet waits as Holder::Mob until the knot arrives (remote_objects.rs)
 Leashable.readLeashData	port	crates/horizon-client/src/mobs/leash.rs::pending_from_nbt	holder UUID or fence knot block; kept pending until the holder exists
 Leashable.restoreLeashFromSave	port	crates/horizon-client/src/game/leads.rs::Game::tick_leads	holder found by UUID or knot block; a lead whose holder never shows up drops as an item after 100 ticks
-Leashable.angularFriction	inline	crates/horizon-client/src/mobs/leash.rs::tick	gap: minor: ground friction is a fixed 0.6 times 0.91, not the friction of the block under the mob (ice, slime)
+Leashable.angularFriction	inline	crates/horizon-client/src/mobs/leash.rs::tick	ground friction is the friction of the block under the mob (0.989 on blue ice, 0.6 default) times 0.91; 0.8 in a liquid, 0.91 in the air
 Leashable.checkElasticInteractions	port	crates/horizon-client/src/mobs/leash.rs::tick	live mob dispatch selects shared quad physics only when both holder and leashee support it; llama remains single
 Leashable.getHolderMovement	port	crates/horizon-client/src/mobs/leash.rs::holder_state	gap: minor: the holder's velocity is always used; a NoAI mob holder should count as standing still
 Leashable.computeElasticInteraction	port	crates/horizon-client/src/mobs/leash.rs::spring	gap: minor: single attachment pair (0, 0.5, 0.5 of the mob and 0, 0.5, 0 of the holder); the four-point version is missing
@@ -35,7 +35,7 @@ Skeleton.canFreeze	port	crates/horizon-client/src/mobs/ai/freezing.rs::can_freez
 SulfurCube.canFreeze	port	crates/horizon-client/src/mobs/ai/freezing.rs::can_freeze	`!hasBodyItem() && super`: a cube carrying a block never freezes
 LivingEntity.canBreatheUnderwater	port	crates/horizon-client/src/mobs/ai/air.rs::can_breathe_under_water	the can_breathe_under_water tag, then the baby happy ghast and the sulfur cube with a block in its body
 LivingEntity.canBeAffected	port	crates/horizon-client/src/mobs.rs::Mob::can_be_affected	the three tags (immune_to_infested, immune_to_oozing, ignores_poison_and_regen which is #minecraft:undead) then the class overrides below; asked by addEffect before anything is stored
-LivingEntity.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	gap: player: arrow count (12) and stinger count (13) are never kept or sent, so arrows and bee stingers do not stay stuck in a body
+LivingEntity.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	player: arrow count (12) and stinger count (13) are packed by `stuck_meta` from a guest's stuck arrows (`lan_stuck`); a remote player's counts are read in `remote_mob_data`
 LivingEntity.hasLandedInLiquid	port	crates/horizon-world/src/living_fall.rs::ImpulseContext::landed_in_liquid	water or lava with getDeltaMovement().y below 9.9999997E-6, from the guest move loop; the grace time still defers it
 LivingEntity.getDimensions	port	crates/horizon-client/src/mobs/living.rs::dims	getDefaultDimensions(pose).scale(getScale()) for every living entity: the type's box (a class's baby, size or dig dims) with width, height and eye height all times minecraft:scale; a sleeper's 0.2 SLEEPING_DIMENSIONS comes before the scale
 LivingEntity.getScale	port	crates/horizon-client/src/mobs/living.rs::model_scale	the minecraft:scale a client has for any living entity, through sanitizeScale; the server's player reads its own in PlayerMotion::refresh_dimensions (PlayerMotion.scale keeps it for Guest::dimensions)
@@ -57,7 +57,7 @@ LivingEntity.applyItemBlocking	port	crates/horizon-client/src/health.rs::Environ
 LivingEntity.playSecondaryHurtSound	port	crates/horizon-client/src/game/enchant_effects.rs::Game::thorns	enchant.thorns.hit at the attacker
 LivingEntity.resolveMobResponsibleForDamage	inline	crates/horizon-client/src/mobs.rs::Mob::damage_with	gap: minor: last_hurt_by comes from any attacker; no #no_anger damage types or wind charge exemption
 LivingEntity.resolvePlayerResponsibleForDamage	inline	crates/horizon-client/src/game/creatures.rs::Game::resolve_player_responsible	a tamed wolf's or cat's hit is its owner's (setLastHurtByPlayer), so the kill drops experience and player-only loot
-LivingEntity.breakItem	port	crates/horizon-client/src/game/item_durability.rs::Game::damage_held	gap: player: a tool or armor breaking shows no crumb particles and always plays entity.item.break, not the item's own break sound
+LivingEntity.breakItem	port	crates/horizon-client/src/game/item_durability.rs::Game::damage_held	a broken held stack plays the stack's own break sound (`break_sound_at`) and five eat-particle crumbs at the player's feet
 LivingEntity.dropExperience	inline	crates/horizon-client/src/mobs/drops.rs::die	orbs only when a player killed it and mob_drops is on
 LivingEntity.getKnockback	port	crates/horizon-client/src/game/enchant_effects.rs::Game::extra_knockback	gap: minor: the Knockback enchant halved (player and gear::knockback for mobs); the attack_knockback attribute counts only for the hoglin shove
 LivingEntity.dropFromLootTable	port	crates/horizon-client/src/mobs/drops.rs::roll	the entity table from its random sequence
@@ -118,7 +118,7 @@ Mob.getNavigation	inline	crates/horizon-client/src/mobs/riders.rs::tick	controll
 Mob.getControllingPassenger	inline	crates/horizon-client/src/mobs/riders.rs::controller	NoAI vehicle has no controller; a mob passenger may have NoAI but must not be in non_controlling_rider
 Mob.asValidTarget	port	crates/horizon-client/src/mobs/monster_brain.rs::can_attack	creative and spectator players are never valid; goal mobs use goals.rs Mob::can_target_player
 Mob.spawnAnim	port	crates/horizon-client/src/game/spawner.rs::Game::poof_particles	the poof of a mob a spawner made (event 20 on a server's client)
-Mob.updateControlFlags	inline	crates/horizon-client/src/mobs/riders.rs::drive	gap: minor: a mob in a boat keeps its JUMP goals
+Mob.updateControlFlags	inline	crates/horizon-client/src/mobs/riders.rs::drive	a controlled rider disables MOVE, JUMP and LOOK (and TARGET for a ravager) through the goal flags `drive` sets
 Mob.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	gap: minor: drop_chances and DeathLootTable survive only from the loaded raw tag
 Mob.burnUndead	inline	crates/horizon-client/src/mobs/ai.rs::ai_step	burn_undead sends SunProtectionWear for an undead with its sun-protection item, and Game::wear_sun_protection does hurtAndBreak(nextInt(2)) on a damageable one, emptying the slot with the break event when it breaks; an unprotected undead is ignited for 160 ticks
 Mob.pickUpItem	port	crates/horizon-client/src/mobs/equip.rs::Slot::wants_to_pick_up	ticked in #3514; `Mob.pickUpItem` is cited at crates/horizon-client/src/mobs/equip.rs:211
@@ -134,7 +134,7 @@ Mob.hasValidEquippableItemForSlot	skip:other		Horizon stores only items that fit
 Mob.createEquipmentParams	inline	crates/horizon-client/src/game/mob_gear.rs::Game::equip_from_table	EntityLootParams with the mob as `this`
 Mob.getEquipmentForSlot	inline	crates/horizon-client/src/mobs/finalize.rs::Ctx::armor	the material table leather, copper, golden, chainmail, iron, diamond by piece
 Mob.enchantSpawnedEquipment	port	crates/horizon-client/src/game/mob_gear.rs::Game::enchant_slot	chance times the local difficulty's special multiplier
-Mob.usePlayerItem	port	crates/horizon-client/src/game/using_item.rs::Game::consume_held	gap: minor: no use_remainder (a bottle or bowl a food item leaves behind)
+Mob.usePlayerItem	port	crates/horizon-client/src/game/using_item.rs::Game::consume_held	the stack's use_remainder component (else the item's default) leaves the bottle or bowl in an empty hand, else the inventory, else on the ground
 Mob.setNoAi	skip:java		plain field Mob::no_ai, synced as a flag in game/lan.rs::mob_meta
 Mob.setLeftHanded	skip:java		plain field Extra::left_handed, synced in game/lan.rs::mob_meta
 Mob.setAggressive	skip:java		plain field Ai::aggressive, synced in game/lan.rs::mob_meta
