@@ -212,12 +212,28 @@ impl Game<'_> {
     }
     /// `LivingEntity.swing` with `getModifiedSwingDuration`.
     pub(super) fn swing_hand(&mut self, hand: Hand, animation: SwingAnimation) {
-        let effects = &self.potions.effects;
-        let dig_speed = effects
-            .amplifier("haste")
-            .max(effects.amplifier("conduit_power"));
-        let fatigue = effects.amplifier("mining_fatigue");
-        let duration = swing_duration(animation, dig_speed, fatigue);
+        self.swing_hand_with(hand, animation, None);
+    }
+    /// `swing_hand` with an explicit duration (`/swing`'s `duration` argument,
+    /// in ticks): when it has one that length is the swing's, else the
+    /// animation's own, shortened or lengthened by haste and mining fatigue.
+    pub(super) fn swing_hand_with(
+        &mut self,
+        hand: Hand,
+        animation: SwingAnimation,
+        duration: Option<i32>,
+    ) {
+        let duration = match duration {
+            Some(ticks) => ticks.max(1),
+            None => {
+                let effects = &self.potions.effects;
+                let dig_speed = effects
+                    .amplifier("haste")
+                    .max(effects.amplifier("conduit_power"));
+                let fatigue = effects.amplifier("mining_fatigue");
+                swing_duration(animation, dig_speed, fatigue)
+            }
+        };
         if self.swing.start_if_able(hand, animation, duration) {
             self.swings_started += 1;
             if let Some(r) = self.remote.as_ref()

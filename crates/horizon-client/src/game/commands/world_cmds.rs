@@ -3,6 +3,7 @@
 use super::{Arg, Context, Game, R, Target, err, wrap_degrees};
 use crate::game::minecarts::CartHit;
 use horizon_client::{
+    first_person::{Hand, SwingAnimation},
     mobs::{Damage, DamageKind, MobEvent, Who, finalize},
     scoreboard_cmd::{Holder, Tracker},
     settings::SOUND_SOURCES,
@@ -574,6 +575,19 @@ impl Game<'_> {
         Ok(1)
     }
     pub(super) fn cmd_swing(&mut self, ctx: &Context) -> R<i32> {
+        let hand = if ctx.has("offhand") { Hand::Off } else { Hand::Main };
+        let animation = match ctx.get("animation") {
+            Some(Arg::Str(name)) => match name.as_str() {
+                "stab" => SwingAnimation { kind: 2, duration: 6 },
+                "none" => SwingAnimation { kind: 0, duration: 0 },
+                _ => SwingAnimation::DEFAULT,
+            },
+            _ => SwingAnimation::DEFAULT,
+        };
+        let duration = match ctx.get("duration") {
+            Some(Arg::Int(ticks)) => Some(*ticks),
+            _ => None,
+        };
         let targets = if ctx.get("targets").is_some() {
             self.entities(ctx, "targets", false)?
         } else {
@@ -582,7 +596,7 @@ impl Game<'_> {
         let mut tracker = Tracker::default();
         for t in targets {
             match t {
-                Target::Player => self.swing_arm(),
+                Target::Player => self.swing_hand_with(hand, animation, duration),
                 Target::Mob(id) => {
                     if let Some(m) = self.mobs.iter_mut().find(|m| m.id == id) {
                         m.ai.swinging = true;
@@ -2435,6 +2449,41 @@ mod tests {
         let mut events = vec![MobEvent::Sound("after", [0.; 3], 1., 1.)];
         assert!(take_new_reinforcements(&mut events, 4).is_empty());
         assert_eq!(events.len(), 1);
+    }
+
+    /// `SwingCommand.swing` applies the hand literal, the animation and the
+    /// duration, rather than swinging the main hand with the default.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn swing_applies_its_hand_animation_and_duration() {
+        use crate::game::native_machines::tests::server_game;
+        use horizon_client::first_person::Hand;
+        use horizon_client::motion::PlayerMotion;
+        use horizon_core::geometry::Vec3;
+
+        let mut game = server_game();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.ui.registries.permission = 4;
+        game.player = Some(PlayerMotion::new(game.motion, Vec3::new(0.5, 200.0, 0.5)).unwrap());
+
+        assert!(game.run_command("swing @s offhand"));
+        let swing = game.swing.current.expect("a swing");
+        assert_eq!(swing.hand, Hand::Off);
+        assert_eq!(swing.animation.kind, 1);
+        assert_eq!(swing.duration_ticks, 6);
+
+        assert!(game.run_command("swing @s mainhand stab 20"));
+        let swing = game.swing.current.expect("a swing");
+        assert_eq!(swing.hand, Hand::Main);
+        assert_eq!(swing.animation.kind, 2);
+        assert_eq!(swing.duration_ticks, 20);
+
+        assert!(game.run_command("swing @s offhand none 10"));
+        let swing = game.swing.current.expect("a swing");
+        assert_eq!(swing.hand, Hand::Off);
+        assert_eq!(swing.animation.kind, 0);
+        assert_eq!(swing.duration_ticks, 10);
     }
 
     fn assert_angle(got: f32, want: f32) {
