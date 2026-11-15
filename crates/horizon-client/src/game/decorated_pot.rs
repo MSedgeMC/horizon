@@ -127,6 +127,40 @@ impl Game<'_> {
         );
         Some(tag)
     }
+    /// `RandomizableContainer.unpackLootTable(null)` before a hopper reads a
+    /// pot: `DecoratedPotBlockEntity.getTheItem` rolls a pending loot table
+    /// into the saved `item` and drops the table and seed. A pot without one
+    /// is left alone, and a pot with no saved tag is not created.
+    pub(super) fn unpack_pot_loot(&mut self, pos: [i32; 3]) {
+        if &*self
+            .res
+            .facts()
+            .get(self.world.block(pos[0], pos[1], pos[2]))
+            .name
+            != "minecraft:decorated_pot"
+        {
+            return;
+        }
+        let Some(mut tag) = spill::saved_entity(&self.world, pos) else {
+            return;
+        };
+        if !matches!(tag.get("LootTable"), Some(Tag::String(_))) {
+            return;
+        }
+        let loot = horizon_client::structure_blocks::loot_data(
+            &self.options.resources,
+            &self.pack_files(),
+        );
+        unpack_loot(
+            &mut tag,
+            loot.as_deref(),
+            &mut self.world.random,
+            &mut self.rand_sequences,
+            self.level.seed,
+        );
+        spill::put_saved_entity(&mut self.world, pos, tag);
+        self.mark_block_entity_updated((pos[0], pos[1], pos[2]));
+    }
     /// `DecoratedPotBlock.useItemOn` with `held`, then `useWithoutItem` on the
     /// main hand's turn: true when the pot took the click.
     pub(super) fn use_decorated_pot(&mut self, pos: [i32; 3], held: Option<&ItemStack>) -> bool {
