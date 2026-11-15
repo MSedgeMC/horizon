@@ -42,12 +42,14 @@ the branch.
 
 ## Releases
 
-Everything below runs by itself on GitHub; you only step in when something is wrong.
+Most of what is below runs by itself on GitHub; the Nightly train is started by hand. You only step in when
+something is wrong.
 
-- **The Nightly** is the only build players get. The train (`release.yml`, every 10 minutes) starts one after 5
-  player-facing merges, or when the oldest has waited 6 hours, or at once for a pull request labelled
-  `release-now`. Only a commit where both `checks` and `parity-main` passed ships. Who may add `release-now` is the
-  council's choice; until it decides, leave the label to the maintainer.
+- **The Nightly** is the only build players get. The train (`release.yml`) runs only by hand since 2026-11-15: no
+  timer or post-merge run starts a Nightly (`gh workflow run release --ref main -f dry_run=false` does). When it
+  runs, it starts one after 5 player-facing merges, or when the oldest has waited 6 hours, or at once for a pull
+  request labelled `release-now`. Only a commit where both `checks` and `parity-main` passed ships. Who may add
+  `release-now` is the council's choice; until it decides, leave the label to the maintainer.
 - **Stopping Nightlies:** open an issue about the problem and label it `release-blocker`. Nothing is published
   while it is open, forced builds included. Close it when the fix is on main.
 - **Rolling back:** revert the pull request and merge the revert. Players can pick an earlier build on the
