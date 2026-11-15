@@ -3634,7 +3634,10 @@ impl Dragon {
         let mut d = Self::new(position, yaw, seed);
         d.velocity = velocity;
         // Vanilla getFloatOr/getIntOr accept any numeric tag type.
-        d.health = nbt_value::float(tag.get("Health")).map_or(d.health, |h| h as f32);
+        // LivingEntity.readAdditionalSaveData reads it through setHealth, which
+        // clamps it to the max health.
+        d.health =
+            nbt_value::float(tag.get("Health")).map_or(d.health, |h| (h as f32).min(MAX_HEALTH));
         d.sitting_damage =
             nbt_value::float(tag.get("sitting_damage_received")).unwrap_or(0.0) as f32;
         if let Some(p) = nbt_value::number(tag.get("DragonPhase")) {
@@ -3767,6 +3770,7 @@ impl Game<'_> {
             head_yaw: d.yaw,
             on_ground: false,
             velocity: [d.velocity.x, d.velocity.y, d.velocity.z],
+            acceleration_power: None,
             minecart_steps: None,
             data: 0,
             meta,
@@ -3781,10 +3785,7 @@ impl Game<'_> {
             stepped: true,
             idle: false,
             bare: false,
-            leash: None,
-            spectator: false,
-            watching: false,
-            hidden: None,
+            ..Default::default()
         })
     }
 }
