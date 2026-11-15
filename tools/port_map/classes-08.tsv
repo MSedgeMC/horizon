@@ -138,7 +138,7 @@ SetEnchantmentsFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	
 SetEnchantmentsFunction.validate	skip:data		validation at datapack load
 SetEnchantmentsFunction.Builder	skip:java		builder
 SetFireworkExplosionFunction.apply	missing		minor: no vanilla loot table uses set_firework_explosion
-SetFireworksFunction.apply	missing		minor: no vanilla loot table uses set_fireworks
+SetFireworksFunction.apply	port	crates/horizon-world/src/loot.rs::Context::run	the set_fireworks arm: flight_duration and the explosions ListOperation (replace_all, replace_section, insert, append) over the fireworks component the stack already has; `crates/horizon-items/src/item_data.rs::StackData::set_loot_component` reads it into the rocket fields
 SetInstrumentFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	the random option becomes the item's minecraft:instrument component
 SetItemCountFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	set_count arm
 SetItemCountFunction.setCount	skip:java		builder factory

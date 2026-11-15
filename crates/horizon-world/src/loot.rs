@@ -1905,6 +1905,47 @@ impl<R: RandomSource> Context<'_, R> {
                 stack.components.retain(|(k, _)| k != id);
                 stack.components.push((id.to_owned(), content));
             }
+            // SetFireworksFunction: the flight duration and the explosions go
+            // through its ListOperation over the fireworks component
+            // the stack already has (replace_all by default), each explosion
+            // kept as written: shape, colors, fade_colors, has_trail and
+            // has_twinkle. The item layer reads the component into the rocket
+            // fields (item_data::decode_components).
+            "minecraft:set_fireworks" => {
+                let id = "minecraft:fireworks";
+                let old = stack
+                    .components
+                    .iter()
+                    .find(|(k, _)| k == id)
+                    .map(|(_, v)| v)
+                    .filter(|v| v.is_object());
+                let old_flight = old
+                    .and_then(|v| v["flight_duration"].as_u64())
+                    .unwrap_or(0)
+                    .min(255) as u8;
+                let old_explosions = old
+                    .and_then(|v| v["explosions"].as_array().cloned())
+                    .unwrap_or_default();
+                let flight = f["flight_duration"]
+                    .as_u64()
+                    .map_or(old_flight, |v| v.min(255) as u8);
+                let explosions = if f["explosions"].is_object() {
+                    list_operation(&f["explosions"], old_explosions, Value::clone)
+                } else {
+                    old_explosions
+                };
+                let mut component = serde_json::Map::new();
+                if flight != 0 {
+                    component.insert("flight_duration".to_owned(), Value::from(flight));
+                }
+                if !explosions.is_empty() {
+                    component.insert("explosions".to_owned(), Value::Array(explosions));
+                }
+                stack.components.retain(|(k, _)| k != id);
+                stack
+                    .components
+                    .push((id.to_owned(), Value::Object(component)));
+            }
             // SetComponentsFunction: the patch's components, applied when the
             // stack becomes an item (trim on worn armour, see `mobs::finalize`).
             "minecraft:set_components" => {
@@ -2586,6 +2627,74 @@ mod namespace_tests {
                 "author": "Cartographer",
                 "pages": [{"raw": "page two"}],
             })
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// `SetFireworksFunction`: a firework rocket from a loot table carries the
+    /// flight duration and explosions the table names - shape, colors, fade
+    /// colors, trail and twinkle - over the component an earlier function
+    /// wrote, the explosions list going through its ListOperation.
+    #[test]
+    fn set_fireworks_writes_flight_and_explosions() {
+        let root =
+            std::env::temp_dir().join(format!("horizon-loot-fireworks-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:firework_rocket",
+            "modifier": [
+                {"type": "minecraft:set_components", "components": {"minecraft:fireworks": {"flight_duration": 1, "explosions": [{"shape": "small_ball", "colors": [16711680]}]}}},
+                {"type": "minecraft:set_fireworks", "flight_duration": 3,
+                 "explosions": {"mode": "append", "values": [{"shape": "creeper", "colors": [65280], "fade_colors": [255], "has_trail": true, "has_twinkle": true}]}}
+            ]}]}]}"#;
+        let files = [
+            ("items.json", r#"{"minecraft:firework_rocket": {}}"#),
+            ("data/minecraft/loot_table/chests/fireworks.json", table),
+        ];
+        for (name, text) in files {
+            let path = root.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/fireworks", 9, 27, None);
+        let rocket = filled.iter().flatten().next().expect("a firework rocket");
+        let component: Vec<_> = rocket
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:fireworks")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", rocket.components);
+        let component = &component[0].1;
+        assert_eq!(component["flight_duration"], 3);
+        assert_eq!(component["explosions"].as_array().unwrap().len(), 2);
+        assert_eq!(component["explosions"][0]["shape"], "small_ball");
+        let appended = &component["explosions"][1];
+        assert_eq!(appended["shape"], "creeper");
+        assert_eq!(appended["colors"], serde_json::json!([65280]));
+        assert_eq!(appended["fade_colors"], serde_json::json!([255]));
+        assert_eq!(appended["has_trail"], true);
+        assert_eq!(appended["has_twinkle"], true);
+        // replace_all replaces the list, keeping the flight the table did not name.
+        fs::write(
+            root.join("data/minecraft/loot_table/chests/fireworks.json"),
+            table
+                .replace(r#""mode": "append""#, r#""mode": "replace_all""#)
+                .replace(r#", "flight_duration": 3"#, ""),
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/fireworks", 9, 27, None);
+        let rocket = filled.iter().flatten().next().expect("a firework rocket");
+        let component = rocket
+            .components
+            .iter()
+            .find(|(k, _)| k == "minecraft:fireworks")
+            .map(|(_, v)| v)
+            .expect("the fireworks component");
+        assert_eq!(component["flight_duration"], 1);
+        assert_eq!(
+            component["explosions"],
+            serde_json::json!([{"shape": "creeper", "colors": [65280], "fade_colors": [255], "has_trail": true, "has_twinkle": true}])
         );
         let _ = fs::remove_dir_all(&root);
     }
