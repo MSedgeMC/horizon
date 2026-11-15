@@ -480,7 +480,7 @@ impl Mob {
         }
     }
 }
-/// Entity.rotlerp used by Mob.lookAt (clamped turn, no wrap of the result).
+/// Mob.rotlerp used by Mob.lookAt (clamped turn, no wrap of the result).
 fn rotate_toward_max(from: f32, to: f32, max: f32) -> f32 {
     from + wrap(to - from).clamp(-max, max)
 }

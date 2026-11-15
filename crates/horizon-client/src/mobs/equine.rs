@@ -170,7 +170,7 @@ pub fn on_elastic_leash_pull(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEven
         super::camel::on_elastic_leash_pull(m, w, events);
     }
 }
-/// `AbstractHorse.getJumpSound` (`playJumpSound` plays it at 0.4): the donkey
+/// `AbstractHorse.playJumpSound` (at 0.4): the donkey
 /// and the mule have their own, and a skeleton horse in water splashes.
 pub fn jump_sound(m: &Mob) -> &'static str {
     match m.species() {

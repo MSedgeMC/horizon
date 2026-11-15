@@ -174,7 +174,7 @@ impl Game<'_> {
             child.extra.age = -24000;
             child.extra.bed = Some(bed);
         }
-        // VillagerMakeLove.giveBirth: entity event 12 for the child.
+        // VillagerMakeLove.breed: entity event 12 for the child.
         self.mob_event_particles(id, 12);
     }
     /// `Level.broadcastEntityEvent` of an event whose `handleEntityEvent`

@@ -136,7 +136,7 @@ impl Ai {
     }
 }
 impl Mob {
-    /// `LivingEntity.getCurrentSwingDuration`: 6 ticks unless a swing set its own.
+    /// `SwingAnimation.duration`: 6 ticks unless a swing set its own.
     pub fn swing_duration(&self) -> i32 {
         if self.ai.swing_duration > 0 {
             self.ai.swing_duration

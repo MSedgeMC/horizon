@@ -627,7 +627,7 @@ impl ChunkEncoder {
         ChunkBiomeData::from_biomes([chunk.x, chunk.z], &biomes)
     }
 
-    /// The client heightmaps (Heightmap.prime over the column), from the
+    /// The client heightmaps (Heightmap.primeHeightmaps over the column), from the
     /// cache while the column's sections are unchanged.
     fn heightmaps(&self, chunk: &Chunk, tables: &crate::save::SaveTables) -> ColumnHeightmaps {
         let mut heights = self.heights.lock().unwrap();

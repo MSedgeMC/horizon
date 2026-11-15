@@ -141,7 +141,7 @@ pub fn damage(attribute: f32, crit: Option<f32>, enchant: f32) -> f32 {
     base + enchant
 }
 
-/// `EntityLivingBase.knockBack` on `velocity`: `power` away from the direction (`xd`, `zd`), which points at the
+/// `LivingEntity.knockback` on `velocity`: `power` away from the direction (`xd`, `zd`), which points at the
 /// attacker, and up, in the air as on the ground. The caller has already rolled the resistance.
 pub fn knockback(velocity: [f64; 3], power: f64, (xd, zd): (f64, f64)) -> [f64; 3] {
     let len = (xd * xd + zd * zd).sqrt();

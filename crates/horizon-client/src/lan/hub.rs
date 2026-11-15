@@ -2252,7 +2252,7 @@ impl Hub {
                 param: 0.0,
             }));
         }
-        // TickRateManager.updateJoiningPlayer.
+        // ServerTickRateManager.updateJoiningPlayer.
         g.send(&ticking_state(ctx.tick_rate, ctx.tick_frozen));
         g.send(&C::TickingStep(play::TickingStep {
             steps: ctx.tick_steps.remaining,
