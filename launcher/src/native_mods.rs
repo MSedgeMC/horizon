@@ -1571,6 +1571,23 @@ impl Step {
     }
 }
 
+/// One native build step's line: the minutes and seconds since the build started, then what the
+/// step says.
+pub fn step_line(secs: u64, step: &Step) -> String {
+    format!("[{:>2}:{:02}] {}", secs / 60, secs % 60, step.label())
+}
+
+/// Whether a step says what the last one didn't. A Rust download reports every chunk it fetches,
+/// and its label rounds the fraction to a whole percent, so most chunks repeat the last line.
+pub fn step_is_new(last: &mut Option<String>, step: &Step) -> bool {
+    let label = step.label();
+    if last.as_deref() == Some(label.as_str()) {
+        return false;
+    }
+    *last = Some(label);
+    true
+}
+
 /// Runs `cmd`, its output appended to the build log; `line` sees each line of its standard error.
 /// An error ends with its first `error` lines and the last lines: a failed build script's output
 /// alone could push the line naming its crate out of the last ones.
@@ -2930,3 +2947,32 @@ fn stale(
 #[cfg(test)]
 #[path = "native_mods_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod step_tests {
+    use super::*;
+
+    #[test]
+    fn a_native_build_prints_each_progress_percent_once() {
+        let mut lines = Vec::new();
+        let mut last = None;
+        let mut sink = |secs: u64, step: Step| {
+            if step_is_new(&mut last, &step) {
+                lines.push(step_line(secs, &step));
+            }
+        };
+        // 10,001 download chunks, 100 to a percent: each percent must print once.
+        for i in 0..=10_000u32 {
+            sink(u64::from(i), Step::Rust(i as f32 / 10_000.));
+        }
+        sink(11, Step::Tool);
+        let done = Step::Done {
+            secs: 12,
+            profile: Profile::Performance,
+            plan: Plan::UpToDate,
+        };
+        sink(12, done.clone());
+        assert_eq!(lines.len(), 103);
+        assert!(lines.last().unwrap().contains("12 s"));
+    }
+}

@@ -1307,9 +1307,14 @@ fn execute(command: Cmd, as_json: bool) -> Result<(), String> {
                 Some(profile) => profile,
                 None => native_mods::Profile::chosen(&backend::Settings::load()),
             };
+            let last = std::cell::RefCell::new(None);
             let steps = |step: native_mods::Step| {
-                let secs = started.elapsed().as_secs();
-                eprintln!("[{:>2}:{:02}] {}", secs / 60, secs % 60, step.label())
+                if native_mods::step_is_new(&mut last.borrow_mut(), &step) {
+                    eprintln!(
+                        "{}",
+                        native_mods::step_line(started.elapsed().as_secs(), &step)
+                    );
+                }
             };
             if let Some(output) = server_output {
                 // Export mode: a standalone server engine in `output`. No instance is read
