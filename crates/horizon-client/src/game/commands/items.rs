@@ -3058,11 +3058,12 @@ mod projectile_entity_slot_tests {
     use crate::projectiles::{Projectile, ProjectileKind};
     use horizon_core::geometry::Vec3;
 
-    /// `AbstractArrow.getSlot(0)`: an arrow's slot 0 is its pickup stack,
-    /// named `contents`, `container.0` or `hotbar.0`; any other projectile
-    /// has no slot 0 (`/item` on it must do nothing).
+    /// `AbstractArrow.getSlot(0)` and `Fireball.getSlot(0)`: a projectile's
+    /// slot 0 is its item stack, named `contents`, `container.0` or
+    /// `hotbar.0`; any other projectile has no slot 0 (`/item` on it must do
+    /// nothing).
     #[test]
-    fn an_arrows_slot_zero_is_its_pickup_stack() {
+    fn a_projectiles_slot_zero_is_its_item_stack() {
         assert!(entity_slot_zero("contents"));
         assert!(entity_slot_zero("container.0"));
         assert!(entity_slot_zero("hotbar.0"));
@@ -3085,6 +3086,19 @@ mod projectile_entity_slot_tests {
             arrow.slot_item().map(|s| &*s.item),
             Some("minecraft:stone")
         );
+        // `Fireball.getSlot(0)`: DATA_ITEM_STACK, written through
+        // `Fireball.setItem` (an empty write restores the fire charge).
+        let mut fireball = Projectile::new(ProjectileKind::SmallFireball, Vec3::ZERO, None);
+        assert_eq!(
+            fireball.slot_item().map(|s| &*s.item),
+            Some("minecraft:fire_charge")
+        );
+        assert!(fireball.set_slot_item(ItemStack::new("minecraft:stone", 1)));
+        assert_eq!(
+            fireball.slot_item().map(|s| &*s.item),
+            Some("minecraft:stone")
+        );
+        // A projectile that is no `Fireball` has no slot 0.
         let mut wither = Projectile::new(
             ProjectileKind::WitherSkull { dangerous: false },
             Vec3::ZERO,

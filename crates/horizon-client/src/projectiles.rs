@@ -571,17 +571,27 @@ impl Projectile {
     pub fn aabb(&self) -> Aabb {
         self.bounds()
     }
-    /// `AbstractArrow.getSlot(0)`: an arrow's slot 0 is its pickup stack, the
-    /// accessor `/item` and `if items` reach through `Slot::Projectile`.
+    /// `AbstractArrow.getSlot(0)` and `Fireball.getSlot(0)`: slot 0 of an
+    /// arrow is its pickup stack, and of a fireball the item it is drawn as
+    /// (`Fireball.DATA_ITEM_STACK`). Another projectile has no slot 0.
     pub fn slot_item(&self) -> Option<&crate::items::ItemStack> {
-        self.arrow.as_ref().map(|a| &a.pickup_item)
+        match &self.arrow {
+            Some(arrow) => Some(&arrow.pickup_item),
+            None if self.kind.is_item_fireball() => self.item.as_ref(),
+            None => None,
+        }
     }
-    /// The write half of `AbstractArrow.getSlot(0)`: replace the pickup stack.
-    /// False for a projectile with no arrow state, which has no slot 0.
+    /// The write half of `AbstractArrow.getSlot(0)` and `Fireball.getSlot(0)`.
+    /// A fireball's write is `Fireball.setItem`, so an empty stack restores
+    /// the default fire charge. False for a projectile with no slot 0.
     pub fn set_slot_item(&mut self, stack: crate::items::ItemStack) -> bool {
         match self.arrow.as_mut() {
             Some(arrow) => {
                 arrow.pickup_item = stack;
+                true
+            }
+            None if self.kind.is_item_fireball() => {
+                self.set_item(stack);
                 true
             }
             None => false,
