@@ -194,6 +194,11 @@ impl Game<'_> {
             .map_or(Default::default(), |r| r.output());
         ui.draw(&self.settings, output, batch, &self.gui.atlas, self.cursor);
         self.ui.options = ui;
+        // OptionInstanceSliderButton.extractWidgetRenderState: the delayed slider
+        // value applies once its 600 ms deadline passes.
+        if self.ui.options.apply_due(std::time::Instant::now()) {
+            self.apply_settings();
+        }
         self.show_calibration((batch.width, batch.height));
     }
     /// Whose controller settings these are and what this game sees (`controller_ui`): the

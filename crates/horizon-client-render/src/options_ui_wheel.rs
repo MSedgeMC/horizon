@@ -1,7 +1,39 @@
 //! `Options.mouseWheelSensitivity`'s logarithmic slider (`logMouse`/`unlogMouse`)
 //! and the delayed-apply test the slider buttons share.
 use super::*;
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// `OptionInstance.OptionInstanceSliderButton.delayedApplyAt`: a delayed option
+/// applies 600 ms after its last change (`OptionInstance.java:408`).
+pub(crate) const DELAYED_APPLY: Duration = Duration::from_millis(600);
+
+/// What one slider change does (`OptionInstanceSliderButton.applyValue`): an
+/// unchanged value and an immediate option apply at once; a delayed option waits
+/// until its last change plus [`DELAYED_APPLY`], or applies at once when it loses
+/// the selection (vanilla flushes on `OptionsSubScreen.onClose`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ApplyWhen {
+    /// Apply at once.
+    Now,
+    /// Apply once this deadline (the last change plus 600 ms) has passed.
+    At(Instant),
+}
+
+/// `AbstractSliderButton.setValue` (only a new value applies) and
+/// `OptionInstanceSliderButton.applyValue` (at once, or queued).
+pub(crate) fn apply_when(opt: Opt, changed: bool, released: bool, now: Instant) -> ApplyWhen {
+    if !changed || released || !delays_apply(opt) {
+        ApplyWhen::Now
+    } else {
+        ApplyWhen::At(now + DELAYED_APPLY)
+    }
+}
+
+/// `OptionInstanceSliderButton.extractWidgetRenderState`: due once
+/// `Util.getMillis() >= delayedApplyAt`.
+pub(crate) fn apply_due(deadline: Instant, now: Instant) -> bool {
+    now >= deadline
+}
 
 /// `SliderableValueSet.applyValueImmediately`: these apply 600 ms after
 /// the last change (`OptionInstanceSliderButton.delayedApplyAt`).
@@ -15,7 +47,7 @@ fn delays_apply(opt: Opt) -> bool {
 /// delayed one until its value applies (both then `resetValue`).
 pub(crate) fn slider_unsnapped(opt: Opt, held: bool, moved: Instant) -> bool {
     if delays_apply(opt) {
-        moved.elapsed().as_millis() < 600
+        moved.elapsed() < DELAYED_APPLY
     } else {
         held
     }
@@ -67,5 +99,39 @@ mod tests {
         assert!((s.mouse_wheel_sensitivity - 1.0).abs() < 1e-5);
         set_slider(Opt::WheelSensitivity, &mut s, 0.0);
         assert!((s.mouse_wheel_sensitivity - 0.01).abs() < 1e-6);
+    }
+
+    /// `OptionInstanceSliderButton.applyValue`: a changed delayed option waits
+    /// 600 ms from its last change, an unchanged value has nothing to queue, a
+    /// released slider applies at once, and an immediate option applies at once.
+    #[test]
+    fn delayed_slider_apply_waits_for_the_last_change_or_release() {
+        let changed_at = Instant::now();
+        // AbstractSliderButton.setValue: an unchanged value runs no delayed apply.
+        assert_eq!(
+            apply_when(Opt::RenderDistance, false, false, changed_at),
+            ApplyWhen::Now
+        );
+        // OptionInstanceSliderButton.applyValue: delayedApplyAt = last change + 600 ms.
+        let due = changed_at + DELAYED_APPLY;
+        assert_eq!(
+            apply_when(Opt::RenderDistance, true, false, changed_at),
+            ApplyWhen::At(due)
+        );
+        assert!(!apply_due(
+            due,
+            changed_at + DELAYED_APPLY - Duration::from_millis(1)
+        ));
+        assert!(apply_due(due, changed_at + DELAYED_APPLY));
+        // Losing the selection applies the queued value now.
+        assert_eq!(
+            apply_when(Opt::RenderDistance, true, true, changed_at),
+            ApplyWhen::Now
+        );
+        // applyValueImmediately: Mipmaps is such an option.
+        assert_eq!(
+            apply_when(Opt::Mipmaps, true, false, changed_at),
+            ApplyWhen::Now
+        );
     }
 }

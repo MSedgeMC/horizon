@@ -22,23 +22,26 @@ pub(crate) fn set_slider(opt: Opt, s: &mut Settings, v: f32) {
         apply_preset(s);
     }
 }
-/// A slider pressed or dragged to `v`: apply it live, and tell the game when
-/// a category volume changed (`Options.createSoundSliderOptionInstance`'s
-/// callback, which `OptionInstance.set` runs only for a new value).
-pub(crate) fn drag_slider(opt: Opt, s: &mut Settings, v: f32, events: &mut Vec<Event>) {
+/// A slider pressed or dragged to `v`: set its value, and tell the game when a
+/// category volume changed (`Options.createSoundSliderOptionInstance`'s
+/// callback, which `OptionInstance.set` runs only for a new value). Returns
+/// whether the option's value changed (`AbstractSliderButton.setValue`).
+pub(crate) fn drag_slider(opt: Opt, s: &mut Settings, v: f32, events: &mut Vec<Event>) -> bool {
     let volume = |s: &Settings| match opt {
         Opt::Volume(0) => Some(s.master_volume),
         Opt::Volume(i) => Some(s.volumes[i]),
         _ => None,
     };
     let before = volume(s);
+    let before_pos = opt.slider_position(s);
     set_slider(opt, s, v);
-    events.push(Event::SliderDrag);
+    let changed = opt.slider_position(s) != before_pos;
     if let (Opt::Volume(source), Some(after)) = (opt, volume(s))
         && before != Some(after)
     {
         events.push(Event::Volume(source, after));
     }
+    changed
 }
 /// GraphicsPreset.apply: the options Fast, Fancy and Fabulous set.
 pub(crate) fn apply_preset(s: &mut Settings) {

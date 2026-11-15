@@ -1264,6 +1264,7 @@ impl Loading {
             horizon_client::ui_theme::draw_boot(&self.boot, batch, &logs);
             return;
         };
+        let mut delayed_apply = false;
         // `Gui.setScreen` clears the focus of the screen it leaves
         // (`Screen.clearFocus`): the title behind the options, and the one
         // that comes back, start with no button highlighted.
@@ -1304,6 +1305,10 @@ impl Loading {
             self.menu
                 .options
                 .draw(&self.settings, output, batch, &gui.atlas, self.menu.cursor);
+            // OptionInstanceSliderButton.extractWidgetRenderState: the delayed
+            // slider value applies once its 600 ms deadline passes, after this
+            // draw (the `gui` borrow lasts through it).
+            delayed_apply = self.menu.options.apply_due(Instant::now());
         } else if let Some(title) = &mut self.menu.title {
             title.poll_backup();
             if std::mem::take(&mut title.onboarding_finished) {
@@ -1347,6 +1352,9 @@ impl Loading {
             batch,
             false,
         );
+        if delayed_apply {
+            self.apply_menu_settings();
+        }
     }
 
     pub(super) fn restart_menu_resources(&mut self) -> Result<()> {

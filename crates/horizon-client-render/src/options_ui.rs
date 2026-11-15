@@ -1525,6 +1525,9 @@ pub struct OptionsUi {
     /// when it last moved: the handle follows the pointer while the option
     /// keeps its stepped value, then snaps to it (`resetValue`).
     slider_value: Option<(Opt, f32, Instant)>,
+    /// `OptionInstanceSliderButton.delayedApplyAt`: the delayed slider whose value
+    /// is already in `Settings`, and when its apply is due.
+    pending_apply: Option<(Opt, Instant)>,
     /// The pointer's last y while a scrollbar is held.
     pub(crate) scrollbar_drag_y: Option<f32>,
     /// Key Binds: the mapping waiting for a key ([`NATIVE_KEY`]: a native
@@ -1645,6 +1648,7 @@ impl Default for OptionsUi {
             dragging: None,
             shift: false,
             slider_value: None,
+            pending_apply: None,
             scrollbar_drag_y: None,
             selected_key: None,
             selected_native_key: None,
@@ -2053,9 +2057,15 @@ impl OptionsUi {
             _ => None,
         };
         let before_vol = volume(s);
+        let before = opt.slider_position(s);
         opt.step_slider(s, forward, width);
+        let changed = opt.slider_position(s) != before;
         self.slider_value = None;
-        let mut events = vec![Event::Changed, Event::SliderDrag];
+        let mut events = Vec::new();
+        match wheel::apply_when(opt, changed, false, Instant::now()) {
+            wheel::ApplyWhen::Now => events.extend([Event::Changed, Event::SliderDrag]),
+            wheel::ApplyWhen::At(deadline) => self.pending_apply = Some((opt, deadline)),
+        }
         if let (Opt::Volume(source), Some(after)) = (opt, volume(s))
             && before_vol != Some(after)
         {
@@ -2070,6 +2080,7 @@ impl OptionsUi {
         self.focus = None;
         self.focus_from_keyboard = false;
         self.can_change_value = false;
+        self.pending_apply = None;
         self.push(page);
         self.in_world = in_world;
         self.selected_key = None;
@@ -3875,7 +3886,7 @@ impl OptionsUi {
             {
                 let v = ui::slider_value(wd.x, wd.w, x);
                 self.slider_value = Some((opt, v, Instant::now()));
-                drag_slider(opt, s, v, &mut events);
+                self.move_slider(opt, s, v, &mut events);
             }
             return events;
         }
@@ -4016,7 +4027,7 @@ impl OptionsUi {
                     self.dragging = Some(opt);
                     let v = ui::slider_value(wd.x, wd.w, x);
                     self.slider_value = Some((opt, v, Instant::now()));
-                    drag_slider(opt, s, v, &mut events);
+                    self.move_slider(opt, s, v, &mut events);
                 }
                 WKind::LanguageRow { code, .. } => {
                     self.can_change_value = false;
@@ -4040,6 +4051,37 @@ impl OptionsUi {
             _ => value,
         }
     }
+    /// A slider pressed or dragged to `v` (`OptionInstanceSliderButton.setValue`):
+    /// set the value, report a category volume change, and apply it now or queue
+    /// the delayed apply (`delayedApplyAt`).
+    fn move_slider(&mut self, opt: Opt, s: &mut Settings, v: f32, events: &mut Vec<Event>) {
+        let mark = events.len();
+        let changed = drag_slider(opt, s, v, events);
+        match wheel::apply_when(opt, changed, false, Instant::now()) {
+            wheel::ApplyWhen::Now => {
+                if self.pending_apply.is_some_and(|(o, _)| o == opt) {
+                    self.pending_apply = None;
+                }
+                events.insert(mark, Event::SliderDrag);
+            }
+            wheel::ApplyWhen::At(deadline) => self.pending_apply = Some((opt, deadline)),
+        }
+    }
+    /// `OptionInstanceSliderButton.extractWidgetRenderState`: once a delayed slider's
+    /// deadline passes, apply its value and reset its handle. The screens call this
+    /// once a frame; with nothing queued it is one `Option` test.
+    pub fn apply_due(&mut self, now: Instant) -> bool {
+        match self.pending_apply {
+            Some((opt, deadline)) if wheel::apply_due(deadline, now) => {
+                self.pending_apply = None;
+                if self.slider_value.is_some_and(|(o, _, _)| o == opt) {
+                    self.slider_value = None;
+                }
+                true
+            }
+            _ => false,
+        }
+    }
     pub fn release(&mut self) -> Vec<Event> {
         self.scrollbar_drag_y = None;
         if let Some(p) = &mut self.pack_screen {
@@ -4047,11 +4089,18 @@ impl OptionsUi {
         }
         // AbstractSliderButton suppresses the press sound and plays once on
         // release, even if the pointer has left the widget or its value stayed.
-        let slider = self.dragging.take().is_some();
+        let released = self.dragging.take();
+        let slider = released.is_some();
         let shell_slider = self.shell_mut().and_then(|shell| shell.release());
         let calibration_slider = self.calibration.as_mut().is_some_and(|c| c.release());
         let split_drop = self.split_setup.release();
         if slider || shell_slider.is_some() || calibration_slider {
+            // The slider loses the pointer's selection: its queued delayed value
+            // applies now (vanilla flushes unsaved values when the screen closes).
+            if released.is_some_and(|opt| self.pending_apply.is_some_and(|(o, _)| o == opt)) {
+                self.pending_apply = None;
+                self.slider_value = None;
+            }
             let mut events = vec![Event::ButtonClick, Event::Changed];
             // What the screen does once a drag ends: a shader pack's option is saved, and the
             // pack rebuilt, once per drag.
@@ -4350,6 +4399,8 @@ impl OptionsUi {
         self.scrollbar_drag_y = None;
         self.dragging = None;
         self.slider_value = None;
+        // The `Changed` below applies any queued delayed value (`OptionsSubScreen.onClose`).
+        self.pending_apply = None;
         self.selected_key = None;
         self.selected_pad_action = None;
         self.focus = None;
