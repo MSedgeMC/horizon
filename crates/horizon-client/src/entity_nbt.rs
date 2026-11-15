@@ -160,11 +160,20 @@ impl Base<'_> {
     /// Only the dedicated boat, item and armor-stand writers use this path.
     fn non_mob_tag(&self, raw: Option<&Tag>) -> Tag {
         let mut tag = self.tag(raw);
-        if let Tag::Compound(map) = &mut tag {
-            map.remove(&"NoAI".into());
-            map.remove(&"PersistenceRequired".into());
-        }
+        drop_mob_only_tags(&mut tag);
         tag
+    }
+}
+
+/// `Mob.readAdditionalSaveData` is the only reader of these two keys
+/// (`Mob.java:398,409` in 26.3). A type that does not extend `Mob` never reads
+/// them, so `Entity.load` leaves them out of its live state and the next save
+/// does not write them. Horizon keeps the compound a non-mob kind was loaded
+/// with, so drop them instead of writing a tag the type does not have.
+pub fn drop_mob_only_tags(tag: &mut Tag) {
+    if let Tag::Compound(map) = tag {
+        map.remove(&"NoAI".into());
+        map.remove(&"PersistenceRequired".into());
     }
 }
 

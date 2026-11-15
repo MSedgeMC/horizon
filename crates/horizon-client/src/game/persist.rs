@@ -565,6 +565,12 @@ impl Game<'_> {
                 }
                 let is_mob = self.res.mob_types().contains_key(kind.as_str());
                 drop_unleashable_leash(&mut tag, &kind, is_mob);
+                // `Mob.readAdditionalSaveData` is the only reader of `NoAI`
+                // and `PersistenceRequired`; a non-mob type must not have
+                // them written back from its loaded compound.
+                if !is_mob {
+                    entity_nbt::drop_mob_only_tags(&mut tag);
+                }
                 let uuid = entity_nbt::uuid(&tag);
                 if uuid.is_some_and(|u| self.restored_vehicle(u).is_some()) {
                     continue;
@@ -2827,6 +2833,85 @@ mod tests {
         let mut boat = with_leash("minecraft:oak_boat");
         drop_unleashable_leash(&mut boat, "minecraft:oak_boat", false);
         assert!(has(&boat));
+    }
+
+    /// `Mob.readAdditionalSaveData` is the only reader of `NoAI` and
+    /// `PersistenceRequired` (`Mob.java:398,409`). A summoned marker never
+    /// reads them, so `/data get` must not expose them afterwards, while a mob
+    /// that does read them keeps them.
+    #[test]
+    fn a_marker_drops_the_mob_only_tags_a_mob_keeps_them() {
+        use super::super::{Audio, Options, Progress, Settings, load_resources};
+        let prepared = |root: &std::path::Path| root.join("gameplay-facts.json").exists();
+        let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let Some(root) = std::env::var_os("HORIZON_TEST_RESOURCES")
+            .map(std::path::PathBuf::from)
+            .or_else(|| {
+                [
+                    manifest.join("../../.local/horizon-client/26.3"),
+                    manifest.join("../../../../.local/horizon-client/26.3"),
+                ]
+                .into_iter()
+                .find(|root| prepared(root))
+            })
+        else {
+            return;
+        };
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!("no menu handoff"),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.headless = true;
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.world
+            .chunks
+            .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+        assert!(game.run_command("forceload add 0 0"));
+        assert!(game.run_command("difficulty normal"));
+        assert!(game.run_command(
+            "summon minecraft:marker 4.5 100 4.5              {UUID:[I;91,0,0,1],NoAI:1b,PersistenceRequired:1b}"
+        ));
+        assert!(game.run_command(
+            "summon minecraft:pig 8.5 100 4.5              {UUID:[I;91,0,0,2],NoAI:1b,PersistenceRequired:1b}"
+        ));
+        // `/data get <target> <path>` fails when the compound has no such key.
+        for key in ["NoAI", "PersistenceRequired"] {
+            assert!(
+                !game.run_command(&format!(
+                    "data get entity 0000005b-0000-0000-0000-000000000001 {key}"
+                )),
+                "the marker exposes {key}"
+            );
+            assert!(
+                game.run_command(&format!(
+                    "data get entity 0000005b-0000-0000-0000-000000000002 {key}"
+                )),
+                "the pig lost {key}"
+            );
+        }
     }
 
     fn entity(kind: &str) -> Tag {

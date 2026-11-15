@@ -114,6 +114,12 @@ impl Game<'_> {
             let Some(kind) = entity_nbt::kind(&tag) else {
                 continue;
             };
+            // `Entity.load` reads only the fields a type defines; only
+            // `Mob.readAdditionalSaveData` reads these two, so a non-mob
+            // rider must not keep them either.
+            if !self.res.mob_types().contains_key(kind.as_str()) {
+                entity_nbt::drop_mob_only_tags(&mut tag);
+            }
             if tag.get("Pos").is_none()
                 && let Tag::Compound(c) = &mut tag
             {
