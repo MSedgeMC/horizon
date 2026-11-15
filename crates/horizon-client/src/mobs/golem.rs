@@ -1101,7 +1101,8 @@ mod tests {
             // A visible villager at five; an unarmoured invisible one at five,
             // out of its 6 x 0.07 (floored to 2) range; a fully armoured
             // invisible one at three, inside its 6 x 0.7 = 4.2 range.
-            for (invisible, armored, x) in [(false, false, 5.5), (true, false, 5.5), (true, true, 3.5)]
+            for (invisible, armored, x) in
+                [(false, false, 5.5), (true, false, 5.5), (true, true, 3.5)]
             {
                 let mut world = w.clone();
                 world.daylight = true;
