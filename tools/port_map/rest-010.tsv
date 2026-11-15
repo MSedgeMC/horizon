@@ -115,7 +115,7 @@ FriendlyByteBuf.writeQuaternion	inline	crates/horizon-protocol/src/entity_data.r
 FriendlyByteBuf.writeUUID	port	crates/horizon-protocol/src/buf.rs::Writer::uuid	two longs
 FriendlyByteBuf.readUUID	port	crates/horizon-protocol/src/buf.rs::Reader::uuid	two longs
 FriendlyByteBuf.writeNbt	port	crates/horizon-protocol/src/buf.rs::Writer::nbt	null is written as End
-FriendlyByteBuf.readNbt	port	crates/horizon-protocol/src/buf.rs::Reader::nbt	gap: minor: accepts any root tag; no compound-only check
+FriendlyByteBuf.readNbt	port	crates/horizon-protocol/src/buf.rs::NullableCompound::read	a compound root only; End is the absent tag (TagQuery, OPTIONAL_COMPOUND_TAG, BlockEntityInfo), and any other non-compound root is refused
 FriendlyByteBuf.writeUtf	port	crates/horizon-protocol/src/buf.rs::Writer::string	gap: minor: no max-length check on write
 FriendlyByteBuf.readFixedBitSet	port	crates/horizon-protocol/src/packets/play.rs::Fixed3::read	gap: minor: only the 3-byte set LastSeenUpdate uses; the action set reads a flag byte
 FriendlyByteBuf.writeFixedBitSet	port	crates/horizon-protocol/src/packets/play.rs::Fixed3::write	gap: minor: only the 3-byte set LastSeenUpdate uses

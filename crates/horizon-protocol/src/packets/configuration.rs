@@ -3,8 +3,8 @@
 use crate::{
     Result,
     buf::{
-        Bool, Byte, Codec, Ident, Int, List, Long, Nbt, Opt, Reader, Rest, Str, StrN, UByte, Uuid,
-        VarInt, Writer,
+        Bool, Byte, Codec, CompoundNbt, Ident, Int, List, Long, Nbt, Opt, Reader, Rest, Str, StrN,
+        UByte, Uuid, VarInt, Writer,
     },
     packet, packet_enum,
     packets::Empty,
@@ -98,7 +98,7 @@ packet!(
 packet!(
     /// ClientboundShowDialogPacket.CONTEXT_FREE_STREAM_CODEC: the dialog
     /// itself (`Dialog.DIRECT_CODEC` as NBT).
-    ShowDialog { dialog: Tag => Nbt }
+    ShowDialog { dialog: Tag => CompoundNbt }
 );
 packet!(
     /// ServerboundCustomClickActionPacket: a `custom` click event's id and

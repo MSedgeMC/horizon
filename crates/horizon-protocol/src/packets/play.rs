@@ -3,8 +3,8 @@ use crate::{
     Error, Result,
     buf::{
         Bool, Byte, BytesN, ChunkPos, Codec, Double, Float, Ident, Int, List, Long, LpVec3, Nbt,
-        Opt, OptVarInt, Pos, Reader, SectionPos, Short, Str, StrN, UByte, Uuid, VarInt, VarLong,
-        VarVec3i, Vec3d, Writer,
+        NullableCompound, Opt, OptVarInt, Pos, Reader, SectionPos, Short, Str, StrN, UByte, Uuid,
+        VarInt, VarLong, VarVec3i, Vec3d, Writer,
     },
     chunk::{ChunkData, LightData},
     entity_data::{EntityData, Particle, Value},
@@ -90,7 +90,7 @@ packet!(
     SelectAdvancementsTab { tab: Option<String> => Opt<Ident> }
 );
 packet!(BlockDestruction { id: i32 => VarInt, pos: [i32; 3] => Pos, progress: u8 => UByte });
-packet!(BlockEntityData { pos: [i32; 3] => Pos, kind: i32 => VarInt, tag: Tag => Nbt });
+packet!(BlockEntityData { pos: [i32; 3] => Pos, kind: i32 => VarInt, tag: Tag => NullableCompound });
 packet!(BlockUpdate { pos: [i32; 3] => Pos, state: i32 => VarInt });
 // ClientboundAddTransientBlockPacket: a block the client shows for a moment
 // while its section mesh catches up (a falling block that landed).
@@ -268,7 +268,7 @@ pub enum DialogHolder {
 impl Codec<DialogHolder> for DialogHolder {
     fn read(r: &mut Reader) -> Result<Self> {
         Ok(match r.varint()? {
-            0 => Self::Direct(r.nbt()?),
+            0 => Self::Direct(r.compound()?),
             id => Self::Registry(id.wrapping_sub(1)),
         })
     }
@@ -836,7 +836,7 @@ packet!(SystemChat { content: Tag => Nbt, overlay: bool => Bool });
 packet!(
     /// ClientboundTagQueryPacket: the answer to a debug NBT query (F3+I), with
     /// the transaction it answers; `Tag::End` when there was no block entity.
-    TagQuery { transaction: i32 => VarInt, tag: Tag => Nbt }
+    TagQuery { transaction: i32 => VarInt, tag: Tag => NullableCompound }
 );
 packet!(TakeItemEntity { item: i32 => VarInt, player: i32 => VarInt, amount: i32 => VarInt });
 packet!(TeleportEntity {

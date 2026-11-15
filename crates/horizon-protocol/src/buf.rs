@@ -176,6 +176,25 @@ impl<'a> Reader<'a> {
         self.pos += used;
         Ok(tag)
     }
+    /// ByteBufCodecs.compoundTagCodec: a compound root; `End` is not a value.
+    pub fn compound(&mut self) -> Result<Tag> {
+        let tag = self.nbt()?;
+        match &tag {
+            Tag::End => Err(Error::new("Expected non-null compound tag")),
+            Tag::Compound(_) => Ok(tag),
+            _ => Err(Error::new(format!("Not a compound tag: {tag:?}"))),
+        }
+    }
+    /// FriendlyByteBuf.readNbt: a compound root, or `Tag::End` for the absent
+    /// tag (`TagQuery`, `OPTIONAL_COMPOUND_TAG`).
+    pub fn nullable_compound(&mut self) -> Result<Tag> {
+        let tag = self.nbt()?;
+        match &tag {
+            Tag::End => Ok(Tag::End),
+            Tag::Compound(_) => Ok(tag),
+            _ => Err(Error::new(format!("Not a compound tag: {tag:?}"))),
+        }
+    }
     pub fn long_array(&mut self) -> Result<Vec<i64>> {
         let n = self.count(self.remaining() / 8)?;
         (0..n).map(|_| self.i64()).collect()
@@ -449,11 +468,36 @@ impl<const N: usize> Codec<Vec<u8>> for RestN<N> {
         w.bytes(v)
     }
 }
-/// Any network NBT tag (`Tag::End` when absent).
+/// `ByteBufCodecs.TAG`: any network NBT tag but `End`.
 pub struct Nbt;
 impl Codec<Tag> for Nbt {
     fn read(r: &mut Reader) -> Result<Tag> {
-        r.nbt()
+        match r.nbt()? {
+            Tag::End => Err(Error::new("Expected non-null compound tag")),
+            tag => Ok(tag),
+        }
+    }
+    fn write(v: &Tag, w: &mut Writer) {
+        w.nbt(v)
+    }
+}
+/// `ByteBufCodecs.COMPOUND_TAG` (and `FriendlyByteBuf.readNbt` where the tag is
+/// required): a compound root only.
+pub struct CompoundNbt;
+impl Codec<Tag> for CompoundNbt {
+    fn read(r: &mut Reader) -> Result<Tag> {
+        r.compound()
+    }
+    fn write(v: &Tag, w: &mut Writer) {
+        w.nbt(v)
+    }
+}
+/// `FriendlyByteBuf.readNbt` / `OPTIONAL_COMPOUND_TAG`: a compound root, or
+/// `End` for the absent tag.
+pub struct NullableCompound;
+impl Codec<Tag> for NullableCompound {
+    fn read(r: &mut Reader) -> Result<Tag> {
+        r.nullable_compound()
     }
     fn write(v: &Tag, w: &mut Writer) {
         w.nbt(v)
@@ -778,6 +822,35 @@ mod tests {
         );
         let refused = Reader::new(&over).nbt().unwrap_err().to_string();
         assert!(refused.contains("node limit"), "{refused}");
+    }
+
+    /// ByteBufCodecs.TAG has no null tag, COMPOUND_TAG has no other tag, and
+    /// FriendlyByteBuf.readNbt has `End` for the absent tag but no other.
+    #[test]
+    fn a_tag_is_null_only_where_vanilla_allows_it() {
+        let bytes = |tag: &Tag| {
+            let mut w = Writer::new();
+            w.nbt(tag);
+            w.data
+        };
+        let text = Tag::String("hi".into());
+        let compound = Tag::compound([("text", text.clone())]);
+        let read = |data: &[u8], tag: &str| match tag {
+            "tag" => Nbt::read(&mut Reader::new(data)),
+            "compound" => CompoundNbt::read(&mut Reader::new(data)),
+            _ => NullableCompound::read(&mut Reader::new(data)),
+        };
+        // A bare End is not a tag value.
+        assert!(read(&bytes(&Tag::End), "tag").is_err());
+        assert_eq!(read(&bytes(&text), "tag").unwrap(), text);
+        // A compound is required where its codec is, and End is refused.
+        assert!(read(&bytes(&Tag::End), "compound").is_err());
+        assert!(read(&bytes(&text), "compound").is_err());
+        assert_eq!(read(&bytes(&compound), "compound").unwrap(), compound);
+        // readNbt keeps End for the absent tag, and refuses any other non-compound.
+        assert_eq!(read(&bytes(&Tag::End), "nullable").unwrap(), Tag::End);
+        assert!(read(&bytes(&text), "nullable").is_err());
+        assert_eq!(read(&bytes(&compound), "nullable").unwrap(), compound);
     }
 
     fn round<T: PartialEq + std::fmt::Debug, C: Codec<T>>(v: T) -> Vec<u8> {

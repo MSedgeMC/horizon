@@ -139,7 +139,8 @@ AtlasSprite.toShortName	inline	crates/horizon-client-core/src/component.rs::inli
 AtlasSprite.defaultFallback	inline	crates/horizon-client-core/src/component.rs::inline_object	'[sprite]', or '[sprite@atlas]' when the atlas is not minecraft:blocks
 PlayerSprite.defaultFallback	inline	crates/horizon-client-core/src/component.rs::inline_object	'[name head]', or '[unknown player head]' for a profile with no name
 NumberFormatTypes.bootstrap	skip:data		registry bootstrap of number format types
-ByteBufCodecs.compoundTagCodec	port	crates/horizon-protocol/src/buf.rs::Nbt::read	gap: minor: any NBT tag is accepted where a compound is required
+ByteBufCodecs.compoundTagCodec	port	crates/horizon-protocol/src/buf.rs::CompoundNbt::read	a compound root only; End is refused, as the codec map and tagCodec refuse it
+ByteBufCodecs.tagCodec	port	crates/horizon-protocol/src/buf.rs::Nbt::read	any tag but End, which the codec refuses; a component value read through fromCodec may still be a string or compound tag
 ByteBufCodecs.fromCodec	skip:java		generic codec adapter
 ByteBufCodecs.fromCodecWithRegistries	skip:java		generic codec adapter
 ByteBufCodecs.collection	port	crates/horizon-protocol/src/buf.rs::List::read	a VarInt count then the elements; the count is bounded by the bytes left
