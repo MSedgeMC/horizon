@@ -47,12 +47,12 @@ Frustum.getFrustumPoints	skip:debug		the eight frustum corners, for debug drawin
 Frustum.getNearPlaneBounds	port	crates/horizon-client-render/src/camera.rs::near_plane_bounds	the culling projection's NDC z=-1 plane, moved to the eye by screen_quads
 BeeDebugRenderer	missing		minor: F3 bee and hive debug view (hive blacklist, flowers, ghost hives); not drawn
 BrainDebugRenderer	missing		minor: F3 brain debug view (activities, memories, POIs); not drawn
-BreezeDebugRenderer	missing		minor: F3 breeze jump target view; breeze_jump_target is kept in monster_brain.rs but never drawn
+BreezeDebugRenderer	port	crates/horizon-client/src/game/debug_renderers.rs::Game::breeze_gizmos	an arrow and three circles at each breeze's attack target and an arrow plus an opaque red block at its jump target, from the integrated server's breeze brains (MC_DEBUG_BREEZE_MOB)
 ChunkCullingDebugRenderer	missing		minor: F3 chunk culling frustum view; the occlusion graph has no draw
 ChunkDebugRenderer	missing		minor: the visualize_chunks_on_server entry is listed in debug_entries.rs but draws nothing, for want of the server's chunk statuses
 ChunkDebugRenderer.ChunkData	missing		minor: no ChunkData is built, since the view it feeds draws nothing
 CollisionBoxRenderer	home	crates/horizon-client/src/game/debug_renderers.rs	Game::debug_renderer_gizmos outlines the block shapes within 6 of the camera entity's box, white (visualize_collision_boxes)
-DebugRenderer.refreshRendererList	inline	crates/horizon-client/src/game/debug_keys.rs::Game::debug_gizmos	the views switched on: chunk borders, hitboxes and entity hitboxes, the 3d crosshair, the structure and test instance boxes (bounding_box_gizmos) and the F3 geometry run from debug_renderer_geometry; the bee, brain, breeze, goal, path, poi, raid, octree, neighbours, light section, village, support and redstone views are not drawn
+DebugRenderer.refreshRendererList	inline	crates/horizon-client/src/game/debug_keys.rs::Game::debug_gizmos	the views switched on: chunk borders, hitboxes and entity hitboxes, the 3d crosshair, the structure and test instance boxes (bounding_box_gizmos) and the F3 geometry run from debug_renderer_geometry; the bee, brain, goal, path, poi, raid, octree, neighbours, light section, village, support and redstone views are not drawn
 DebugRenderer.getTargetedEntity	skip:debug		entity under the crosshair for debug views only
 DebugRenderer.mixColor	skip:debug		colour helper for debug paths
 DebugRenderer.shiftHue	skip:debug		colour helper with no callers

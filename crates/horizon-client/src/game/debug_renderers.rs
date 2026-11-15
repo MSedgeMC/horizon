@@ -31,6 +31,29 @@ const TEXT_SCALE: f32 = 0.32;
 /// `HeightMapRenderer.BOX_HEIGHT`.
 const BOX_HEIGHT: f64 = 0.09375;
 
+/// `BreezeDebugRenderer`'s colours: the jump target's arrow and opaque box,
+/// the attack target's arrow, and its three circles (inner to outer).
+const BREEZE_JUMP_LINE: u32 = 0xFFFF_64FF;
+const BREEZE_TARGET_LINE: u32 = 0xFF64_FFFF;
+const BREEZE_JUMP_FILL: u32 = 0xFFFF_0000;
+/// `BreezeDebugRenderer`: the circles' radii and colours, and
+/// `CircleGizmo.CIRCLE_VERTICES`' 20 segments.
+const BREEZE_CIRCLES: [(f64, u32); 3] = [
+    (4.0, 0xFF00_FF00),
+    (8.0, 0xFFFF_A500),
+    (24.0, 0xFFFF_0000),
+];
+const CIRCLE_SEGMENTS: usize = 20;
+
+/// `SharedConstants.debugFlag`: a debug view is on when `MC_DEBUG_ENABLED`
+/// and then `MC_DEBUG_<name>` are set, as `booleanProperty` reads them.
+fn debug_flag(name: &str) -> bool {
+    fn property(name: &str) -> bool {
+        std::env::var(name).is_ok_and(|v| v.is_empty() || v.eq_ignore_ascii_case("true"))
+    }
+    property("MC_DEBUG_ENABLED") && property(&format!("MC_DEBUG_{name}"))
+}
+
 /// `HeightMapRenderer.getColor`, for the client chunk's heightmaps.
 fn heightmap_color(kind: HeightmapType) -> u32 {
     match kind {
@@ -55,10 +78,27 @@ fn cube(center: [i32; 3], radius: i32) -> impl Iterator<Item = [i32; 3]> {
     })
 }
 
+/// `CircleGizmo.emit`: a horizontal circle of [`CIRCLE_SEGMENTS`] lines
+/// around `center`.
+fn circle_edges(center: [f64; 3], radius: f64) -> impl Iterator<Item = ([f64; 3], [f64; 3])> {
+    let at = move |i: usize| {
+        let theta = i as f64 * (std::f64::consts::PI / 10.0);
+        [
+            center[0] + radius * theta.cos(),
+            center[1],
+            center[2] + radius * theta.sin(),
+        ]
+    };
+    (0..CIRCLE_SEGMENTS).map(move |i| (at(i), at(i + 1)))
+}
+
 impl Game<'_> {
     /// `CollisionBoxRenderer`: the block collisions within 6 of the camera
     /// entity's box, white.
     pub(super) fn debug_renderer_gizmos(&self, g: &mut Gizmos) {
+        if debug_flag("BREEZE_MOB") {
+            self.breeze_gizmos(g);
+        }
         if !self.debug_entry("visualize_collision_boxes") {
             return;
         }
@@ -105,10 +145,11 @@ impl Game<'_> {
         let block_light = self.debug_entry("visualize_block_light_levels");
         let sky_light = self.debug_entry("visualize_sky_light_levels");
         let solid = self.debug_entry("visualize_solid_faces");
+        let breeze = debug_flag("BREEZE_MOB");
         let Some(p) = &self.player else {
             return;
         };
-        if !(water || heightmap || block_light || sky_light || solid) {
+        if !(water || heightmap || block_light || sky_light || solid || breeze) {
             return;
         }
         let feet = [p.position.x, p.position.y, p.position.z].map(|v| v.floor() as i32);
@@ -126,6 +167,18 @@ impl Game<'_> {
         }
         if solid {
             self.solid_face_shapes(eye, &mut fills);
+        }
+        if breeze {
+            for (_, jump, _) in self.breeze_targets() {
+                let Some(target) = jump else {
+                    continue;
+                };
+                let at = target.map(f64::from);
+                fills.extend(
+                    g::cuboid_fill_quads(at, [at[0] + 1.0, at[1] + 1.0, at[2] + 1.0])
+                        .map(|q| (q, BREEZE_JUMP_FILL)),
+                );
+            }
         }
         let start = out.len();
         self.mark_translucent_entity(start, "");
@@ -239,6 +292,70 @@ impl Game<'_> {
         }
     }
 
+    /// `BreezeDebugRenderer`: the breeze's attack target and the block its
+    /// brain will jump to, both from the integrated server's mobs.
+    fn breeze_targets(&self) -> Vec<([f64; 3], Option<[i32; 3]>, Option<[f64; 3]>)> {
+        let mut out = Vec::new();
+        for m in self.mobs.iter() {
+            if m.removed || m.species() != horizon_client::mobs::Species::Breeze {
+                continue;
+            }
+            let Some(brain) = &m.extra.brain else {
+                continue;
+            };
+            let target = brain
+                .mem
+                .attack_target
+                .value()
+                .and_then(|who| self.who_position(who));
+            out.push((
+                [m.position.x, m.position.y, m.position.z],
+                brain.mem.breeze_jump_target.value(),
+                target,
+            ));
+        }
+        out
+    }
+
+    /// `BreezeDebugRenderer`: an arrow and three circles at the attack
+    /// target, and an arrow at the jump target.
+    fn breeze_gizmos(&self, g: &mut Gizmos) {
+        for (at, jump, target) in self.breeze_targets() {
+            if let Some(target) = target {
+                g.arrow(at, target, BREEZE_TARGET_LINE, g::STROKE_WIDTH);
+                let center = [target[0], target[1] + 0.01, target[2]];
+                for (radius, color) in BREEZE_CIRCLES {
+                    for (from, to) in circle_edges(center, radius) {
+                        g.line(from, to, color, g::STROKE_WIDTH);
+                    }
+                }
+            }
+            if let Some(target) = jump {
+                let center = [
+                    f64::from(target[0]) + 0.5,
+                    f64::from(target[1]) + 0.5,
+                    f64::from(target[2]) + 0.5,
+                ];
+                g.arrow(at, center, BREEZE_JUMP_LINE, g::STROKE_WIDTH);
+            }
+        }
+    }
+
+    /// Where a brain's `Who` is, if this game has it.
+    fn who_position(&self, who: horizon_client::mobs::Who) -> Option<[f64; 3]> {
+        match who {
+            horizon_client::mobs::Who::Player => self
+                .player
+                .as_ref()
+                .map(|p| [p.position.x, p.position.y, p.position.z]),
+            horizon_client::mobs::Who::Mob(id) => self
+                .mobs
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| [m.position.x, m.position.y, m.position.z]),
+        }
+    }
+
     /// `SolidFaceRenderer`: each outline box of the blocks within 6 of the
     /// camera, grown by 0.002, with its sides that are sturdy filled.
     fn solid_face_shapes(&self, eye: [i32; 3], fills: &mut Vec<([[f64; 3]; 4], u32)>) {
@@ -288,5 +405,28 @@ fn light_level_texts(
             let color = srgb_lerp(f32::from(block_light) / 15.0, 0xFFAA_0000, 0xFFFF_FF00);
             texts.push(([x + 0.5, y + 0.5, z + 0.5], block_light.to_string(), color));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn breeze_circles_are_horizontal_rings() {
+        let center = [10.0, 64.0, -3.0];
+        let edges: Vec<_> = circle_edges(center, 4.0).collect();
+        assert_eq!(edges.len(), 20);
+        for (from, to) in &edges {
+            for p in [from, to] {
+                assert_eq!(p[1], center[1]);
+                let dx = p[0] - center[0];
+                let dz = p[2] - center[2];
+                assert!((dx * dx + dz * dz).sqrt() - 4.0 < 1e-9);
+            }
+        }
+        let close = |a: [f64; 3], b: [f64; 3]| (0..3).all(|i| (a[i] - b[i]).abs() < 1e-9);
+        assert!(close(edges[19].1, edges[0].0));
+        assert!(close(edges[0].0, [14.0, 64.0, -3.0]));
     }
 }
