@@ -351,14 +351,30 @@ impl Column {
         let mut block = [0i32; 16];
         let mut occupied = 0;
         let mut bottom = MIN_Y as i16;
+        // What the last drawn span was painted with: a material only a few
+        // columns of a wide footprint hold is one tree's support, not the
+        // cell's surface, so it takes the ground's material instead.
+        let mut last: Option<(BlockStateId, u16, i16)> = None;
         for (y, material, change) in events {
             if bottom < y {
                 if occupied > 0
-                    && let Some(&((state, biome), _)) =
+                    && let Some(&((state, biome), count)) =
                         votes.iter().max_by_key(|&(material, count)| {
                             (*count, std::cmp::Reverse((material.0.0, material.1)))
                         })
                 {
+                    // A lone trunk (one column of 16 or 256) under a crown
+                    // would paint the whole cell with wood and read from afar
+                    // as a slab. Materials that few columns hold take the
+                    // material below instead, so the crown sits on ground.
+                    let (state, biome) = match last {
+                        Some((state, biome, max))
+                            if max == bottom && count * 16 < (width * width) as i32 =>
+                        {
+                            (state, biome)
+                        }
+                        _ => (state, biome),
+                    };
                     // Lighting must not split votes for the same material.
                     // Reduction can expose buried faces; retain the brightest
                     // actual light in this occupied footprint, per channel.
@@ -371,6 +387,7 @@ impl Column {
                         biome,
                         light: light as u16,
                     });
+                    last = Some((state, biome, y));
                 }
                 bottom = y;
             }
@@ -3880,7 +3897,7 @@ mod tests {
         assert_eq!(kelp.surface.unwrap().height, 40);
     }
     #[test]
-    fn coarse_voxels_keep_what_any_column_holds_so_crowns_stay_on_trunks() {
+    fn coarse_voxels_keep_crowns_on_the_ground_without_a_wide_trunk_slab() {
         let span = |min, max, state| Span {
             min,
             max,
@@ -3912,8 +3929,8 @@ mod tests {
         assert_eq!(reduced.get(4, 8, 4).spans, [span(0, 4, 1)]);
         assert_eq!(
             reduced.get(0, 0, 16).spans,
-            [span(0, 4, 1), span(4, 12, 2), span(12, 14, 3)],
-            "a crown over one corner of a wide cell still sits on its trunk"
+            [span(0, 12, 1), span(12, 14, 3)],
+            "a lone trunk takes the ground's material, so its crown sits on ground"
         );
     }
     /// A chunk is reduced to the one cell width that reads it, when it does.
