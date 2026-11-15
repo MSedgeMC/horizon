@@ -81,8 +81,8 @@ TextCursorUtils.extractInsertCursor	port	crates/horizon-client-render/src/ui.rs:
 Tooltip.create	skip:java		factory; Horizon passes the lines to ui::tooltip
 Tooltip.toCharSequence	port	crates/horizon-client-render/src/screen_draw.rs::tooltip	wraps at 170 px as splitTooltip does; no per-language cache
 WidgetSprites.get	port	crates/horizon-client-render/src/ui.rs::button	disabled and hovered pick the sprite; gap: minor: keyboard focus does not pick the highlighted sprite
-WidgetTooltipHolder.refreshTooltipForNextRenderPass	port	crates/horizon-client-render/src/ui.rs::tooltip	gap: minor: tooltips show only under the pointer, not for keyboard focus
-WidgetTooltipHolder.createTooltipPositioner	missing		minor: a keyboard-focused widget gets no tooltip placed below or above it
+WidgetTooltipHolder.refreshTooltipForNextRenderPass	port	crates/horizon-client-render/src/ui.rs::tooltip	the pointer's positioner (MenuTooltipPositioner) and the below-or-above one for a keyboard-focused button, both split at `Tooltip`'s 170; gap: minor: ui::tooltip itself only places by the pointer
+WidgetTooltipHolder.createTooltipPositioner	port	crates/horizon-client/src/title.rs::Title::draw_with_items	the title and onboarding screens' buttons: a keyboard-focused button's tooltip goes 3 in from its left and 4 under it, else above when the screen ends first (ui::tooltip_focused); a hovered button's stays by the pointer
 DebugEntryBiome.display	port	crates/horizon-client/src/game/debug_lines.rs::Game::debug_biome_line	the biome's name at the feet, inside the build height
 DebugEntryBiome.printBiome	inline	crates/horizon-client/src/game/debug_lines.rs::Game::debug_biome_line	the biome's name is printed
 DebugEntryChunkGeneration.display	inline	crates/horizon-client/src/game/debug_keys.rs::DensityCache::line	gap: minor: the density line only; no blending status line

@@ -3350,8 +3350,10 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 self.focused_button.is_none(),
             ),
         }
-        // The hovered button's `Tooltip`, drawn once the widgets are.
+        // The hovered button's `Tooltip`, drawn once the widgets are, and the
+        // one a keyboard-focused button asks for, which goes under it.
         let mut button_tooltip = None;
+        let mut focused_tooltip = None;
         for b in self.buttons(w, h) {
             crate::widgets::record(&b.label, [b.x, b.y, b.w, 20.0], b.enabled);
             // Realms' icon buttons have no label to record.
@@ -3365,10 +3367,14 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                 cursor.0 >= b.x && cursor.0 < b.x + b.w && cursor.1 >= b.y && cursor.1 < b.y + 20.0;
             crate::widgets::narratable(|| self.button_narration(&b).hovered(inside));
             crate::widgets::widget_cursor(inside, b.enabled);
-            if inside && let Some(key) = self.button_tooltip(b.id) {
-                button_tooltip = Some((key, [b.x, b.y, b.w, 20.0]));
-            }
             let is_focused = self.focused_button == Some(b.id);
+            if let Some(key) = self.button_tooltip(b.id) {
+                if is_focused {
+                    focused_tooltip = Some((key, [b.x, b.y, b.w, 20.0]));
+                } else if inside {
+                    button_tooltip = Some((key, [b.x, b.y, b.w, 20.0]));
+                }
+            }
             let hover = b.enabled && (inside || is_focused);
             let sprite = if !b.enabled {
                 "gui/sprites/widget/button_disabled"
@@ -3446,10 +3452,14 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             screen.draw_tooltip(atlas, batch, cursor, (w, h));
         }
         // WidgetTooltipHolder.refreshTooltipForNextRenderPass: beside the
-        // pointer and kept by its button (`MenuTooltipPositioner`), split at
+        // pointer and kept by its button (`MenuTooltipPositioner`), or under a
+        // keyboard-focused one (`BelowOrAboveWidgetTooltipPositioner`), split at
         // `Tooltip`'s 170. It comes after the onboarding fade: vanilla fades
         // the widgets, not the tooltip.
-        if let Some((key, rect)) = button_tooltip {
+        if let Some((key, rect)) = focused_tooltip {
+            let lines = atlas.font.split(&Text::translate(key, &[]), 170.0);
+            crate::ui::tooltip_focused(batch, atlas, &lines, rect);
+        } else if let Some((key, rect)) = button_tooltip {
             let lines = atlas.font.split(&Text::translate(key, &[]), 170.0);
             crate::ui::tooltip_menu(batch, atlas, &lines, cursor, rect);
         }

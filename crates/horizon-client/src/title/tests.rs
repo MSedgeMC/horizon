@@ -1291,6 +1291,46 @@ fn onboarding_common_buttons_show_their_tooltip_while_hovered() {
     crate::widgets::set_narrating(false);
 }
 
+/// `WidgetTooltipHolder.createTooltipPositioner`: a keyboard-focused widget's
+/// tooltip goes below it (`BelowOrAboveWidgetTooltipPositioner`), not beside the
+/// pointer, while a hovered one stays by the pointer (`MenuTooltipPositioner`).
+#[test]
+fn a_keyboard_focused_icon_button_shows_its_tooltip_below_it() {
+    let mut f = Fixture::new();
+    let atlas = crate::hud::HudAtlas::build(Path::new("/nonexistent/horizon-test-assets")).unwrap();
+    crate::widgets::set_narrating(true);
+    let mut frame = 12_067_200;
+    let (none, plain) = draw_hovered(&f.title, &atlas, (0.0, 0.0), &mut frame);
+    assert_eq!(none, None);
+    // Tab has the pointer elsewhere: the focused button still shows its tooltip.
+    f.title.focused_button = Some(6);
+    let (_, drawn) = draw_hovered(&f.title, &atlas, (0.0, 0.0), &mut frame);
+    assert!(
+        drawn.len() > plain.len(),
+        "the focused button drew no tooltip"
+    );
+    let tail = &drawn[plain.len()..];
+    let min_x = tail.iter().map(|v| v.pos[0]).fold(f32::MAX, f32::min);
+    let min_y = tail.iter().map(|v| v.pos[1]).fold(f32::MAX, f32::min);
+    let b = f
+        .title
+        .buttons(480.0, 262.0)
+        .into_iter()
+        .find(|b| b.id == 6)
+        .unwrap();
+    // 3 in from the button's left, 4 under its 20 px height.
+    assert_eq!((min_x, min_y), (b.x + 3.0, b.y + 20.0 + 4.0));
+    // A focused button without a tooltip still draws none.
+    f.title.focused_button = Some(1);
+    let (_, drawn) = draw_hovered(&f.title, &atlas, (0.0, 0.0), &mut frame);
+    assert_eq!(
+        drawn.len(),
+        plain.len(),
+        "a button without a tooltip drew one"
+    );
+    crate::widgets::set_narrating(false);
+}
+
 #[test]
 fn world_search_hint_is_gray_and_only_shown_empty_and_unfocused() {
     let mut f = Fixture::new();
