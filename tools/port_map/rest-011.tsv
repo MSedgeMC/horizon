@@ -67,8 +67,8 @@ MutableComponent.hashCode	skip:java		hashing
 MutableComponent.toString	skip:debug		debug text
 OutgoingChatMessage.create	port	crates/horizon-client/src/lan/hub/chat.rs::Hub::broadcast_command_chat	a message without signing context goes out as a disguised chat; a signed one as player chat
 OutgoingChatMessage.Player.sendToPlayer	port	crates/horizon-client/src/lan/hub/chat.rs::Hub::send_chat	gap: minor: the filter is always pass-through; the message goes to players who show chat
-PlayerChatMessage.withUnsignedContent	missing		minor: the hub never sets unsigned content (there is no chat decorator), so decorated text is not sent
-PlayerChatMessage.removeUnsignedContent	missing		minor: unsigned content is never set, so there is nothing to remove
+PlayerChatMessage.withUnsignedContent	inline	crates/horizon-client/src/lan/hub/chat.rs::ChatMessage::decorate	the decorated text becomes the unsigned content beside the signed body
+PlayerChatMessage.removeUnsignedContent	inline	crates/horizon-client/src/lan/hub/chat.rs::ChatMessage::decorate	decorate(None) clears the unsigned content again
 PlayerChatMessage.filter	missing		minor: the hub sends pass-through filter masks; there is no text filter
 PlayerChatMessage.removeSignature	port	crates/horizon-client/src/lan/hub/chat.rs::ChatMessage::new	the unsigned branch keeps the content and drops the signature and the last seen
 PlayerChatMessage.verify	port	crates/horizon-protocol/src/secure_chat.rs::MessageValidator::update_and_validate	the signature over the link and body; also the chain check of Chain::unpack on the server
