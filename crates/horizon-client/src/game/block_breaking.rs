@@ -106,7 +106,7 @@ impl Game<'_> {
         self.level_event_at(id, pos, direction as i32);
     }
 
-    /// `LevelRenderer.destroyBlockProgress`: a player's crack on a block (0..=9), or none
+    /// `ClientLevel.destroyBlockProgress`: a player's crack on a block (0..=9), or none
     /// (any other progress). Cracks not updated for 400 ticks are dropped.
     pub(crate) fn destroy_block_progress(&mut self, breaker: i32, pos: [i32; 3], progress: i32) {
         let now = self.world.game_time;

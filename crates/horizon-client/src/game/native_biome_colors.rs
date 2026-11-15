@@ -12,7 +12,7 @@ mod native_biome_edit;
 impl Game<'_> {
     /// Asks `native_biome_colors` again for every biome and, when the colours
     /// differ from those in use, rebuilds every loaded section and the far
-    /// terrain with them (`LevelRenderer.allChanged`, as changing Biome Blend
+    /// terrain with them (`LevelExtractor.allChanged`, as changing Biome Blend
     /// does). Call it when your colours change (a new season, a new day of a
     /// slow fade) and once when the player joins, not every frame: a rebuild
     /// takes the workers a few seconds. API 107.

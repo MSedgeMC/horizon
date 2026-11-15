@@ -909,7 +909,7 @@ impl Game<'_> {
     pub(super) fn chest_lid(&self, pos: [i32; 3], partial: f32) -> f32 {
         self.be_anims.lid(pos, partial)
     }
-    /// `SkullBlockRenderer.getPlayerSkin`: the skin sprite of the profile of
+    /// `PlayerSkinRenderCache.getOrDefault`: the skin sprite of the profile of
     /// the player head at `pos`. The skin download is started here; while it
     /// is in flight (or when it cannot be got) the profile's default skin
     /// stands in. A head with no profile answers None: `SKIN_BY_TYPE`.

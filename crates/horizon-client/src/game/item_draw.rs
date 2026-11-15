@@ -202,7 +202,7 @@ impl SpecialHost for Host<'_> {
             .map(|_| self.banners.shield_texture(pattern))
     }
     fn player_skin(&self, profile: &Value) -> Option<String> {
-        // SkullBlockRenderer.getPlayerSkin: SkinManager.getInsecureSkinInformation
+        // PlayerSkinRenderCache.getOrDefault: SkinManager.createLookup
         // accepts a texture property without a signature, unlike the tab list.
         // A `Dynamic` profile (a name or id only) resolves through the
         // services (`PlayerSkinRenderCache.getOrDefault`).

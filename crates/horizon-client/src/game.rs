@@ -3530,7 +3530,7 @@ impl Game<'_> {
             return hit;
         }
         let (origin, dir) = self.aim()?;
-        // GameRenderer.pick: the block ray runs out to the larger of the two
+        // Minecraft.pick: the block ray runs out to the larger of the two
         // interaction ranges; filterHitResult then drops a hit past the
         // block's.
         self.clip_ray(origin, dir, self.block_reach.max(self.entity_reach))
@@ -3540,7 +3540,7 @@ impl Game<'_> {
             })
     }
     /// The same traversal without `filterHitResult`: the block hit that
-    /// bounds the entity ray in `GameRenderer.pick`, out to the larger
+    /// bounds the entity ray in `Minecraft.pick`, out to the larger
     /// interaction range — a wall between the two still hides the entity.
     fn pick_unfiltered(&self) -> Option<Hit> {
         if let Some(hit) = self.forced_hit {
@@ -9048,7 +9048,7 @@ impl Game<'_> {
         });
         // What faces the camera (particles, item sprites, block entity text) faces a mod's.
         // A spectated entity's view is not the local player's yaw and pitch
-        // (`Camera.setup` reads the camera entity), so it is kept too.
+        // (`Camera.update` reads the camera entity), so it is kept too.
         let spectating = self.camera_entity().is_some();
         self.posed_rotation = view
             .filter(|posed| spectating || Some(*posed) != vanilla)
