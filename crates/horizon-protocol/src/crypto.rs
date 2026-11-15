@@ -158,7 +158,7 @@ pub fn md5(input: &[u8]) -> [u8; 16] {
     out
 }
 
-/// UUID.nameUUIDFromBytes("OfflinePlayer:" + name): MD5, version 3, IETF variant.
+/// The JDK's name-based UUIDv3 for "OfflinePlayer:" + name: MD5, version 3, IETF variant.
 pub fn offline_uuid(name: &str) -> u128 {
     let mut h = md5(format!("OfflinePlayer:{name}").as_bytes());
     h[6] = (h[6] & 0x0f) | 0x30;

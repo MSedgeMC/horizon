@@ -573,7 +573,7 @@ mod tests {
 
     /// `storage_get`/`storage_len` must not divide by zero or shift by
     /// 64+ for `bits > 32`. The wire path rejects them, but both are
-    /// `pub` and `Paletted.bits` is `pub`, so callers can hand them
+    /// `pub` and the `bits` field is `pub`, so callers can hand them
     /// 64 or 255 directly.
     #[test]
     fn storage_bits_over_32_return_zero_instead_of_panicking() {

@@ -7,7 +7,7 @@
 //! methods and its record builder; a component's codec form is built from them.
 use horizon_world::nbt::Tag;
 
-/// Guava `Hashing.crc32c()`: the CRC-32C (Castagnoli) of the bytes.
+/// Guava's CRC-32C (Castagnoli) of the bytes.
 pub fn crc32c(bytes: &[u8]) -> u32 {
     const TABLE: [u32; 256] = {
         let mut table = [0u32; 256];
@@ -39,11 +39,11 @@ pub fn crc32c(bytes: &[u8]) -> u32 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HashCode(pub u32);
 impl HashCode {
-    /// `HashCode.asInt`: what `HashedPatchMap` sends for a component.
+    /// The hash code as an int: what `HashedPatchMap` sends for a component.
     pub fn as_int(self) -> i32 {
         self.0 as i32
     }
-    /// `HashCode.asBytes`: little-endian, as `IntHashCode` stores it.
+    /// The hash code as bytes, little-endian as `IntHashCode` stores it.
     pub fn as_bytes(self) -> [u8; 4] {
         self.0.to_le_bytes()
     }
@@ -119,7 +119,7 @@ impl HashOps {
         Hasher::default().byte(13).byte(v as u8).hash()
     }
     /// `createMap`: the entries sorted by key hash, then value hash (both as
-    /// unsigned ints, `HashCode.padToLong`).
+    /// unsigned ints, padded to a long).
     pub fn create_map(mut entries: Vec<(HashCode, HashCode)>) -> HashCode {
         entries.sort_by_key(|(k, v)| (k.0, v.0));
         let mut h = Hasher::default().byte(2);
@@ -325,8 +325,8 @@ mod tests {
         );
     }
 
-    /// Values printed by vanilla's own `HashOps.CRC32C_INSTANCE` (`Codec.X.encodeStart`
-    /// then `HashCode.asInt`) on the pinned 26.3 jars.
+    /// Values printed by vanilla's own `HashOps.CRC32C_INSTANCE` (`encodeStart`
+    /// then the hash code as an int) on the pinned 26.3 jars.
     #[test]
     fn matches_the_hashes_vanilla_prints() {
         assert_eq!(HashOps::create_int(1).as_int(), 1565579036);

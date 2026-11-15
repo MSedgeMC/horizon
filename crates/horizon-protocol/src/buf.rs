@@ -189,7 +189,7 @@ impl<'a> Reader<'a> {
 }
 
 /// Java's UTF-8 replacement decoder, as used by Utf8String.read and by a reader
-/// opened on a UTF-8 file (Guava's `Files.newReader`). Most malformed
+/// opened on a UTF-8 file (Guava's reader). Most malformed
 /// sequences have Rust's maximal-subpart grouping, but Java consumes an encoded
 /// surrogate (including its truncated two-byte prefix) as one replacement.
 pub fn java_utf8(mut bytes: &[u8]) -> String {
@@ -594,7 +594,7 @@ impl Codec<Vec<u8>> for BitSet {
         r.byte_array(r.remaining())
     }
     fn write(v: &Vec<u8>, w: &mut Writer) {
-        // BitSet.toByteArray drops trailing zero bytes.
+        // Java's BitSet byte form drops trailing zero bytes.
         let len = v.iter().rposition(|&b| b != 0).map_or(0, |i| i + 1);
         w.byte_array(&v[..len])
     }
@@ -748,7 +748,7 @@ mod tests {
 
     #[test]
     fn varint_matches_vanilla_examples() {
-        // wiki.vg / VarInt.java examples.
+        // wiki.vg and the VarInt format examples.
         assert_eq!(round::<i32, VarInt>(0), [0x00]);
         assert_eq!(round::<i32, VarInt>(1), [0x01]);
         assert_eq!(round::<i32, VarInt>(127), [0x7f]);

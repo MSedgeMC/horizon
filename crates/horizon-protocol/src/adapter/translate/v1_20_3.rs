@@ -1033,7 +1033,7 @@ mod tests {
     #[test]
     fn vanilla_trade_and_horse_armor_stacks_are_canonicalized_once() {
         let session = Session::new(ServerVersion::V1_20_3);
-        // These helpers normally run inside Session::clientbound's connection-local NBT context.
+        // These helpers normally run inside the session's clientbound path's connection-local NBT context.
         let _registries = ids::legacy_registries(session.legacy_registries.lock().unwrap().clone());
         let _items = ids::legacy_items(session.legacy_items.clone());
         let wire = bytes(

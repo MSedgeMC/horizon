@@ -40,7 +40,7 @@ pub(super) fn clientbound(
 }
 
 /// 1.21's update_attributes as 1.20.6's: a modifier is named by a UUID, not an identifier (vanilla's own
-/// modifiers keep their old UUIDs, any other gets `UUID.nameUUIDFromBytes` of its identifier).
+/// modifiers keep their old UUIDs, any other gets the JDK's name-based UUIDv3 of its identifier).
 fn update_attributes(payload: &[u8]) -> Result<Vec<u8>> {
     let mut r = Reader::new(payload);
     let mut w = Writer::new();
