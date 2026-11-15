@@ -8,7 +8,7 @@ UseBonemeal.tick	inline	crates/horizon-client/src/mobs/villager_brain.rs::B::tic
 ValidateNearbyPoi.create	inline	crates/horizon-client/src/mobs/villager_brain.rs::B::try_start	ValidatePoi arm: within 16 blocks the memory is erased when the POI is gone or the bed is occupied by someone else
 ValidateNearbyPoi.bedIsOccupiedByVillager	inline	crates/horizon-client/src/mobs/villager_brain.rs::B::try_start	no ticket to release: POI tickets are counted from the villagers' memories (tickets), so erasing the memory frees the bed
 VillageBoundRandomStroll.create	inline	crates/horizon-client/src/mobs/villager_brain.rs::B::try_start	VillageBoundStroll arm: land pos inside a village, else a pos towards the section closest to a village
-VillagerGoalPackages.getCorePackage	inline	crates/horizon-client/src/mobs/villager_brain.rs::packages	gap: minor: GoToWantedItem (priority 5) never starts (arm returns false), so villagers do not walk to dropped items within 4 blocks; they only pick up what lands at their feet
+VillagerGoalPackages.getCorePackage	inline	crates/horizon-client/src/mobs/villager_brain.rs::packages	GoToWantedItem starts within 4 blocks of the wanted item and sets the look target at the item's 0.2125 eye height and a 0.5 walk target
 VillagerGoalPackages.validateBedPoi	inline	crates/horizon-client/src/mobs/villager_brain.rs::B::try_start	AcquirePoi home arm keeps only beds that are not occupied, after the 5-candidate cap like vanilla
 VillagerGoalPackages.getWorkPackage	inline	crates/horizon-client/src/mobs/villager_brain.rs::packages	work run-one: WorkAtComposter for a farmer else WorkAtPoi, the strolls, HarvestFarmland and UseBonemeal at vanilla's priorities (a farmer 2 and 4, others 5 and 7)
 VillagerGoalPackages.getPlayPackage	inline	crates/horizon-client/src/mobs/villager_brain.rs::packages	baby villagers: look, tag, run-one of interact, stroll, jump on bed, do nothing
@@ -60,9 +60,9 @@ MoveControl.isWalkable	port	crates/horizon-client/src/mobs/control.rs::Mob::walk
 SmoothSwimmingLookControl.tick	port	crates/horizon-client/src/mobs/control.rs::Mob::look_control_tick	SmoothSwimming arm of the look kinds
 SmoothSwimmingMoveControl.getTurningSpeedFactor	inline	crates/horizon-client/src/mobs/control.rs::Mob::move_control_tick	SmoothSwimming arm: 1 - clamp((left - 10) / 50)
 BegGoal.canContinueToUse	port	crates/horizon-client/src/mobs/tame.rs::Beg::can_continue	
-BegGoal.playerHoldingInteresting	port	crates/horizon-client/src/mobs/tame.rs::Beg::interesting	gap: minor: untamed wolves beg only for bones and tamed wolves only for food; in 26.3 a bone or food interests any wolf
+BegGoal.playerHoldingInteresting	port	crates/horizon-client/src/mobs/tame.rs::Beg::interesting	a bone or the species' food interests a wolf, tamed or not (`Beg::interesting` checks `minecraft:bone` or the species' food list)
 BreathAirGoal.givesAir	inline	crates/horizon-client/src/mobs/goals.rs::BreathAir::find_air	no fluid or a bubble column, and land-pathfindable
-BreedGoal.getFreePartner	inline	crates/horizon-client/src/mobs/goals.rs::Breed::can_use	gap: minor: the partner's isPanicking is not tested (Seen has no panic flag)
+BreedGoal.getFreePartner	inline	crates/horizon-client/src/mobs/goals.rs::Breed::can_use	the partner must be in love, adult, tame for a tamable species, not sitting, not ridden and not panicking; `can_continue` repeats the panic test
 CatLieOnBlockGoal.isValidTarget	port	crates/horizon-client/src/mobs/tame.rs::can_lie_on	
 CatSitOnBlockGoal.isValidTarget	port	crates/horizon-client/src/mobs/tame.rs::can_sit_on	
 ClimbOnTopOfPowderSnowGoal.canUse	port	crates/horizon-client/src/mobs/goals.rs::ClimbOnTopOfPowderSnow::can_use	in powder snow and a powder-snow walker, with powder snow or no collision above: foxes, rabbits, silverfish and endermites all register the goal
@@ -85,7 +85,7 @@ MeleeAttackGoal.canPerformAttack	inline	crates/horizon-client/src/mobs/goals.rs:
 MoveBackToVillageGoal	home	crates/horizon-client/src/mobs/golem.rs	the back Stroll register_iron adds at 2: interval 10, the outside_village gate and back_to_village_position; tick for tick with vanilla in mob_ai iron_golem_village_*
 MoveThroughVillageGoal	home	crates/horizon-client/src/mobs/undead.rs	MoveThroughVillage in that file: zombies add it at 6; the raider's nested Raider$RaiderMoveThroughVillageGoal is the separate MoveThroughVillage in raider.rs; no tick parity check yet
 MoveToBlockGoal.moveMobToBlock	inline	crates/horizon-client/src/mobs/goals.rs::MoveToBlock::start	nav_move_to the block centre one up
-MoveTowardsTargetGoal.start	inline	crates/horizon-client/src/mobs/golem.rs::MoveTowardsTarget::can_use	gap: minor: paths straight to the target entity in can_use, not to a random position towards it chosen in canUse
+MoveTowardsTargetGoal.start	inline	crates/horizon-client/src/mobs/golem.rs::MoveTowardsTarget	`can_use` picks a random spot up to 16 blocks out and 7 up or down within a quarter turn of the target (`default_random_pos_towards`); `start` walks there at the goal's speed
 OpenDoorGoal.canContinueToUse	port	crates/horizon-client/src/mobs/doors.rs::RaiderOpenDoor::can_continue	the raider goal does not close the door after, so it never continues
 PanicGoal.findRandomPosition	inline	crates/horizon-client/src/mobs/goals.rs::Panic::can_use	default_random_pos(5, 4)
 PanicGoal.lookForWater	inline	crates/horizon-client/src/mobs/goals.rs::Panic::can_use	burning (or turtle) mob not inside a solid cell looks for water by Manhattan distance
@@ -101,12 +101,12 @@ StrollThroughVillageGoal.tick	port	crates/horizon-client/src/mobs/fox.rs::Stroll
 StrollThroughVillageGoal.moveRandomly	inline	crates/horizon-client/src/mobs/fox.rs::StrollThroughVillage::tick	a random spot within 8 on the surface when the step has no path
 TemptGoal.shouldFollow	inline	crates/horizon-client/src/mobs/goals.rs::Tempt::can_use	main hand or off hand holds a tempt item
 TemptGoal.ForNonPathfinders.navigateTowards	port	crates/horizon-client/src/mobs/happy_ghast.rs::GhastTempt::tick	random fraction of the way to the player's eye as the wanted position; the sulfur cube has its own SulfurTempt
-WaterAvoidingRandomFlyingGoal.getPosition	inline	crates/horizon-client/src/mobs/goals.rs::Stroll::can_use	gap: minor: a flying stroll (the wither) draws a plain default_random_pos(10, 7), not HoverRandomPos along its view direction and AirAndWaterRandomPos
+WaterAvoidingRandomFlyingGoal.getPosition	inline	crates/horizon-client/src/mobs/goals.rs::Stroll	a flying stroll draws `flying_stroll_pos`: `hover_random_pos(8, 7, ...)` along the view direction, else `air_and_water_random_pos(8, 4, -2, ...)`
 WaterAvoidingRandomStrollGoal.getPosition	inline	crates/horizon-client/src/mobs/goals.rs::Stroll::can_use	water_avoiding arm: land pos, or default pos with the probability
 WrappedGoal.canBeReplacedBy	inline	crates/horizon-client/src/mobs/goals.rs::GoalSelector::tick	interruptable and lower priority number
 WrappedGoal.start	inline	crates/horizon-client/src/mobs/goals.rs::GoalSelector::tick	running flag then goal.start
 WrappedGoal.equals	skip:java		identity of wrapped goals in a set
-HurtByTargetGoal.alertOthers	inline	crates/horizon-client/src/mobs/goals.rs::HurtByTarget::start	gap: player: the owner and team checks are missing, so when a wolf is hurt every wolf nearby is called, including other owners' and the player's own tamed wolves
+HurtByTargetGoal.alertOthers	inline	crates/horizon-client/src/mobs/goals.rs::HurtByTarget::start	alerts same-species mobs within follow range, skipping another owner's pets and pets allied with the hurting player; a bee only alerts with the attacker in sight
 NonTameRandomTargetGoal.canUse	inline	crates/horizon-client/src/mobs/tame.rs::NonTameTarget::can_use	wolf and cat target goals wrap NearestTarget: wild only, then the prey search
 NonTameRandomTargetGoal.canContinueToUse	inline	crates/horizon-client/src/mobs/tame.rs::NonTameTarget::can_continue	re-tests the prey selector (a baby turtle out of water), then the base TargetGoal rules
 ResetUniversalAngerTargetGoal.wasHurtByPlayer	missing		minor: the universal_anger rule is never read by mobs (default off)
