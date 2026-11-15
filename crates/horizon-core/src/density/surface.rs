@@ -34,7 +34,7 @@ impl FindTopSurfaceSampler {
         upper: f32,
     ) -> Result<i32, SampleError> {
         let quotient = upper / self.cell_height as f32;
-        // Java 26.3 Mth.floor(float) widens to double, calls Java's floor,
+        // Java 26.3 Mth.floor(float) widens to double, calls Math.floor,
         // then uses a saturating double-to-int conversion (NaN becomes zero).
         let floor = (quotient as f64).floor() as i32;
         let mut y = floor.wrapping_mul(self.cell_height);

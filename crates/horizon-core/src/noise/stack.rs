@@ -33,7 +33,7 @@ pub trait Noise: std::fmt::Debug + Send + Sync {
         }
         Ok(())
     }
-    /// [`Noise::addToVolume`] for a caller that reads only the Ys set in `needed`: bit `y` of
+    /// [`Noise::add_to_volume`] (vanilla 26.3 Noise.addToVolume) for a caller that reads only the Ys set in `needed`: bit `y` of
     /// `needed[column]`, X/Z columns in buffer order. The other Ys may be left unchanged.
     fn add_to_needed(
         &self,

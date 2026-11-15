@@ -154,7 +154,7 @@ fn borrowed_step_heights<S: std::borrow::Borrow<VoxelShape>>(
             if height > max_step {
                 break;
             }
-            // FloatArraySet keys on the float bit pattern, so NaNs compare equal
+            // FloatArraySet uses Float.floatToIntBits, so NaNs compare equal
             // while positive and negative zero remain separate members.
             let height = if height.is_nan() { f32::NAN } else { height };
             if !heights.iter().any(|old| old.to_bits() == height.to_bits()) {

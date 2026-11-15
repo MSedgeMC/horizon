@@ -331,7 +331,7 @@ fn build_octaves(
     result
 }
 
-// Java's pow(2, integer), including exact subnormal powers and saturation, without
+// Math.pow(2, integer), including exact subnormal powers and saturation, without
 // a platform libm approximation. Frequencies subsequently double iteratively.
 fn power_of_two(exponent: i32) -> f64 {
     match exponent {
@@ -343,7 +343,7 @@ fn power_of_two(exponent: i32) -> f64 {
 }
 
 fn sum_abs(octaves: &[OctaveInfo]) -> f64 {
-    // Sequential summation uses compensated summation and an uncorrected
+    // Sequential DoubleStream.sum uses compensated summation and an uncorrected
     // sum to recover infinity when compensation arithmetic produces NaN.
     let (mut sum, mut correction, mut simple) = (0.0, 0.0, 0.0);
     for octave in octaves {

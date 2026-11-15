@@ -227,7 +227,7 @@ fn sample_with(
         None => sampler.sample_volume(context, buffer, volume),
     }
 }
-/// A `sample_needed` mask that has a bit for every Y of every column of
+/// A [`DensitySampler::sample_needed`] mask that has a bit for every Y of every column of
 /// `volume`; any other mask means every value is needed.
 fn usable_mask(needed: &[u64], volume: DensityVolume) -> Option<&[u64]> {
     let [size_x, size_y, size_z] = volume.sizes();

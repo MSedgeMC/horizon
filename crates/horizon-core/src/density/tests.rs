@@ -1026,7 +1026,7 @@ fn binary_bulk_preserves_child_failure_order_and_output() {
         );
     }
 }
-/// A y-fixed slice's plane, kept by the context's `with_planes`, gives the
+/// A y-fixed slice's plane, kept by `SamplerContext::with_planes`, gives the
 /// values fresh sampling gives at other heights and vertical steps, and is
 /// sampled once for one x/z lattice.
 #[test]

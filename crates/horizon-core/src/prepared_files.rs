@@ -78,7 +78,7 @@ impl PreparedFiles {
     pub fn read(&self, name: &str) -> Option<io::Result<Vec<u8>>> {
         self.read_head(name, u64::MAX)
     }
-    /// At most the first `max` bytes of `name`, as a full read of the prepared file.
+    /// At most the first `max` bytes of `name`, as [`PreparedFiles::read`].
     pub fn read_head(&self, name: &str, max: u64) -> Option<io::Result<Vec<u8>>> {
         let i = self
             .entries

@@ -387,7 +387,7 @@ mod tests {
     /// `zi * 24 * 24 + xi * 24 + yi` — `e^(-(dx² + (dy + 0.5)² + dz²) / 16)` as
     /// a `float`. 13824 values can't be read, so the ones below are pinned as
     /// the bits they have in vanilla (that initialiser's formula run under
-    /// javac/java 21 and printed as float bits), and `TABLE`
+    /// javac/java 21 and printed with `Float.floatToIntBits`), and `TABLE`
     /// hashes every entry so a change to the exponent, the offset or the index
     /// order fails here instead of in a world.
     #[test]
