@@ -305,6 +305,9 @@ pub struct LootData {
     modifiers: HashMap<String, Value>,
     predicates: HashMap<String, Value>,
     items: HashMap<String, ItemFacts>,
+    /// Every item's default components from `items.json`, which
+    /// `set_attributes` with `replace: false` starts from.
+    defaults: Arc<crate::item_defaults::Defaults>,
     /// Enchantments in registry (identifier) order.
     enchantments: Vec<Enchantment>,
     /// Raw tag files by (registry, tag id).
@@ -913,6 +916,7 @@ impl LootData {
             modifiers,
             predicates,
             items,
+            defaults: raw,
             enchantments,
             tags,
             smelting,
@@ -1925,11 +1929,22 @@ impl<R: RandomSource> Context<'_, R> {
                     .components
                     .iter()
                     .find(|(k, _)| k == id)
-                    .and_then(|(_, v)| v.as_array().cloned())
-                    .unwrap_or_default();
+                    .and_then(|(_, v)| v.as_array().cloned());
                 if f["replace"].as_bool().unwrap_or(true) {
-                    entries.clear();
+                    entries = Some(Vec::new());
+                } else if entries.is_none() {
+                    // `ItemStack.update(ATTRIBUTE_MODIFIERS, EMPTY, ..)` reads
+                    // the prototype component: a fresh sword keeps its default
+                    // attack damage and speed.
+                    entries = self
+                        .data
+                        .defaults
+                        .get(&stack.item)
+                        .and_then(|c| c.get(id))
+                        .and_then(Value::as_array)
+                        .cloned();
                 }
+                let mut entries = entries.unwrap_or_default();
                 for modifier in f["modifiers"].as_array().into_iter().flatten() {
                     let (Some(attribute), Some(modifier_id)) =
                         (modifier["attribute"].as_str(), modifier["id"].as_str())
@@ -2736,6 +2751,51 @@ mod namespace_tests {
             .collect();
         assert_eq!(component.len(), 1, "{:?}", sword.components);
         assert_eq!(component[0].1, serde_json::json!([]));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// `SetAttributesFunction` with `replace: false`: a fresh item starts from
+    /// its prototype `attribute_modifiers`, so a diamond sword keeps its
+    /// default attack damage and speed and gains the table's modifier.
+    #[test]
+    fn set_attributes_replace_false_keeps_the_items_defaults() {
+        let root = std::env::temp_dir().join(format!(
+            "horizon-loot-attributes-defaults-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&root);
+        let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:diamond_sword",
+            "modifier": [{"type": "minecraft:set_attributes", "replace": false, "modifiers": [
+                {"id": "minecraft:reach_bonus", "attribute": "minecraft:block_interaction_range", "operation": "add_value", "amount": 1.5, "slot": "mainhand"}
+            ]}]}]}]}"#;
+        let defaults = r#"{"minecraft:diamond_sword": {"minecraft:attribute_modifiers": [
+            {"type": "minecraft:attack_damage", "amount": 6.0, "id": "minecraft:base_attack_damage", "operation": "add_value", "slot": "mainhand"},
+            {"type": "minecraft:attack_speed", "amount": -2.4, "id": "minecraft:base_attack_speed", "operation": "add_value", "slot": "mainhand"}
+        ]}}"#;
+        let files = [
+            ("items.json", defaults),
+            ("data/minecraft/loot_table/chests/attributes.json", table),
+        ];
+        for (name, text) in files {
+            let path = root.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/attributes", 11, 27, None);
+        let sword = filled.iter().flatten().next().expect("a sword");
+        let component: Vec<_> = sword
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:attribute_modifiers")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", sword.components);
+        let entries = component[0].1.as_array().expect("a modifier list");
+        assert_eq!(entries.len(), 3, "{entries:?}");
+        assert_eq!(entries[0]["id"].as_str(), Some("minecraft:base_attack_damage"));
+        assert_eq!(entries[1]["id"].as_str(), Some("minecraft:base_attack_speed"));
+        assert_eq!(entries[2]["id"].as_str(), Some("minecraft:reach_bonus"));
+        assert_eq!(entries[0]["amount"].as_f64(), Some(6.0));
         let _ = fs::remove_dir_all(&root);
     }
 
