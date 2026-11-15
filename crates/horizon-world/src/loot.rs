@@ -2140,7 +2140,13 @@ impl<R: RandomSource> Context<'_, R> {
             "minecraft:tag" => {
                 if entry["expand"].as_bool().unwrap_or(false) {
                     for item in self.data.holder_set("item", &entry["items"]) {
-                        self.create(&Choice { entry, item: Some(item) }, &mut *sink);
+                        self.create(
+                            &Choice {
+                                entry,
+                                item: Some(item),
+                            },
+                            &mut *sink,
+                        );
                     }
                 } else {
                     self.create(&Choice { entry, item: None }, &mut *sink);
