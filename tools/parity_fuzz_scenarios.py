@@ -197,5 +197,30 @@ def spawn(rng, seed):
     return {'family': 'spawn', 'seed': seed, 'steps': steps}
 
 
-FAMILIES = {'persist': persist, 'spawn': spawn}
+# #16909's sweep: the saved fields every entity kind has, at values that survive a save and load, for one
+# summonable type at a time. "still" leaves the entity where it was summoned; "fire" is the sweep's burning run.
+BASE_TAGS = {
+    'still': {'Air': '137s', 'PortalCooldown': '250', 'fall_distance': '3.5d', 'Rotation': '[75f,20f]',
+              'NoGravity': '1b', 'Silent': '1b', 'Glowing': '1b', 'Invulnerable': '1b', 'TicksFrozen': '60',
+              'CustomName': '"sw"', 'CustomNameVisible': '1b', 'Tags': '["sw"]', 'NoAI': '1b',
+              'PersistenceRequired': '1b'},
+    'fire': {'Fire': '300s', 'NoGravity': '1b', 'NoAI': '1b', 'PersistenceRequired': '1b', 'Invulnerable': '1b'},
+}
+
+
+def entity_base(rng, seed):
+    """One summonable kind with #16909's tags, read at once, after 1 and 20 ticks, and after a chunk reload.
+
+    Seeds 0..len(kinds)-1 are the still variants and the next len(kinds) the fire ones: 2 * len(kinds) seeds cover
+    every kind in both runs of the sweep.
+    """
+    kinds = sorted(KNOWN['entity'])
+    kind, variant = kinds[seed % len(kinds)], ('still', 'fire')[seed // len(kinds) % 2]
+    read = {'k': 'read_entity', 'n': 0}
+    steps = [{'k': 'summon', 'type': kind, 'at': [7.5, 0, 7.5], 'n': 0, 'nbt': dict(BASE_TAGS[variant])},
+             read, {'k': 'tick', 'n': 1}, read, {'k': 'tick', 'n': 19}, read, {'k': 'reload'}, read]
+    return {'family': 'entity_base', 'seed': seed, 'steps': steps}
+
+
+FAMILIES = {'entity_base': entity_base, 'persist': persist, 'spawn': spawn}
 
