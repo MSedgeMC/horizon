@@ -91,7 +91,7 @@ FontManager.getFontOptions	port	crates/horizon-client/src/game/options.rs::Game:
 FontManager.apply	port	crates/horizon-client-render/src/hud.rs::HudAtlas::pack	new font sets replace the old ones with the atlas
 FontManager.updateOptions	port	crates/horizon-client/src/game/options.rs::Game::apply_ui_settings	sets the Font uniform and japanese flags when they change (options.rs:299-301)
 FontManager.loadResourceStack	inline	crates/horizon-client-render/src/font.rs::providers	gap: minor: one fonts.json per font id from the resource root, not a stack of packs
-FontManager.getSpriteFont	missing		minor: atlas sprite fonts (sprite objects in text) are not parsed; they draw the missing box
+FontManager.getSpriteFont	inline	crates/horizon-client-render/src/hud.rs::HudBatch::draw_inline_object	sprite objects in text are drawn straight from the HUD atlas at the pen (8 px square, the missing sprite when the atlas lacks it), so no font set is looked up for them
 FontManager.close	skip:java		Rust drop frees the atlas, font sets and providers
 FontManager.BuilderResult.resolve	port	crates/horizon-client-render/src/font.rs::providers	reference builders expanded in place
 FontManager.BuilderResult.mergeFilters	inline	crates/horizon-client-render/src/font.rs::providers	the reference's filter merged onto each expanded provider
