@@ -2495,7 +2495,7 @@ impl Game<'_> {
                 u32::MAX,
             ));
         }
-        // ItemStack.addDetailsToTooltipTail: with advanced tooltips the item id
+        // ItemStack.addDetailsToTooltip: with advanced tooltips the item id
         // and how many components the stack has.
         if advanced {
             let dark_gray = rgba(85, 85, 85, 255);

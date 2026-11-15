@@ -1847,7 +1847,7 @@ impl Screen {
         }
     }
 
-    /// `AbstractSelectionList.updateNarration` over the selected server
+    /// `AbstractWidget.updateNarration` over the selected server
     /// (`ServerEntry.getNarration`): the list narrates its selection as a widget line.
     pub fn narration(&self) -> Option<String> {
         if !matches!(self.subscreen, SubScreen::Main) {

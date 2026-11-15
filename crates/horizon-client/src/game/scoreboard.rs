@@ -743,7 +743,7 @@ impl Game<'_> {
         self.sync_score_registries();
         result
     }
-    /// ComponentUtils.updateForEntity for the pieces scoreboards store:
+    /// ComponentUtils.resolve for the pieces scoreboards store:
     /// `selector` and `score` components become their text.
     pub(super) fn resolve_component(&mut self, c: Comp) -> Comp {
         match c {

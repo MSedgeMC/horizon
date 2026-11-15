@@ -792,7 +792,7 @@ impl Game<'_> {
             .wheel(amount, row_h / 2.0, TAB_H, h - FOOTER, content);
     }
     /// A press on the statistics list's scrollbar holds it
-    /// (`AbstractSelectionList.updateScrolling`).
+    /// (`AbstractScrollArea.updateScrolling`).
     pub(super) fn stats_press_scrollbar(&mut self, size: [u32; 2]) -> bool {
         let b = HudBatch::new(size);
         let (w, h) = (b.width, b.height);

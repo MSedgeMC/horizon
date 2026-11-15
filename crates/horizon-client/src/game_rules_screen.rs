@@ -273,7 +273,7 @@ impl RulesScreen {
                 .wheel(delta, ROW / 2.0, HEADER, h - FOOTER, content);
         }
     }
-    /// A press on the scrollbar holds it (AbstractSelectionList.updateScrolling).
+    /// A press on the scrollbar holds it (AbstractScrollArea.updateScrolling).
     pub fn press_scrollbar(&mut self, cursor: (f32, f32), (w, h): (f32, f32)) -> bool {
         let content = self.content();
         self.scroll
