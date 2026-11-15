@@ -60,7 +60,7 @@ MovementAffectedByPredicate.matches	port	crates/horizon-client/src/motion.rs::Mo
 MovementPredicate.matches	port	crates/horizon-client/src/advancements.rs::movement	the per-tick delta scaled by 20, then x, y, z, speed, horizontal_speed, vertical_speed and fall_distance in order
 PassengerPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the `passenger` key: any passenger of the vehicle matches the nested predicate
 PlayerPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gamemode, looking_at and input in entity(), the rest in player_facts; gap: minor: input reads only sneak
-PlayerPredicate.AdvancementCriterionsPredicate.test	missing		minor: the advancements key of a player predicate is not read; no vanilla advancement uses it
+PlayerPredicate.AdvancementCriterionsPredicate.test	inline	crates/horizon-client/src/advancements.rs::player_facts	an advancement entry in object form checks each named criterion exists on it and is granted as asked
 PlayerPredicate.Builder.addStat	skip:java		builder
 PlayerPredicate.Builder.checkAdvancementDone	skip:java		builder
 PlayerPredicate.Builder.checkAdvancementCriterions	skip:java		builder
@@ -70,7 +70,7 @@ RaiderPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity
 SheepPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/sheep arm, the sheared flag; the advancement reader answers false for the key
 SteppingOnPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: no on-ground test; the block is read 0.5 below the feet
 TargetedEntityPredicate.matches	missing		minor: targeted_entity key is not read; no vanilla advancement uses it
-TeamPredicate.matches	missing		minor: team key is not read though scoreboard teams exist; no vanilla advancement uses it
+TeamPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the minecraft:team arm compares the requested name exactly against the effective team name
 AnyBlockInteractionTrigger.trigger	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_any_block_use	any_block_use with the block's location and the stack in hand as the use left it
 AnyBlockInteractionTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_block	the location test; only the firing of the trigger is missing
 AnyBlockInteractionTrigger.TriggerInstance.validate	skip:data		load-time validation of the location
