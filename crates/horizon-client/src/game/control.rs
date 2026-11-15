@@ -1597,7 +1597,7 @@ impl Game<'_> {
             "pending_observations": self.lod_observe.len(),
             "refined_samples": self.lod.as_ref().map_or(0, |lod| lod.refined_samples()),
         });
-        // The other players' cracks this client draws (LevelRenderer.destroyingBlocks).
+        // The other players' cracks this client draws (ClientLevel.destroyingBlocks).
         let destroying: Vec<_> = self
             .destroying
             .iter()
