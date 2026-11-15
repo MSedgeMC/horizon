@@ -717,9 +717,13 @@ impl PoolPiece {
         }
         tag
     }
-    pub(super) fn moved(&mut self, dy: i32) {
-        self.position[1] += dy;
-        self.bounding_box = self.bounding_box.moved([0, dy, 0]);
+    /// `PoolElementStructurePiece.move`: the piece's position and its box
+    /// move by the offset (the start's ground level only ever moves it in y).
+    pub(super) fn moved(&mut self, offset: [i32; 3]) {
+        for (i, d) in offset.into_iter().enumerate() {
+            self.position[i] += d;
+        }
+        self.bounding_box = self.bounding_box.moved(offset);
     }
     /// PoolElementStructurePiece.postProcess.
     #[allow(clippy::too_many_arguments)]
@@ -1164,7 +1168,7 @@ pub fn place_start(
         }
     };
     let old_ground = b.min[1] + center.ground_level_delta;
-    center.moved(bottom - old_ground);
+    center.moved([0, bottom - old_ground, 0]);
     let b = center.bounding_box;
     if config.padding != [0, 0]
         && (b.min[1] < context.min_y() + config.padding[0]
@@ -1541,6 +1545,25 @@ mod tests {
     fn delegate() -> Value {
         json!({"element_type": "minecraft:single_pool_element", "location": "a:b"})
     }
+    /// `PoolElementStructurePiece.move`: a piece's position and bounding box
+    /// move by the same offset on all three axes.
+    #[test]
+    fn a_piece_moves_on_all_three_axes() {
+        let mut piece = PoolPiece {
+            element: Arc::new(PoolElement::Empty),
+            position: [10, 20, 30],
+            ground_level_delta: 0,
+            rotation: Rotation::None,
+            bounding_box: BoundingBox::new([8, 18, 28], [12, 22, 32]),
+            junctions: Vec::new(),
+            waterlogging: false,
+        };
+        piece.moved([-1, 2, 3]);
+        assert_eq!(piece.position, [9, 22, 33]);
+        assert_eq!(piece.bounding_box.min, [7, 20, 31]);
+        assert_eq!(piece.bounding_box.max, [11, 24, 35]);
+    }
+
     /// The entries a vanilla jigsaw tries below a parent at `depth`: the
     /// target's by index, the fallback's by index plus 100.
     fn tried(

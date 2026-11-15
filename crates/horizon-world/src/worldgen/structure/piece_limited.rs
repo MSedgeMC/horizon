@@ -254,7 +254,7 @@ pub fn assemble(
         }
         None => start[1],
     };
-    first.moved(cy - (b.min[1] + first.ground_level_delta));
+    first.moved([0, cy - (b.min[1] + first.ground_level_delta), 0]);
     let start_box = first.bounding_box;
     let (start_position, start_rotation) = (first.position, first.rotation);
     let counts = Counts::new(limits, resources);

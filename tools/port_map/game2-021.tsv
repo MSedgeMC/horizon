@@ -18,7 +18,7 @@ BoundingBox.forAllCorners	port	crates/horizon-world/src/worldgen/structure.rs::B
 BoundingBox.toString	skip:debug		debug string
 BoundingBox.equals	skip:java		derived PartialEq
 BoundingBox.hashCode	skip:java		derived Hash
-PoolElementStructurePiece.move	port	crates/horizon-world/src/worldgen/structure/jigsaw.rs::PoolPiece::moved	gap: minor: only the vertical move; dx and dz are dropped (the one vanilla caller moves in y only)
+PoolElementStructurePiece.move	port	crates/horizon-world/src/worldgen/structure/jigsaw.rs::PoolPiece::moved	the piece's position and bounding box move by the offset on all three axes (the callers pass a ground-level y offset)
 PoolElementStructurePiece.toString	skip:debug		debug string
 ScatteredFeaturePiece.addAdditionalSaveData	port	crates/horizon-world/src/worldgen/structure/simple.rs::Scattered::saved	width, height, depth and height position in the tag
 ScatteredFeaturePiece.updateHeightPositionToLowestGroundHeight	port	crates/horizon-world/src/worldgen/structure/simple.rs::Scattered::lowest_ground	lowest motion-blocking height over the box, then moves the box
