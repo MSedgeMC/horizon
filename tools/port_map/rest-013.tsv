@@ -117,7 +117,7 @@ MinecraftServer.reportChunkLoadFailure	port	crates/horizon-client/src/chunk_io.r
 MinecraftServer.reportChunkSaveFailure	port	crates/horizon-client/src/chunk_io.rs::report_save_failure	logs, warns on low disk space and records the failed chunk; gap: no suppressed-exception store and no debug crash report
 PlayerAdvancements.reload	port	crates/horizon-client/src/lan/advancements.rs::ServerAdvancements::reload	on /reload every guest loaded so far has its visible set cleared and its progress re-read against the new tree, then the tick advancements are granted and the reward recipes added; gap: the host's own progress is not reloaded
 PlayerAdvancements.registerListeners	skip:other		no per-criterion listener map; trigger() tests every criterion when an event fires
-PlayerAdvancements.checkForAutomaticTriggers	missing		minor: criteria-less advancements from data packs are not granted when a player loads
+PlayerAdvancements.checkForAutomaticTriggers	inline	crates/horizon-client/src/game/advancements.rs::load_advancements	each advancement with no criteria has its rewards granted as the progress loads; no criterion is recorded, so the grant repeats on the next load
 PlayerAdvancements.asData	inline	crates/horizon-client/src/game/advancements.rs::Game::save_advancements	writes the progress that has any progress
 PlayerAdvancements.revoke	port	crates/horizon-client/src/game/advancements.rs::Game::revoke_advancement	revokes one criterion or all of them
 PlayerAdvancements.markForVisibilityUpdate	inline	crates/horizon-client/src/lan/advancements.rs::ServerAdvancements::update	visibility is recomputed for the whole tree on each update
