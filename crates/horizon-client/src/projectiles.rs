@@ -332,6 +332,10 @@ pub fn stuck_speed_of(name: &str) -> Option<Vec3> {
         _ => None,
     }
 }
+/// The first entity id `game::dragon` gives an End crystal in a projectile's
+/// target list (`CRYSTAL_IDS`, `SPECIAL + 16`): every reserved id from here up
+/// is a crystal, and a wind charge flies through one.
+pub const END_CRYSTAL_IDS: u32 = u32::MAX - 4080;
 pub trait ProjectileWorld {
     fn clip(&self, from: Vec3, to: Vec3) -> Option<(Vec3, [i32; 3], [i32; 3])>;
     /// `Entity.isInWater` as `updateFluidInteraction` sets it: some water
@@ -344,6 +348,13 @@ pub trait ProjectileWorld {
         velocity
     }
     fn targets(&self) -> &[(Who, Aabb)];
+    /// `AbstractWindCharge.canHitEntity`: whether `who` is an End crystal, which
+    /// a wind charge flies through instead of bursting on. `game::dragon` keeps
+    /// a level's End crystals under reserved entity ids from
+    /// [`END_CRYSTAL_IDS`] up.
+    fn is_end_crystal(&self, who: Who) -> bool {
+        matches!(who, Who::Mob(id) if id >= END_CRYSTAL_IDS)
+    }
     /// `Level.getMinY() - 64` (`Entity.checkBelowWorld`); the Overworld's
     /// unless the world says otherwise.
     fn below_world_y(&self) -> f64 {
@@ -1607,6 +1618,15 @@ impl Projectile {
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
             if Some(*who) == self.owner && !self.left_owner {
+                continue;
+            }
+            // `AbstractWindCharge.canHitEntity`: `entity.is(ENTITY_TYPES.END_CRYSTAL)`
+            // is false, so a wind charge goes through the crystal.
+            if matches!(
+                self.kind,
+                ProjectileKind::WindCharge | ProjectileKind::BreezeWindCharge
+            ) && w.is_end_crystal(*who)
+            {
                 continue;
             }
             let inflated = b.inflate(Vec3::new(margin, margin, margin));
@@ -3056,3 +3076,62 @@ mod arrow_color_tests {
     }
 }
 crate::impl_joined!(Projectile);
+
+#[cfg(test)]
+mod can_hit_entity_tests {
+    use super::*;
+
+    /// The target boxes of a wind charge's path: an End crystal (under the
+    /// reserved id `game::dragon` gives it) and a mob behind it.
+    struct CrystalThenMob {
+        targets: Vec<(Who, Aabb)>,
+    }
+    impl ProjectileWorld for CrystalThenMob {
+        fn clip(&self, _: Vec3, _: Vec3) -> Option<(Vec3, [i32; 3], [i32; 3])> {
+            None
+        }
+        fn in_water(&self, _: Aabb) -> bool {
+            false
+        }
+        fn targets(&self) -> &[(Who, Aabb)] {
+            &self.targets
+        }
+    }
+    fn box_at(x: f64) -> Aabb {
+        Aabb::new(Vec3::new(x, 100.0, -0.5), Vec3::new(x + 1.0, 101.0, 0.5))
+    }
+    fn world() -> CrystalThenMob {
+        CrystalThenMob {
+            targets: vec![
+                (Who::Mob(END_CRYSTAL_IDS), box_at(2.0)),
+                (Who::Mob(7), box_at(3.5)),
+            ],
+        }
+    }
+    fn shot(kind: ProjectileKind) -> Projectile {
+        let mut p = Projectile::new(kind, Vec3::new(0.5, 100.5, 0.5), None);
+        p.velocity = Vec3::new(5.0, 0.0, 0.0);
+        p
+    }
+    fn hit_who(p: &mut Projectile) -> Who {
+        match p.tick(&world()).1 {
+            Hit::Entity { who, .. } => who,
+            other => panic!("expected an entity hit, got {other:?}"),
+        }
+    }
+
+    /// `AbstractWindCharge.canHitEntity`: an End crystal is not hit, so a wind
+    /// charge flies on to the mob behind it; every other projectile still hits
+    /// the crystal first.
+    #[test]
+    fn a_wind_charge_flies_through_an_end_crystal() {
+        assert_eq!(
+            hit_who(&mut shot(ProjectileKind::WindCharge)),
+            Who::Mob(7)
+        );
+        assert_eq!(
+            hit_who(&mut shot(ProjectileKind::SmallFireball)),
+            Who::Mob(END_CRYSTAL_IDS)
+        );
+    }
+}
