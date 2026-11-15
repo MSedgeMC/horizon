@@ -526,6 +526,72 @@ enum OwnProfile {
     Done(Option<horizon_client::skins::Textures>),
 }
 
+/// `ChunkBatchSizeCalculator`: how many chunks a tick to ask the server for, from how long its
+/// last batches took to process. Vanilla starts at 2 ms a chunk and budgets 7 ms of chunk work a
+/// tick; each sample is kept within a third and three times the running average, and the average
+/// weights up to 49 old samples so one slow batch cannot swing the rate.
+pub(super) struct ChunkBatchSizeCalculator {
+    /// `aggregatedNanosPerChunk`.
+    aggregated_nanos_per_chunk: f64,
+    /// `oldSamplesWeight`: how many samples the average already holds.
+    old_samples_weight: u32,
+    /// `chunkBatchStartTime`: `onBatchStart` set it for the batch being timed.
+    batch_start: Instant,
+}
+
+/// `ChunkBatchSizeCalculator.MAX_OLD_SAMPLES_WEIGHT`.
+const MAX_OLD_SAMPLES_WEIGHT: u32 = 49;
+/// `ChunkBatchSizeCalculator.CLAMP_COEFFICIENT`: a sample stays within a third and three times
+/// the running average.
+const CLAMP_COEFFICIENT: f64 = 3.0;
+/// The chunk work budget a tick (`7000000.0` nanos in `getDesiredChunksPerTick`).
+const NANOS_PER_TICK: f64 = 7_000_000.0;
+
+impl ChunkBatchSizeCalculator {
+    pub(super) fn new() -> Self {
+        Self {
+            aggregated_nanos_per_chunk: 2_000_000.0,
+            old_samples_weight: 1,
+            batch_start: Instant::now(),
+        }
+    }
+
+    /// `onBatchStart`: the next finished batch is timed from now.
+    pub(super) fn on_batch_start(&mut self) {
+        self.batch_start = Instant::now();
+    }
+
+    /// `onBatchFinished`: one sample of how long the batch's `batch_size` chunks took, then the
+    /// rate the client asks the server for.
+    pub(super) fn on_batch_finished(&mut self, batch_size: i32) -> f32 {
+        self.record_batch(batch_size, self.batch_start.elapsed());
+        self.desired_chunks_per_tick()
+    }
+
+    /// The arithmetic `onBatchFinished` runs on one batch's measured `duration`: a batch of no
+    /// chunks teaches nothing. Split out so it is testable without a clock.
+    fn record_batch(&mut self, batch_size: i32, duration: Duration) {
+        if batch_size <= 0 {
+            return;
+        }
+        let nanos_per_chunk = duration.as_nanos() as f64 / f64::from(batch_size);
+        let clamped = nanos_per_chunk.clamp(
+            self.aggregated_nanos_per_chunk / CLAMP_COEFFICIENT,
+            self.aggregated_nanos_per_chunk * CLAMP_COEFFICIENT,
+        );
+        let weight = f64::from(self.old_samples_weight);
+        self.aggregated_nanos_per_chunk =
+            (self.aggregated_nanos_per_chunk * weight + clamped) / (weight + 1.0);
+        self.old_samples_weight = MAX_OLD_SAMPLES_WEIGHT.min(self.old_samples_weight + 1);
+    }
+
+    /// `getDesiredChunksPerTick`: the 7 ms a tick of chunk work holds at the average pace. The
+    /// server clamps a request to at least 0.01 and at most 64 chunks a tick.
+    pub(super) fn desired_chunks_per_tick(&self) -> f32 {
+        (NANOS_PER_TICK / self.aggregated_nanos_per_chunk) as f32
+    }
+}
+
 pub(super) struct Remote {
     pub session: Session,
     /// The single-player save this connection plays, by its folder in
@@ -574,6 +640,9 @@ pub(super) struct Remote {
     pub(super) chunk_format: Arc<ChunkFormat>,
     /// Decodes chunk packets as they arrive, off the frame.
     decoder: ChunkDecoder,
+    /// `ClientPacketListener.chunkBatchSizeCalculator`: the pace this server's chunk batches
+    /// are answered at, from how long they take here.
+    chunk_batch: ChunkBatchSizeCalculator,
     /// Options.serverRenderDistance: the server's view distance from the
     /// login or the last chunk-cache-radius packet.
     pub(super) view_distance: i32,
@@ -1184,6 +1253,7 @@ impl Game<'_> {
                 7,
             )),
             decoder: ChunkDecoder::new(),
+            chunk_batch: ChunkBatchSizeCalculator::new(),
             view_distance: self.settings.render_distance,
             simulation_distance: self.settings.simulation_distance,
             sequence: 0,
@@ -1412,6 +1482,7 @@ impl Game<'_> {
                 7,
             )),
             decoder: ChunkDecoder::new(),
+            chunk_batch: ChunkBatchSizeCalculator::new(),
             view_distance: self.settings.render_distance,
             simulation_distance: self.settings.simulation_distance,
             sequence: 0,
@@ -3361,11 +3432,24 @@ impl Game<'_> {
             C::ForgetLevelChunk(p) => {
                 self.forget_remote_columns(&mut [(p.pos[0], p.pos[1])].into_iter().collect());
             }
-            C::ChunkBatchFinished(_) => {
-                // ChunkBatchSizeCalculator's ceiling; meshing runs on workers.
-                self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
-                    chunks_per_tick: 64.0,
-                }));
+            // ClientPacketListener.handleChunkBatchStart: the batch's clock starts.
+            C::ChunkBatchStart(_) => {
+                if let Some(r) = self.remote.as_mut() {
+                    r.chunk_batch.on_batch_start();
+                }
+            }
+            // ClientPacketListener.handleChunkBatchFinished: one sample of how long this batch
+            // took, then the pace it asks the server for (`getDesiredChunksPerTick`).
+            C::ChunkBatchFinished(p) => {
+                let chunks_per_tick = self
+                    .remote
+                    .as_mut()
+                    .map(|r| r.chunk_batch.on_batch_finished(p.size));
+                if let Some(chunks_per_tick) = chunks_per_tick {
+                    self.send(S::ChunkBatchReceived(play::ChunkBatchReceived {
+                        chunks_per_tick,
+                    }));
+                }
             }
             C::BlockUpdate(p) => self.server_block(p.pos, p.state),
             C::AddTransientBlock(p) => self.add_transient_block(p.pos, p.state),
@@ -11389,6 +11473,59 @@ fn in_storage_range(view_distance: i32, center: (i32, i32), x: i32, z: i32) -> b
 mod item_use;
 #[path = "remote_removal.rs"]
 mod removal;
+#[cfg(test)]
+mod chunk_batch_size_tests {
+    use super::ChunkBatchSizeCalculator;
+    use std::time::Duration;
+
+    fn desired_after(batches: &[(u64, i32)]) -> f32 {
+        let mut calculator = ChunkBatchSizeCalculator::new();
+        for &(micros, size) in batches {
+            calculator.record_batch(size, Duration::from_micros(micros));
+        }
+        calculator.desired_chunks_per_tick()
+    }
+
+    /// `ChunkBatchSizeCalculator`: the rate starts at the 2 ms a chunk average (3.5 chunks in the
+    /// 7 ms budget of a tick), a sample is clamped within a third and three times the average, a
+    /// slow batch lowers the rate and a fast one raises it, and the weight of the old average caps
+    /// at 49 samples.
+    #[test]
+    fn the_batch_rate_follows_the_measured_batch_durations() {
+        let close = |got: f32, want: f32| {
+            assert!((got - want).abs() < 1.0e-3, "{got} is not {want}");
+        };
+        // No batch yet: 7 ms over the 2 ms initial average.
+        close(desired_after(&[]), 3.5);
+        // A slow batch: 10 ms for 2 chunks is 5 ms a chunk, within three times the average.
+        // The average becomes (2 + 5) / 2 = 3.5 ms, so 2 chunks a tick.
+        close(desired_after(&[(10_000, 2)]), 2.0);
+        // Then a fast batch: 0.1 ms a chunk is below a third of 3.5 ms, so it counts as a third
+        // of it; averaged at weight two that is 2.7222 ms, 2.5714 chunks a tick — above the 2.0
+        // the slow batch asked for.
+        let mixed = desired_after(&[(10_000, 2), (100, 10)]);
+        close(mixed, 2.571_428_6);
+        assert!(mixed > 2.0);
+        // Clamp bounds: a whole second for one chunk is capped at three times the 2 ms average,
+        // so the average becomes (2 + 6) / 2 = 4 ms and the rate 1.75 a tick.
+        close(desired_after(&[(1_000_000, 1)]), 1.75);
+        // A zero-duration batch is held at a third of the average:
+        // (2 + 2/3) / 2 = 4/3 ms, 5.25 chunks a tick.
+        close(desired_after(&[(0, 1)]), 5.25);
+        // Steady state: batches at the average leave it alone and cap its weight at 49 samples.
+        let mut calculator = ChunkBatchSizeCalculator::new();
+        for _ in 0..80 {
+            calculator.record_batch(1, Duration::from_millis(2));
+        }
+        close(calculator.desired_chunks_per_tick(), 3.5);
+        assert_eq!(calculator.old_samples_weight, 49);
+        // A batch of no chunks teaches nothing.
+        let before = calculator.desired_chunks_per_tick();
+        calculator.record_batch(0, Duration::from_secs(1));
+        assert_eq!(calculator.desired_chunks_per_tick(), before);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
