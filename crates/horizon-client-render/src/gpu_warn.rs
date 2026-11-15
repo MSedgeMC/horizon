@@ -54,6 +54,17 @@ pub fn warning_shown(warning: Option<&Warning>, skip: bool) -> bool {
     warning.is_some() && !skip
 }
 
+/// `VideoSettingsScreen.mouseClicked`: turning **Improved Transparency** on raises
+/// `UnsupportedGraphicsWarningScreen` for an adapter the warnlist names; turning it
+/// off raises nothing, and a saved `skipGpuWarning` keeps the dialog away.
+pub fn transparency_toggle_warning(
+    warning: Option<Warning>,
+    turning_on: bool,
+    skip: bool,
+) -> Option<Warning> {
+    warning.filter(|_| turning_on && !skip)
+}
+
 /// [`gpu_warning_for`] for the adapter the renderer found.
 pub fn adapter_warning() -> Option<Warning> {
     let adapter = crate::gfx::adapter()?;
@@ -80,5 +91,19 @@ mod tests {
         // "Don't show again" suppresses it.
         assert!(warning_shown(Some(&bad), false));
         assert!(!warning_shown(Some(&bad), true));
+    }
+
+    #[test]
+    fn improved_transparency_toggle_warns_once() {
+        // Turning the option on on a software adapter requests the dialog.
+        let software = gpu_warning_for("Mesa", "Mesa", true);
+        assert!(transparency_toggle_warning(software.clone(), true, false).is_some());
+        // Turning it off requests nothing.
+        assert_eq!(
+            transparency_toggle_warning(software.clone(), false, false),
+            None
+        );
+        // A saved "Don't show again" keeps it away.
+        assert_eq!(transparency_toggle_warning(software, true, true), None);
     }
 }

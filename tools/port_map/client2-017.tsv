@@ -94,7 +94,7 @@ VideoSettingsScreen.addOptions	port	crates/horizon-client-render/src/options_ui.
 VideoSettingsScreen.addTitle	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::layout	options.restartRequired in red above the list while the graphics API differs from the one the game started with
 VideoSettingsScreen.tick	port	crates/horizon-client-render/src/options_ui.rs::option_widget	Max Anisotropy is greyed unless Texture Filtering is Anisotropic; the restart line is drawn in layout
 VideoSettingsScreen.removed	port	crates/horizon-client/src/game/options.rs::Game::apply_ui_settings	gap: minor: applied on every apply, not only when the value changed; mipmap levels, texture filtering and anisotropy applied to the renderer
-VideoSettingsScreen.mouseClicked	missing		minor: no unsupported-graphics warning when Improved Transparency is turned on
+VideoSettingsScreen.mouseClicked	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::cycle_option	turning Improved Transparency on on an unsupported adapter requests UnsupportedGraphicsWarningScreen (once, unless skipGpuWarning), never when it is turned off
 VideoSettingsScreen.mouseScrolled	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::video_wheel_gui_scale	Ctrl with the wheel steps the GUI scale (auto counts as one past the maximum) and the list goes back to the top
 VideoSettingsScreen.updateFullscreenButton	skip:ui		rows are rebuilt from Settings on each layout, so there is no fullscreen widget to set
 VideoSettingsScreen.repositionElements	port	crates/horizon-client-input/src/window.rs::VideoModeList::refresh	the current monitor's modes are listed again for another monitor while the Video page is open (game/options.rs Game::apply_fullscreen)

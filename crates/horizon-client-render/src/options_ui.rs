@@ -1570,6 +1570,12 @@ pub struct OptionsUi {
     data_pack_stamp: (Vec<(String, Option<std::time::SystemTime>)>, Instant),
     /// A reload failure, dismissed before returning to the current page.
     pub resource_error: Option<String>,
+    /// `UnsupportedGraphicsWarningScreen` requested by turning Improved Transparency
+    /// on (`VideoSettingsScreen.mouseClicked`), and its buttons as last drawn.
+    pub gpu_warning: Option<crate::gpu_warn::Warning>,
+    /// The dialog's "Don't show again" was chosen: the host saves `skipGpuWarning`.
+    pub gpu_warning_skip: bool,
+    gpu_buttons: [(f32, f32); 2],
     /// When the pack screen's search box took the focus (its cursor blink).
     pack_focus: Instant,
     /// The selection carried over from a pack screen made again over a changed pack list
@@ -1667,6 +1673,9 @@ impl Default for OptionsUi {
             data_pack_resources: Default::default(),
             data_pack_stamp: (Vec::new(), Instant::now()),
             resource_error: None,
+            gpu_warning: None,
+            gpu_warning_skip: false,
+            gpu_buttons: [(0.0, 0.0); 2],
             pack_focus: Instant::now(),
             pack_reselected: false,
             in_world: false,
@@ -3330,6 +3339,77 @@ impl OptionsUi {
             Narratable::container_list(self.row_bands.len(), hovered_row, rect).key(key)
         });
     }
+    /// `UnsupportedGraphicsWarningScreen` as the options screen shows it: the adapter,
+    /// Continue and the "Don't show again" choice. `TitleScreen`'s copy lives in
+    /// horizon-client, so this crate lays out the same dialog itself.
+    fn draw_gpu_warning(
+        &mut self,
+        batch: &mut HudBatch,
+        atlas: &HudAtlas,
+        cursor: (f32, f32),
+        w: f32,
+        h: f32,
+    ) -> bool {
+        let Some(warning) = self.gpu_warning.clone() else {
+            return false;
+        };
+        ui::menu_background(batch, atlas, 0.0, 0.0, w, h, self.in_world);
+        let title = Text::literal(lang::get_or(
+            "options.graphics.warning.title",
+            "Graphics Card Unsupported",
+        ));
+        let message = Text::literal(format!(
+            "Your graphics card ({}) from {} is not fully compatible with Horizon's renderer. You can still play, but the game may render wrongly or run slowly.",
+            warning.renderer, warning.vendor
+        ));
+        // ConfirmScreen's column: the title, the message split to width - 50, and two
+        // 150-wide buttons 4 apart and 16 below it.
+        let message: Vec<Text> = atlas
+            .font
+            .split_lines(&message, (w - 50.0).max(1.0))
+            .into_iter()
+            .map(|(line, _)| line)
+            .take(15)
+            .collect();
+        let mw = message
+            .iter()
+            .map(|l| atlas.font.width_text(l))
+            .fold(0.0, f32::max);
+        let tw = atlas.font.width_text(&title);
+        let mh = 9.0 * message.len() as f32;
+        let row = 304.0;
+        let col = tw.max(mw).max(row);
+        let total = 9.0 + 8.0 + mh + 8.0 + 36.0;
+        let (lx, ly) = (((w - col) / 2.0).trunc(), ((h - total) / 2.0).trunc());
+        let (tx, mx) = (
+            lx + ((col - tw) / 2.0).trunc(),
+            lx + ((col - mw) / 2.0).trunc(),
+        );
+        let mid = mx + (mw / 2.0).trunc();
+        batch.text_styled(atlas, &title, tx, ly, u32::MAX, true);
+        for (i, line) in message.iter().enumerate() {
+            let x = mid - (atlas.font.width_text(line) / 2.0).trunc();
+            batch.text_styled(atlas, line, x, ly + 17.0 + 9.0 * i as f32, u32::MAX, true);
+        }
+        let (bx, by) = (
+            lx + ((col - row) / 2.0).trunc(),
+            ly + 9.0 + 8.0 + mh + 8.0 + 16.0,
+        );
+        let labels = [
+            Text::literal(lang::get_or("options.graphics.warning.accept", "Continue")),
+            Text::literal(lang::get_or(
+                "options.graphics.warning.checkbox",
+                "Do not show this message again",
+            )),
+        ];
+        for (i, label) in labels.iter().enumerate() {
+            let (x, y) = (bx + 154.0 * i as f32, by);
+            let hover = ui::hovered(cursor, x, y, 150.0, 20.0);
+            ui::button(batch, atlas, x, y, 150.0, 20.0, label, true, hover);
+        }
+        self.gpu_buttons = [(bx, by), (bx + 154.0, by)];
+        true
+    }
     /// `output`: that of the renderer the options are drawn for, each draw, so the graphics
     /// screen's rows and calibration read its offer and report as they are now, not another
     /// window's, and not one from before the page opened.
@@ -3385,6 +3465,9 @@ impl OptionsUi {
                 true,
                 ui::hovered(cursor, w / 2.0 - 100.0, h - 28.0, 200.0, 20.0),
             );
+            return;
+        }
+        if self.draw_gpu_warning(batch, atlas, cursor, w, h) {
             return;
         }
         // The page is its own screen (OptionsScreen, VideoSettingsScreen...).
@@ -3684,6 +3767,25 @@ impl OptionsUi {
         drag: bool,
         right: bool,
     ) -> Vec<Event> {
+        if self.gpu_warning.is_some() {
+            // UnsupportedGraphicsWarningScreen takes every press: Continue closes it,
+            // "Don't show again" also persists skipGpuWarning.
+            if !drag && !right {
+                let [accept, skip] = self.gpu_buttons;
+                if ui::hovered((x, y), accept.0, accept.1, 150.0, 20.0) {
+                    self.gpu_warning = None;
+                    return vec![Event::ButtonClick];
+                }
+                if ui::hovered((x, y), skip.0, skip.1, 150.0, 20.0) {
+                    self.gpu_warning = None;
+                    self.gpu_warning_skip = true;
+                    s.file
+                        .set("skipGpuWarning", crate::options_file::V::Bool(true));
+                    return vec![Event::ButtonClick, Event::Changed];
+                }
+            }
+            return Vec::new();
+        }
         if self.resource_error.is_some() {
             if !drag
                 && !right
@@ -4086,6 +4188,21 @@ impl OptionsUi {
         if opt == Opt::Preset {
             apply_preset(s);
         }
+        if opt == Opt::ImprovedTransparency {
+            // VideoSettingsScreen.mouseClicked: turning the option on on a card the
+            // warnlist names opens UnsupportedGraphicsWarningScreen; turning it off
+            // does not. The title's copy of that dialog is drawn by TitleScreen in
+            // horizon-client, which this crate cannot reach (and a running game has no
+            // title), so the request lives on this screen.
+            let warning = crate::gpu_warn::transparency_toggle_warning(
+                crate::gpu_warn::adapter_warning(),
+                s.improved_transparency,
+                s.file.bool("skipGpuWarning"),
+            );
+            if warning.is_some() {
+                self.gpu_warning = warning;
+            }
+        }
         if opt == Opt::HighContrast {
             // Options.highContrast: the built-in pack follows the option.
             let on = s.resource_packs.iter().any(|id| id == "high_contrast");
@@ -4130,7 +4247,7 @@ impl OptionsUi {
     ) -> Vec<Event> {
         self.size = size;
         self.framebuffer = framebuffer;
-        if self.resource_error.is_some() {
+        if self.gpu_warning.is_some() || self.resource_error.is_some() {
             return Vec::new();
         }
         self.shell_framebuffers();

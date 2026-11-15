@@ -530,7 +530,12 @@ impl Loading {
     }
 
     fn save_menu_settings(&mut self) {
-        if let Some(title) = &self.menu.title {
+        if let Some(title) = &mut self.menu.title {
+            // The video options' GPU warning chose "Don't show again": it is the
+            // title's `skipGpuWarning` too, so the next launch stays quiet.
+            if std::mem::take(&mut self.menu.options.gpu_warning_skip) {
+                title.skip_gpu_warning = true;
+            }
             self.settings.file.set(
                 "lastServer",
                 horizon_client::options_file::V::Str(title.last_server.clone()),
