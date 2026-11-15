@@ -888,3 +888,57 @@ fn a_mod_image_is_taken_whole_and_only_when_it_fits() {
     assert!(!mod_image_fits(4, 2, 33, 1024, 1024));
     assert!(!mod_image_fits(2048, 1, 2048 * 4, 1024, 1024));
 }
+
+/// The API number is the newest "API <n> adds" line of the hook points and of
+/// docs/native-mods.md, and each hook that line names is in the catalog. A hook
+/// added without its bump, or a number that drifts from the docs, fails here.
+#[test]
+fn hook_api_number_matches_the_history() {
+    use std::collections::BTreeSet;
+
+    let source = include_str!("native_hooks.rs");
+    let docs = include_str!("../../../../docs/native-mods.md");
+    let history: Vec<(u32, &str)> = source
+        .lines()
+        .filter_map(|line| {
+            let (number, adds) = line.strip_prefix("//! API ")?.split_once(' ')?;
+            Some((number.parse().ok()?, adds))
+        })
+        .collect();
+    let (api, newest) = *history
+        .iter()
+        .max_by_key(|(number, _)| *number)
+        .expect("a hook point API history line");
+    assert_eq!(super::NATIVE_HOOKS_API, api, "NATIVE_HOOKS_API is behind");
+    let documented = docs
+        .lines()
+        .find(|line| line.starts_with(&format!("API {api} adds ")))
+        .unwrap_or_else(|| panic!("docs/native-mods.md has no API {api} entry"));
+    let catalog: serde_json::Value =
+        serde_json::from_str(include_str!("../../../../native-hooks.json")).unwrap();
+    let names: BTreeSet<&str> = catalog["hooks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|hook| hook["name"].as_str().unwrap())
+        .collect();
+    let named: Vec<&str> = newest
+        .split('`')
+        .skip(1)
+        .step_by(2)
+        .filter_map(|token| token.split('(').next())
+        .map(str::trim)
+        .filter_map(|token| token.strip_prefix("native_"))
+        .collect();
+    assert!(!named.is_empty(), "API {api} names no hook");
+    for name in named {
+        assert!(
+            documented.contains(&format!("native_{name}")),
+            "API {api}: docs/native-mods.md does not name native_{name}"
+        );
+        assert!(
+            names.contains(name),
+            "API {api}: native-hooks.json lacks {name}"
+        );
+    }
+}
