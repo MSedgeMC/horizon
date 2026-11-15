@@ -125,10 +125,10 @@ TreeNodePosition.getAncestor	port	crates/horizon-client/src/advancements.rs::Lay
 TreeNodePosition.finalizePosition	inline	crates/horizon-client/src/advancements.rs::Tree::layout	positions are copied out in layout's final loop
 TreeNodePosition.run	port	crates/horizon-client/src/advancements.rs::Tree::layout	the whole layout for one root
 net/minecraft/advancements/predicates/BlockPredicate#matches	port	crates/horizon-client/src/advancements.rs::block	gap: minor: block-entity nbt and components are not checked; no vanilla advancement uses them
-net/minecraft/advancements/predicates/BlockPredicate#willMatchBlockEntity	missing		minor: block-entity nbt and components predicates are not read; no vanilla advancement uses them
+net/minecraft/advancements/predicates/BlockPredicate#willMatchBlockEntity	inline	crates/horizon-client/src/advancements.rs::block	the block-entity lookup is gated on the predicate having nbt, v["nbt"].as_str(); gap: minor: components alone do not trigger it
 net/minecraft/advancements/predicates/BlockPredicate#matchesState	inline	crates/horizon-client/src/advancements.rs::block	block id and state properties
 net/minecraft/advancements/predicates/BlockPredicate#matchesBlockEntity	inline	crates/horizon-client/src/advancements.rs::block	the nbt branch reads the block entity and rejects when compare_nbt does not hold; gap: minor: no DataComponentMatchers
-net/minecraft/advancements/predicates/BlockPredicate#matchesBlockEntityData	missing		minor: block-entity nbt is not read; no vanilla advancement uses it
+net/minecraft/advancements/predicates/BlockPredicate#matchesBlockEntityData	inline	crates/horizon-client/src/advancements.rs::block	the block_entity_nbt(pos) lookup is the entity as saved, compared with nbt::compare_nbt (NbtUtils.compareNbt)
 net/minecraft/advancements/predicates/BlockPredicate#matchesComponents	missing		minor: block-entity components are not read; no vanilla advancement uses them
 BlockPredicate.Builder.of	skip:data		datagen builder
 BlockPredicate.Builder.build	skip:data		datagen builder
