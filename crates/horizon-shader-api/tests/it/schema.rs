@@ -25,7 +25,7 @@ fn reads_every_key_of_schema_1() {
         ("sample_pack", "Sample Pack", "1.0.0")
     );
     assert_eq!(m.authors, ["Horizon"]);
-    assert_eq!(m.license.as_deref(), Some("MIT"));
+    assert_eq!(m.license.as_deref(), Some("LGPL-3.0-or-later"));
     assert_eq!(m.sky.as_ref().unwrap().file, "sky.wgsl");
     assert_eq!(
         m.material.as_ref().unwrap().name.as_deref(),
@@ -290,7 +290,10 @@ fn refuses_what_this_build_does_not_read() {
             "is not [a-z0-9_]",
         ),
         (
-            text.replace("license = \"MIT\"", "licence = \"MIT\""),
+            text.replace(
+                "license = \"LGPL-3.0-or-later\"",
+                "licence = \"LGPL-3.0-or-later\"",
+            ),
             "unknown field",
         ),
         (

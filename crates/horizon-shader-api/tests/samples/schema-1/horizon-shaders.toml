@@ -7,7 +7,7 @@ version = "1.0.0"
 api = "0.2"
 description = "Every key of schema 1."
 authors = ["Horizon"]
-license = "MIT"
+license = "LGPL-3.0-or-later"
 shared = ["common.wgsl"]
 
 [sky]
