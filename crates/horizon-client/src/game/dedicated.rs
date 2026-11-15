@@ -1123,6 +1123,13 @@ impl Game<'_> {
                 "To change this, set \"online-mode\" to \"true\" in the server.properties file.",
             );
         }
+        // DedicatedServer.initServer: OldUsersConverter.convertIpBanlist. The
+        // name lists still need their profile lookups and are not converted;
+        // a failure leaves banned-ips.txt for the next start, as vanilla's
+        // retry loop does.
+        if !horizon_server_files::old_users::convert_ip_banlist() {
+            log("WARN", "Could not convert banned-ips.txt");
+        }
         let mut lists = Lists::load();
         lists.use_whitelist = props.white_list;
         lists.enforce_whitelist = props.enforce_whitelist;
