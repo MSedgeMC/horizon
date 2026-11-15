@@ -548,7 +548,7 @@ fn decode_equippable(bytes: &[u8]) -> Option<Equippable> {
     })
 }
 
-/// `EquipmentSlot.byId`'s serialized names.
+/// `EquipmentSlot.byName`'s serialized names.
 fn equipment_slot_name(id: i32) -> Option<&'static str> {
     Some(match id {
         0 => "mainhand",

@@ -318,7 +318,7 @@ mod building_cache_tests;
 fn an_interact_packet_cannot_name_a_mob_the_pick_would_refuse() {
     use super::creatures::named_mob_pickable;
     assert!(named_mob_pickable(true, 17, None, None));
-    // Dead: `Mob.alive()` is health > 0.
+    // Dead: `LivingEntity.isAlive()` is health > 0.
     assert!(!named_mob_pickable(false, 17, None, None));
     // Ridden, and the camera entity (`remote_camera_id`).
     assert!(!named_mob_pickable(true, 17, Some(17), None));

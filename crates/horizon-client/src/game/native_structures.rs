@@ -63,7 +63,7 @@ impl Game<'_> {
 }
 
 /// `Identifier.tryParse`, less the paths the world's `generated` folder
-/// refuses (`FileUtil.isPathNormalized`): one with a `.` or `..` part.
+/// refuses (`FileUtil.decomposePath`): one with a `.` or `..` part.
 fn template_id(id: &str) -> Option<String> {
     let id = parse_identifier(id)?;
     let (_, path) = id.split_once(':')?;

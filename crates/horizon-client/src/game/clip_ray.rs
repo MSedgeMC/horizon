@@ -90,7 +90,7 @@ impl Game<'_> {
                     if miss || t0 > t1 || t0 > reach {
                         continue;
                     }
-                    // `AABB.clipDirection` takes only a plane met strictly after the start
+                    // `AABB.clip` takes only a plane met strictly after the start
                     // (0.0 < t): a box the ray starts inside or on the boundary of gives no
                     // entry here — the nudged inside test of `VoxelShape.clip` above is the
                     // only hit such a start can make, never a face-less one at t = 0 (#16551).

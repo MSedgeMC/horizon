@@ -132,7 +132,7 @@ impl Game<'_> {
     fn server_status(&self, state: &ServerState) -> Value {
         let millis = |nanos: u64| nanos as f64 / 1e6;
         let samples = self.clock.sorted_samples();
-        // The percentiles `/tick query` prints (TickCommand.percentileToString).
+        // The percentiles `/tick query` prints (TickCommand.nanosToMilisString).
         let at = |q: f64| {
             let i = ((samples.len() as f64 * q) as usize).min(samples.len().saturating_sub(1));
             samples.get(i).copied().map_or(0.0, millis)

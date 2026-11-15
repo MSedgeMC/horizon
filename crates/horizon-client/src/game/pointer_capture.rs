@@ -265,7 +265,7 @@ impl Game<'_> {
     }
     /// A person pressed a mouse button inside the agent's window (`at_unclaimed`): from now on
     /// it is a window like any other, and that press takes the pointer
-    /// (`MouseHandler.onPress`) instead of attacking. The focus changes it didn't hear while
+    /// (`MouseHandler.onButton`) instead of attacking. The focus changes it didn't hear while
     /// unclaimed, or an agent's `pad focus`, may have left the game's idea of the focus apart
     /// from the window's: it catches up first, as a `Focused` would have told it. So do the
     /// modifiers the person holds (`held_modifiers`).

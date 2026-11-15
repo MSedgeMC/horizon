@@ -7775,7 +7775,7 @@ mod tests {
 
     #[test]
     fn thrown_item_billboard_faces_the_front_camera() {
-        // Camera.setup turns the front camera round (yaw + 180, -pitch): its
+        // Camera.alignWithEntity turns the front camera round (yaw + 180, -pitch): its
         // right is the player's left.
         let (right, up) = thrown_item_axes(CameraType::FirstPerson, 0.0, 0.0);
         assert!(right.abs_diff_eq(glam::Vec3::NEG_X, 1e-5), "{right}");
