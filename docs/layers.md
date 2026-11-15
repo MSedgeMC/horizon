@@ -572,7 +572,7 @@ Both run in CI's verify job and in `tools/pr_ready.py`.
 
 ### Today's exceptions
 
-30, the `allowed` list in `tools/layers.json` on main at a89f338 (2026-11-11). That file is the source of truth:
+26, the `allowed` list in `tools/layers.json` on main at 47b40ec (2026-11-12). That file is the source of truth:
 `python3 tools/check_layers.py` prints the current count and `--list` prints each exception.
 
 | Crate | Uses, against the rule |
