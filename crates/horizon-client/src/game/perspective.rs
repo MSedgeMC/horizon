@@ -9,8 +9,9 @@ use horizon_client::{
     collisions::SceneCollisions,
 };
 use horizon_client::{
+    entities::nameplate::NameplateDistances,
     hud::HudBatch,
-    mobs::{Anim, Brain, Mob, MobType},
+    mobs::{Anim, Brain, Mob, MobType, VisualShape},
     mouse::Rotation,
     pose::Pose,
 };
@@ -54,37 +55,25 @@ impl RayWorld for VisualRays<'_, '_> {
         p: BlockPos,
         _: RayBlockMode,
     ) -> io::Result<VoxelShape> {
-        let facts = self.facts.get(state);
-        let name = &*facts.name;
-        // TransparentBlock (glass, stained and tinted glass, copper grates),
-        // IronBarsBlock (bars and panes) and PowderSnowBlock: nothing;
-        // SoulSandBlock and MudBlock: a full block; SnowLayerBlock and
-        // FenceBlock: their outline.
-        if name.ends_with("glass")
-            || name.ends_with("glass_pane")
-            || name.ends_with("_bars")
-            || name.ends_with("copper_grate")
-            || name == "minecraft:powder_snow"
-        {
-            return Ok(VoxelShape::empty());
-        }
-        if name == "minecraft:soul_sand" || name == "minecraft:mud" {
-            return Ok(VoxelShape::block());
-        }
-        if name == "minecraft:snow" || name.ends_with("_fence") {
-            let mut shape = VoxelShape::empty();
-            for b in facts.outline.iter() {
-                let b = b.map(f64::from);
-                let part = VoxelShape::from_box(Aabb::new(
-                    Vec3::new(b[0], b[1], b[2]),
-                    Vec3::new(b[3], b[4], b[5]),
-                ))
-                .map_err(|e| io::Error::other(format!("{e:?}")))?;
-                shape = shape
-                    .join(&part, ShapeOp::OR)
+        match horizon_client::mobs::visual_shape(self.facts, state) {
+            VisualShape::Empty => return Ok(VoxelShape::empty()),
+            VisualShape::Block => return Ok(VoxelShape::block()),
+            VisualShape::Outline(boxes) => {
+                let mut shape = VoxelShape::empty();
+                for b in boxes {
+                    let b = b.map(f64::from);
+                    let part = VoxelShape::from_box(Aabb::new(
+                        Vec3::new(b[0], b[1], b[2]),
+                        Vec3::new(b[3], b[4], b[5]),
+                    ))
                     .map_err(|e| io::Error::other(format!("{e:?}")))?;
+                    shape = shape
+                        .join(&part, ShapeOp::OR)
+                        .map_err(|e| io::Error::other(format!("{e:?}")))?;
+                }
+                return Ok(shape);
             }
-            return Ok(shape);
+            VisualShape::Collision => {}
         }
         let binding = self.scene.binding;
         binding
@@ -289,9 +278,9 @@ impl Game<'_> {
         }
         // Minecraft.cameraEntity: a server's spectator camera on a mob or
         // another player.
-        let (entity, descending, entity_kind) = match self.camera_mob() {
-            Some(m) => (
-                super::remote_camera::mob_camera_entity(m),
+        let (entity, descending, entity_kind) = match self.camera_entity() {
+            Some(e) => (
+                e,
                 false,
                 horizon_world::collision_context::EntityContextKind::Living,
             ),
@@ -365,6 +354,17 @@ impl Game<'_> {
             view.y_rot,
             view.x_rot,
         ))
+    }
+    /// `Camera.rotation()` as the quads of particles take it: the frame's camera (a
+    /// bed's, a front view's, a mod's), not the player's own yaw and pitch.
+    pub(super) fn particle_rotation(&self) -> glam::Quat {
+        if self.studio.flying() {
+            return self.camera_orientation();
+        }
+        let (yaw, pitch) = self
+            .posed_rotation
+            .unwrap_or((self.view.y_rot, self.view.x_rot));
+        super::camera_rotation(CameraType::FirstPerson, yaw, pitch)
     }
     /// The player as `Camera.alignWithEntity` sees it.
     fn player_camera_entity(&mut self) -> Option<CameraEntity> {
@@ -449,11 +449,17 @@ impl Game<'_> {
     /// Keep the player's model in step with the player (`LivingEntity.tick`
     /// body turning, `WalkAnimationState`, the swing and the pose).
     pub(super) fn tick_player_model(&mut self) {
-        let scale = self
-            .player
-            .as_mut()
-            .and_then(|p| p.attribute("minecraft:scale").ok())
-            .unwrap_or(1.0) as f32;
+        let (scale, nameplate) = self.player.as_mut().map_or_else(
+            || (1.0, NameplateDistances::default()),
+            |p| {
+                let scale = p.attribute("minecraft:scale").unwrap_or(1.0) as f32;
+                let nameplate = NameplateDistances {
+                    name_tag: p.attribute("minecraft:name_tag_distance").ok(),
+                    below_name: p.attribute("minecraft:below_name_distance").ok(),
+                };
+                (scale, nameplate)
+            },
+        );
         let Some(p) = self.player.as_ref() else {
             self.player_model = None;
             return;
@@ -516,6 +522,7 @@ impl Game<'_> {
         };
         m.extra.ints[1] = bed;
         m.extra.model_scale = scale;
+        m.set_nameplate(nameplate);
         // The crouch flag is still last tick's here.
         let (from, at) =
             player_model_positions(previous_position, position, m.extra.crouching, crouching);

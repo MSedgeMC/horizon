@@ -31,7 +31,7 @@ fn step(mob: &mut Mob, w: &MobWorld, environment: &str) -> (f32, i32, usize) {
     mob.velocity = Vec3::ZERO;
     assert_eq!(in_rain(mob, &scene), scene.raining);
     let mut events = Vec::new();
-    assert!(tick(mob, &scene, &mut LegacyRandom::new(2), &mut events));
+    assert!(tick(mob, &scene, &mut level_random(2), &mut events));
     let sounds = events
         .iter()
         .filter(|event| matches!(event, MobEvent::Sound("entity.generic.extinguish_fire", ..)))
@@ -144,6 +144,12 @@ fn wet_fire_damage_and_extinguishing_follow_the_full_mob_tick() {
                     let actual = step(&mut mob, w, "lava_rain");
                     println!("WET_FIRE NoAI={no_ai} lava_rain_repeat fire=0 actual={actual:?}");
                 }
+            }
+            // Entity.applyEffectsFromBlocks resets a negative Fire to 0 on the
+            // first tick it is not burning, with and without AI.
+            for no_ai in [false, true] {
+                let mut mob = pig(types, no_ai, false, -1);
+                assert_eq!(step(&mut mob, w, "dry").1, 0, "NoAI={no_ai}");
             }
             // Check the RNG state at the actual contact/extinguish boundary:
             // silent new ignition consumes no pitch draws; an existing burn
