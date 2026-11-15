@@ -130,11 +130,20 @@ impl Game<'_> {
         }
     }
 
-    /// `EvokerFangs.tick`.
+    /// `EvokerFangs.tick`. Only the fangs of an entity-ticking chunk tick:
+    /// `ServerLevel.tick` walks `EntityTickList`, which a chunk leaves as soon
+    /// as its ticket does (a `/forceload remove` on a far chunk). Until the
+    /// streaming sweep unloads it, such a chunk stays resident, and its fangs
+    /// keep their `Warmup`/life for the entity storage that saves them there.
     pub(super) fn tick_fangs(&mut self) {
         horizon_threads::work::clear_work();
+        let ticking = self.entity_ticking_area();
         let mut list = std::mem::take(&mut self.fangs.list);
         list.retain_mut(|f| {
+            let (x, z) = (f.pos[0].floor() as i32, f.pos[2].floor() as i32);
+            if !ticking(x, z) {
+                return true;
+            }
             f.warmup = f.warmup.wrapping_sub(1);
             if f.warmup >= 0 {
                 return true;
@@ -444,5 +453,123 @@ mod tests {
             party(false, None),
             Some((false, party(true, Some(blue))))
         ));
+    }
+}
+
+#[cfg(test)]
+mod reload_tests {
+    use super::*;
+    use crate::game::{Audio, Options, Progress, Settings, load_resources};
+    use horizon_client::chunk::Chunk;
+    use horizon_world::nbt::Tag;
+    use std::collections::HashSet;
+
+    /// `EvokerFangs` saves `Warmup` and `Owner` (`addAdditionalSaveData`) and
+    /// nothing of its 22-tick `lifeTicks`, which starts again at 22 on load;
+    /// the chunk's `EntityStorage` keeps it (`EntityType` without `noSave`).
+    /// `ServerLevel.tick` ticks only the entities of an entity-ticking chunk,
+    /// so a fang whose `/forceload` ticket went away waits, unticked, for the
+    /// streaming sweep that saves and unloads its chunk (#16909).
+    ///
+    /// The other "#16909 entity gone" row, a `shulker_bullet` summoned with
+    /// `Fire:300s`, is a different cause: `Entity.baseTick` hurts a burning
+    /// entity for 1 whenever `Fire % 20 == 0` (so on the bullet's first tick),
+    /// and `ShulkerBullet.hurtServer` discards it, while Horizon's projectile
+    /// fire counter only counts down. That is projectile fire damage, not this
+    /// tick gate, and is reported rather than changed here.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_summoned_fangs_survives_a_chunk_reload() {
+        let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!("no menu handoff"),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.headless = true;
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.world
+            .chunks
+            .insert((0, 0), std::sync::Arc::new(Chunk::empty(0, 0)));
+        // `/forceload add 0 0`: a forced chunk is entity-ticking.
+        game.streaming.forced.insert((0, 0));
+        game.update_chunk_tickets();
+        let uuid = [16909, 0, 0, 1];
+        let summon = format!(
+            "summon minecraft:evoker_fangs 4.5 64 4.5 {{UUID:[I;{},{},{},{}]}}",
+            uuid[0], uuid[1], uuid[2], uuid[3]
+        );
+        assert!(game.run_command(&summon), "{summon}");
+        // The sweep reads after 20 ticks, two ticks before the fang expires.
+        for _ in 0..20 {
+            game.tick_fangs();
+        }
+        assert_eq!(game.fangs.list.len(), 1, "the fangs are still live");
+        assert_eq!(game.fangs.list[0].life, 2, "20 ticks of a 22-tick life");
+        // `/forceload remove`: the chunk stops entity-ticking but stays resident
+        // until the streaming sweep (every eighth tick at most). Vanilla's
+        // `EntityTickList` leaves it at once, so its fang keeps its counters.
+        game.streaming.forced.remove(&(0, 0));
+        game.update_chunk_tickets();
+        for _ in 0..8 {
+            game.tick_fangs();
+        }
+        assert_eq!(
+            game.fangs.list.len(),
+            1,
+            "a non-ticking chunk's fangs are frozen, not discarded"
+        );
+        assert_eq!(game.fangs.list[0].life, 2, "and their life did not move");
+        // The chunk unloads: its entities are saved and leave the level.
+        let written: Vec<Tag> = game
+            .entity_chunks(&HashSet::from([(0, 0)]), true)
+            .into_iter()
+            .flat_map(|(_, tags)| tags)
+            .collect();
+        assert!(game.fangs.list.is_empty(), "the unloaded fangs left");
+        assert_eq!(
+            written
+                .iter()
+                .filter(|tag| horizon_client::entity_nbt::kind(tag).as_deref()
+                    == Some("minecraft:evoker_fangs"))
+                .count(),
+            1,
+            "the chunk saved the fangs"
+        );
+        // Loading the chunk again spawns them back.
+        game.world.queue_entity_nbt((0, 0), written);
+        game.spawn_loaded_entities();
+        assert_eq!(game.fangs.list.len(), 1, "the reloaded fangs are present");
+        assert!(
+            game.target_with_uuid(uuid).is_some(),
+            "the reloaded fangs answer to the summoned UUID"
+        );
+        // Ticking again needs an entity-ticking chunk, as vanilla's does.
+        game.streaming.forced.insert((0, 0));
+        game.update_chunk_tickets();
+        game.tick_fangs();
+        assert_eq!(game.fangs.list.len(), 1, "and still tick");
     }
 }
