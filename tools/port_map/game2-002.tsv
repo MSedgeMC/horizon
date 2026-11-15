@@ -110,6 +110,7 @@ Ravager.createAttributes	skip:data		attribute defaults come from data tables
 Ravager.addAdditionalSaveData	inline	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	AttackTick, StunTick and RoarTick are written there
 Ravager.readAdditionalSaveData	inline	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	the same three tick values are read there
 Ravager.stunEffect	port	crates/horizon-client/src/mobs/ravager.rs::ai_step	the stun particle is emitted from ai_step
+Ravager.getAttackBoundingBox	inline	crates/horizon-client/src/mobs.rs::Mob::attack_box	the base box deflated by 0.05 on x and z after the reach is added
 Ravager.hasLineOfSight	missing		`ravager::immobile` knows the biting, stunned and roaring states, but no target goal is gated on it, so an immobile ravager still sees and takes targets
 Ravager.applyRoarKnockbackClient	inline	crates/horizon-client/src/mobs/ravager.rs::roar	the roar push is applied in roar
 Ravager.strongKnockback	inline	crates/horizon-client/src/mobs/ravager.rs::roar	the push of 4 along the direction is in roar

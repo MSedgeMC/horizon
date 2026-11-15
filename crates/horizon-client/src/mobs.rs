@@ -3076,7 +3076,14 @@ impl Mob {
             lo = Vec3::new(lo.x.min(vlo.x), lo.y, lo.z.min(vlo.z));
             hi = Vec3::new(hi.x.max(vhi.x), hi.y, hi.z.max(vhi.z));
         }
-        Aabb::new(lo, hi).inflate(Vec3::new(range, 0.0, range))
+        let b = Aabb::new(lo, hi).inflate(Vec3::new(range, 0.0, range));
+        // `Ravager.getAttackBoundingBox`: the base box deflated by 0.05 on x
+        // and z, so its reach is a twentieth of a block shorter.
+        if self.kind.species == Species::Ravager {
+            b.deflate(Vec3::new(0.05, 0.0, 0.05))
+        } else {
+            b
+        }
     }
     /// `positionRider` seated it on vehicle `id`: its own vehicle attachment
     /// and the vehicle's box, good while it rides that vehicle.

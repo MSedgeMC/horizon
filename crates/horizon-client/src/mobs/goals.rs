@@ -3230,6 +3230,22 @@ mod melee_range_tests {
         assert!(!blunt.melee_reaches_beside(None, target(&blunt, 2.0)));
     }
 
+    /// `Ravager.getAttackBoundingBox`: the base box deflated by 0.05 on x and
+    /// z, so a ravager's melee reach is 0.05 blocks shorter than the same
+    /// box's (`Mob.getAttackBoundingBox`).
+    #[test]
+    fn a_ravagers_attack_box_is_deflated_by_a_twentieth() {
+        let kind = (*crate::mobs::sensor_scan_tests::kind()).clone();
+        let mut ravager = kind.clone();
+        ravager.species = Species::Ravager;
+        let ravager = Mob::new(1, Arc::new(ravager), Vec3::new(0.5, 64.0, 0.5), 0.0);
+        let zombie = Mob::new(1, Arc::new(kind), Vec3::new(0.5, 64.0, 0.5), 0.0);
+        // The default reach is sqrt(2.04) - 0.6 (about 0.828); the ravager's
+        // deflated box stops at about 0.778.
+        assert!(zombie.melee_reaches_beside(None, target(&zombie, 0.8)));
+        assert!(!ravager.melee_reaches_beside(None, target(&ravager, 0.8)));
+    }
+
     /// `Mob.getAttackBoundingBox`: a rider's box widened on x and z to its
     /// vehicle's (a 1.4 wide horse under a 0.6 wide zombie) before the reach
     /// is added; `LivingEntity.getHitbox`: a rider is hit from its seat up.
