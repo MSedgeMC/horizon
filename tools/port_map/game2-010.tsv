@@ -84,7 +84,7 @@ Level.getChunk	missing		unsure: no getter for a full chunk object found; block r
 Level.getFluidState	port	crates/horizon-client/src/game.rs::Column::state	gap: minor: the isInValidBounds check is not repeated here
 Level.isDarkOutside	port	crates/horizon-client/src/game.rs::GameLevel::sky_darken	gap: minor: the sky darkness value; the fixed-time dimension check is not here
 Level.playSound	port	crates/horizon-world/src/level/update.rs::Sim::sound	
-Level.playSeededSound	missing		unsure: no seeded sound path found; Sim::sound takes no seed
+Level.playSeededSound	port	crates/horizon-client/src/lan/containers.rs::Hub::sound	the seed is a ClientboundSoundPacket field: soundSeedGenerator.nextLong per call, and the excepted player is left out of the broadcast
 Level.addBlockEntityTicker	port	crates/horizon-client/src/game.rs::GameLevel::load_block_entity	the ticker comes with the block entity load
 Level.guardEntityTick	skip:debug		crash-report wrapper around an entity tick
 Level.getBlockEntity	skip:other		bare block_entities map lookup at each caller; no port of its own
