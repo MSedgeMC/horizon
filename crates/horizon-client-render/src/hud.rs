@@ -393,7 +393,7 @@ fn animation_of(mcmeta: Option<&str>) -> Option<AnimationMetadata> {
     AnimationMetadata::from_json(&meta.get("animation")?.to_string()).ok()
 }
 /// An animated strip's first frame: the region the mcmeta's frame size picks
-/// (`AnimationMetadataSection.frameSize`), which is the top-left square unless
+/// (`AnimationMetadataSection.calculateFrameSize`), which is the top-left square unless
 /// it names other dimensions or the frames run along a row.
 fn first_frame(
     (w, h, pixels): (u32, u32, Vec<u8>),
@@ -2092,7 +2092,7 @@ impl HudBatch {
         let uv = [(w.u0 + w.u1) / 2.0, (w.v0 + w.v1) / 2.0];
         self.quad(corners, [uv; 4], color);
     }
-    /// GuiGraphics.fillGradient: `top` to `bottom`, down the rectangle.
+    /// GuiGraphicsExtractor.fillGradient: `top` to `bottom`, down the rectangle.
     pub fn fill_gradient(
         &mut self,
         atlas: &HudAtlas,
@@ -2135,7 +2135,7 @@ impl HudBatch {
         };
         self.text_styled(atlas, &t, x, y, color, shadow)
     }
-    /// Font.drawInternal: styled glyphs, shadows first, with bold, italic,
+    /// Font.prepareText: styled glyphs, shadows first, with bold, italic,
     /// underline and strikethrough. `color` is the default colour and alpha.
     pub fn text_styled(
         &mut self,
@@ -2211,7 +2211,7 @@ impl HudBatch {
         world: bool,
         outline: Option<(u32, [f32; 2])>,
     ) -> f32 {
-        // StringDecomposer.iterateFormatted inside Font.drawInternal:
+        // StringDecomposer.iterateFormatted inside Font.prepareText:
         // `§` codes inside a span restyle what follows and are not drawn.
         let text = text.resolved();
         // Language.getVisualOrder: shaped and reordered for right-to-left text.
@@ -2250,7 +2250,7 @@ impl HudBatch {
             } else {
                 font.glyph_styled(ch, style)
             };
-            // Font.StringRenderOutput.accept: obfuscated characters draw a
+            // Font.PreparedTextBuilder.accept: obfuscated characters draw a
             // random glyph of the same width each frame.
             if object.is_none() && style.obfuscated == Some(true) && ch != ' ' {
                 g = font.random_glyph(style, g.advance);

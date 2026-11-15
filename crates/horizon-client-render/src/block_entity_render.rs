@@ -2955,7 +2955,7 @@ impl BlockEntityRenderer {
                     SkullType::Piglin => ("piglin_head", "entity/piglin/piglin"),
                     SkullType::Player => ("player_head", "entity/player/slim/steve"),
                 };
-                // SkullBlockRenderer.getRenderType: the profile's skin when it
+                // SkullBlockRenderer.resolveSkullRenderType: the profile's skin when it
                 // resolves, `SKIN_BY_TYPE` (steve) otherwise.
                 let skin = if *kind == SkullType::Player {
                     (scene.skull)(pos)
