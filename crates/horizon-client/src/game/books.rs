@@ -339,6 +339,49 @@ impl Game<'_> {
         self.with_source(source, |g| g.resolve_book_pages(&mut written));
         book.data_mut().written = Some(written);
     }
+    /// `LecternBlockEntity.loadAdditional` -> `resolveBook` for the lecterns a
+    /// chunk just brought in. A chunk is decoded off the game thread, where a
+    /// page's selector or score cannot be read, so its books resolve here as
+    /// the chunk enters the level, with each lectern's own
+    /// `createCommandSourceStack` position, before the tick goes on. A client
+    /// mirroring a server keeps the server's resolved book: the server owns
+    /// the block entity.
+    pub(super) fn resolve_loaded_lecterns(&mut self) {
+        if self.remote.is_some() {
+            return;
+        }
+        let mut lecterns: Vec<[i32; 3]> = Vec::new();
+        for &(x, z, _) in &self.world.loaded_chunks {
+            let Some(saved) = self
+                .world
+                .chunks
+                .get(&(x, z))
+                .and_then(|chunk| chunk.saved.as_deref())
+            else {
+                continue;
+            };
+            for (at, tag) in &saved.block_entity_sources {
+                if horizon_client::save::text(tag.get("id")).as_deref() == Some("minecraft:lectern")
+                {
+                    lecterns.push([at.0, at.1, at.2]);
+                }
+            }
+        }
+        for at in lecterns {
+            let key = (at[0], at[1], at[2]);
+            let mut book = match self.world.block_entities.get_mut(&key) {
+                Some(BlockEntity::Lectern(l)) => match l.book.take() {
+                    Some(book) => book,
+                    None => continue,
+                },
+                _ => continue,
+            };
+            self.resolve_lectern_book(&mut book, at, None);
+            if let Some(BlockEntity::Lectern(l)) = self.world.block_entities.get_mut(&key) {
+                l.book = Some(book);
+            }
+        }
+    }
     /// The screen a book in hand opens: `BookEditScreen` for a book and
     /// quill, `BookViewScreen` for a written book.
     fn book_screen(&self, stack: &ItemStack) -> Option<BookScreen> {
@@ -2287,6 +2330,7 @@ mod link_cursor_tests {
 mod lectern_page_resolution_tests {
     use super::super::native_machines::tests::server_game;
     use horizon_client::{
+        chunk::ChunkExtras,
         containers::{BlockEntity, Lectern},
         item_data::WrittenBook,
         items::ItemStack,
@@ -2294,6 +2338,7 @@ mod lectern_page_resolution_tests {
     };
     use horizon_core::geometry::Vec3;
     use horizon_world::nbt::Tag;
+    use std::sync::Arc;
 
     /// Three component pages: the nearest entity within one block of the
     /// lectern, within three, and a score.
@@ -2387,5 +2432,80 @@ mod lectern_page_resolution_tests {
             .expect("the saved book");
         assert!(written.resolved, "opening the lectern resolves its book");
         assert_eq!(written.pages, ["", "Player", "7"]);
+    }
+
+    /// `LecternBlockEntity.loadAdditional` -> `resolveBook`: a book a save left
+    /// on a lectern resolves its pages with the lectern's own source as its
+    /// chunk loads, so a distance-limited selector reads from the block and
+    /// not from whoever later opens the screen. Nothing opens it here.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_saved_lecterns_book_resolves_when_its_chunk_loads() {
+        let mut game = server_game();
+        game.set_allow_commands(true);
+        game.player = Some(
+            PlayerMotion::new(game.motion, Vec3::new(8.5, 64.0, 10.5)).expect("a player position"),
+        );
+        let key = (8, 64, 8);
+        let state = game
+            .pack
+            .assets
+            .registry
+            .default_state("minecraft:lectern")
+            .unwrap();
+        game.world.set(key.0, key.1, key.2, state).unwrap();
+        assert!(game.run_command("scoreboard objectives add pages dummy"));
+        assert!(game.run_command("scoreboard players set Player pages 7"));
+
+        // The lectern as the save holds it: three component pages, unresolved.
+        let saved = horizon_client::save::encode_block_entity(
+            key,
+            &BlockEntity::Lectern(Lectern {
+                book: Some(book()),
+                page: 0,
+            }),
+            "minecraft:lectern",
+        );
+        let (pos, loaded) =
+            horizon_client::save::decode_block_entity(&saved).expect("the saved lectern");
+        assert_eq!(pos, key);
+        let BlockEntity::Lectern(l) = &loaded else {
+            panic!("a lectern");
+        };
+        assert!(
+            !l.book
+                .as_ref()
+                .and_then(|b| b.data())
+                .and_then(|d| d.written.as_ref())
+                .expect("the saved book")
+                .resolved,
+            "the saved book starts unresolved"
+        );
+        game.world.block_entities.insert(pos, loaded);
+        // Its chunk arrives with the save's own block entity NBT beside it.
+        let chunk = Arc::make_mut(game.world.chunks.get_mut(&(0, 0)).unwrap());
+        chunk.saved = Some(Arc::new(ChunkExtras {
+            block_entity_sources: vec![(pos, saved)],
+            ..ChunkExtras::default()
+        }));
+        game.world.loaded_chunks.push((0, 0, false));
+
+        game.update_world();
+
+        let Some(BlockEntity::Lectern(l)) = game.world.block_entities.get(&key) else {
+            panic!("the loaded lectern");
+        };
+        let written = l
+            .book
+            .as_ref()
+            .and_then(|b| b.data())
+            .and_then(|d| d.written.clone())
+            .expect("the loaded book");
+        assert!(written.resolved, "loading the chunk resolves the book");
+        assert_eq!(
+            written.pages,
+            ["", "Player", "7"],
+            "the pages resolve from the lectern (2.2 blocks from the player), not from the reader"
+        );
     }
 }

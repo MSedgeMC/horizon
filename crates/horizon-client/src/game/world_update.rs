@@ -213,6 +213,10 @@ impl Game<'_> {
         let (uploads, unloaded) =
             horizon_client::spans::time("streaming", || self.streaming.update(&mut self.world));
         self.streaming.extra.truncate(areas);
+        // A lectern read from a save resolves its book pages as its chunk
+        // arrives (`LecternBlockEntity.loadAdditional`): the chunk was decoded
+        // on a worker, which has no game to read a selector or a score with.
+        horizon_client::spans::time("resolve_loaded_lecterns", || self.resolve_loaded_lecterns());
         horizon_client::spans::time("spawn_fresh_chunks", || self.spawn_fresh_chunks());
         // Before the unloaded chunks' block entities are written and dropped.
         horizon_client::spans::time("mods_chunks_changed", || {
