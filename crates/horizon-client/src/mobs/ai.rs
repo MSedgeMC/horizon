@@ -1775,8 +1775,6 @@ fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     let self_pushable = m.pushable() && !super::equine::is_vehicle(m);
     let mut targets = super::world::take_push_targets();
     if let Some(p) = &w.player
-        // Parrot.doPush skips a player: a parrot pushes mobs, never the player.
-        && m.species() != Species::Parrot
         // Entity.push: passengers of the same vehicle never push each other.
         && m.rider.is_none()
         && p.alive
@@ -1812,6 +1810,12 @@ fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
             Verdict::Push => {}
             Verdict::Skip => continue,
             Verdict::Stop => break,
+        }
+        // Parrot.doPush: a parrot pushes mobs but never a player, and
+        // `Entity.push(this)` is not called at all for one, so the push on
+        // the parrot itself is skipped with it.
+        if m.species() == Species::Parrot && matches!(who, Who::Player) {
+            continue;
         }
         // Warden.doPush: touching it angers it, then the push itself.
         if m.species() == Species::Warden {
@@ -3974,38 +3978,69 @@ mod same_vehicle_push_tests {
 #[cfg(test)]
 mod parrot_push_tests {
     use super::*;
-    use crate::mobs::world::{test_player, with_test_world};
+    use crate::mobs::Seen;
+    use crate::mobs::world::{take_push_targets, test_player, with_test_world};
+    use horizon_core::random::{EntityRandom, LegacyRandom};
 
-    /// Vanilla `Parrot.doPush` skips a `Player`: a parrot shoves the mobs it
-    /// stands in but never the player, while a chicken in the same spot
-    /// pushes the player too.
-    #[test]
-    fn a_parrot_pushes_no_player_but_a_chicken_does() {
-        // The pushes a pusher of `kind` gives with the player in its box.
-        let player_pushes = |kind: &str| {
-            let mut pusher = None;
-            with_test_world(&[], |_, types| {
-                pusher = Some(Mob::new(
-                    1,
-                    std::sync::Arc::new(types.types[kind].clone()),
-                    Vec3::new(0.5, 64.0, 0.5),
-                    0.0,
-                ));
-            });
-            let mut pusher = pusher?;
+    /// What a pusher of `kind` does in a crowd of a player and two pigs, with
+    /// `maxEntityCramming` at 3 and the collision cap at 1: the events it
+    /// emits, whether the player stayed in the push list, and whether the
+    /// crowd crushed it.
+    fn run(kind: &str) -> Option<(Vec<MobEvent>, bool, bool)> {
+        let mut out = None;
+        let ran = with_test_world(&[], |base, types| {
+            let mut m = Mob::new(
+                1,
+                std::sync::Arc::new(types.types[kind].clone()),
+                Vec3::new(0.5, 64.0, 0.5),
+                0.0,
+            );
+            // Java `new Random(1234567).nextInt(4)` is 0: the quarter that hurts.
+            m.random = EntityRandom::own(LegacyRandom::new(1234567));
+            let crowd: Vec<Seen> = [(2, "minecraft:pig", 0.7), (3, "minecraft:pig", 0.8)]
+                .iter()
+                .map(|&(id, kind, x)| {
+                    Mob::new(
+                        id,
+                        std::sync::Arc::new(types.types[kind].clone()),
+                        Vec3::new(x, 64.0, 0.5),
+                        0.0,
+                    )
+                    .seen(None)
+                })
+                .collect();
+            let mut w = MobWorld {
+                others: &crowd,
+                max_entity_cramming: 3,
+                ..base.clone()
+            };
+            // The player and both pigs overlap the parrot's box.
+            w.player = Some(test_player(Vec3::new(0.6, 64.0, 0.5)));
             let mut events = Vec::new();
-            let ran = with_test_world(&[], |w, _| {
-                let mut w = w.clone();
-                w.player = Some(test_player(Vec3::new(0.7, 64.0, 0.5)));
-                push_entities(&mut pusher, &w, &mut events);
-            });
-            ran.then_some(events)
-        };
-        // Without the vanilla data under .local/horizon-client the world
-        // cannot be built: the test has nothing to check.
-        let Some(parrot) = player_pushes("minecraft:parrot") else {
+            super::super::push::with_cap(1, || push_entities(&mut m, &w, &mut events));
+            // The list the cramming check and the cap walked, kept for the next mob.
+            let targets = take_push_targets();
+            let list_has_player = targets.iter().any(|t| t.0 == Who::Player);
+            let crammed = m.last_damage.map(|(d, _)| d.kind) == Some(DamageKind::Cramming);
+            out = Some((events, list_has_player, crammed));
+        });
+        ran.then_some(())?;
+        out
+    }
+
+    /// Vanilla `Parrot.doPush` skips a `Player` inside the push loop: the
+    /// player stays in `getPushableEntities` and fills the cramming crowd,
+    /// but gets no push. The pushes the cap lets through are the mobs' alone.
+    #[test]
+    fn a_parrot_never_pushes_the_player_but_counts_it_in_the_push_list() {
+        let Some((parrot, parrot_has_player, parrot_crammed)) = run("minecraft:parrot") else {
             return;
         };
+        assert!(parrot_has_player, "the parrot's push list has no player");
+        assert!(
+            parrot_crammed,
+            "the player did not count for the parrot's cramming"
+        );
         assert!(
             !parrot.iter().any(|e| matches!(
                 e,
@@ -4016,9 +4051,25 @@ mod parrot_push_tests {
             )),
             "a parrot pushes the player"
         );
-        let Some(chicken) = player_pushes("minecraft:chicken") else {
+        assert_eq!(
+            parrot
+                .iter()
+                .filter(|e| matches!(
+                    e,
+                    MobEvent::Push {
+                        target: Who::Mob(_),
+                        ..
+                    }
+                ))
+                .count(),
+            1,
+            "the cap at 1 still lets exactly one mob push through"
+        );
+        let Some((chicken, chicken_has_player, chicken_crammed)) = run("minecraft:chicken") else {
             return;
         };
+        assert!(chicken_has_player);
+        assert!(chicken_crammed);
         assert!(
             chicken.iter().any(|e| matches!(
                 e,
@@ -4028,6 +4079,20 @@ mod parrot_push_tests {
                 }
             )),
             "a chicken pushes the player"
+        );
+        assert_eq!(
+            chicken
+                .iter()
+                .filter(|e| matches!(
+                    e,
+                    MobEvent::Push {
+                        target: Who::Mob(_),
+                        ..
+                    }
+                ))
+                .count(),
+            1,
+            "the cap counts the player the same for a chicken"
         );
     }
 }
