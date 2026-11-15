@@ -434,8 +434,9 @@ impl FightPlayer {
     }
 }
 /// `TargetingConditions.forCombat` (visibility aside) in
-/// `EntityGetter.getNearestPlayer`: the enemy nearest `at` among `players`, within
-/// `range` of the dragon at `from` and passing `selector`; none on Peaceful.
+/// `ServerEntityGetter.getNearestPlayer`: the enemy nearest `at` among
+/// `players`, within `range` of the dragon at `from` and passing `selector`;
+/// none on Peaceful.
 fn nearest_enemy(
     players: &[FightPlayer],
     peaceful: bool,
