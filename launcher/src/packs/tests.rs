@@ -285,3 +285,21 @@ fn invalid_native_manifest_does_not_hide_a_valid_duplicate() {
     );
     fs::remove_dir_all(home).unwrap();
 }
+
+#[test]
+fn a_resource_pack_file_that_is_not_a_zip_is_no_pack() {
+    let home = home("extension");
+    let rp = home.join("resourcepacks");
+    // PackDetector.detectPackResources: a file pack's name must end in `.zip`, case-sensitively.
+    zip_file(&rp.join("Renamed.jar"), &[("pack.mcmeta", META)]);
+    zip_file(&rp.join("Paused.zip.disabled"), &[("pack.mcmeta", META)]);
+    zip_file(&rp.join("Upper.ZIP"), &[("pack.mcmeta", META)]);
+    let packs = list(&home, Kind::Resource);
+    let names: Vec<&str> = packs.iter().map(|p| p.file.as_str()).collect();
+    assert_eq!(
+        names,
+        ["Folder Pack", "Glass.zip", "Zed.zip"],
+        "a zip under another name is not listed, as the game does not read it"
+    );
+    fs::remove_dir_all(&home).unwrap();
+}

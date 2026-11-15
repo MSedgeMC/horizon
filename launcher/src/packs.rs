@@ -181,6 +181,11 @@ fn read(path: &Path, kind: Kind, on: &[String]) -> Option<Pack> {
         |x: &str| path.is_file() && path.extension().is_some_and(|e| e.eq_ignore_ascii_case(x));
     let (title, description, icon) = match kind {
         Kind::Resource => {
+            // PackDetector.detectPackResources: a file is a resource pack only when its name ends
+            // in `.zip` (case-sensitive); a folder with a pack.mcmeta is one whatever its name.
+            if path.is_file() && !file.ends_with(".zip") {
+                return None;
+            }
             let meta = entry(path, "pack.mcmeta")?;
             let meta: serde_json::Value = serde_json::from_slice(&meta).ok()?;
             (
