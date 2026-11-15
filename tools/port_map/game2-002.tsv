@@ -110,7 +110,7 @@ Ravager.createAttributes	skip:data		attribute defaults come from data tables
 Ravager.addAdditionalSaveData	inline	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	AttackTick, StunTick and RoarTick are written there
 Ravager.readAdditionalSaveData	inline	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	the same three tick values are read there
 Ravager.stunEffect	port	crates/horizon-client/src/mobs/ravager.rs::ai_step	the stun particle is emitted from ai_step
-Ravager.hasLineOfSight	port	crates/horizon-client/src/mobs/ravager.rs::blind	`blind` is `Ravager.hasLineOfSight` (false while stunned or roaring) and a target search is skipped on it in `goals.rs`
+Ravager.hasLineOfSight	missing		`ravager::immobile` knows the biting, stunned and roaring states, but no target goal is gated on it, so an immobile ravager still sees and takes targets
 Ravager.applyRoarKnockbackClient	inline	crates/horizon-client/src/mobs/ravager.rs::roar	the roar push is applied in roar
 Ravager.strongKnockback	inline	crates/horizon-client/src/mobs/ravager.rs::roar	the push of 4 along the direction is in roar
 Ravager.addRoarParticleEffects	inline	crates/horizon-client/src/mobs/ravager.rs::roar	the poof particles are emitted in roar
@@ -127,7 +127,7 @@ Shulker.move	missing		the `SHULKER_BOX` mover type has no counterpart: `shulker:
 Shulker.findAttachableSurface	port	crates/horizon-client/src/mobs/shulker.rs::attachable	
 Shulker.isPositionBlocked	inline	crates/horizon-client/src/mobs/shulker.rs::can_stay_at	the blocked-position check is part of can_stay_at
 Shulker.onSyncedDataUpdated	skip:other		network sync hook; the box is computed from the face on demand
-Shulker.getRenderPosition	port	crates/horizon-client/src/mobs/shulker.rs::render_offset	while slide ticks are left, the model is pulled back toward the block it left by `((ticks - partial) / 6)^2` times the scale
+Shulker.getRenderPosition	missing		no render slide: `client_tick` eases the lid and squares the body, and nothing interpolates the position across a teleport
 Shulker.setVariant	inline	crates/horizon-client/src/mobs/shulker.rs::register	colour comes from spawn data; NO_COLOR when unset
 Shulker.getColor	inline	crates/horizon-client/src/mobs/shulker.rs::texture	colour is read from extra.color for the texture
 Shulker.get	skip:other		component getter; Horizon reads extra.color directly
