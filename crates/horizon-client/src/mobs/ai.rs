@@ -1775,6 +1775,8 @@ fn push_entities(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     let self_pushable = m.pushable() && !super::equine::is_vehicle(m);
     let mut targets = super::world::take_push_targets();
     if let Some(p) = &w.player
+        // Parrot.doPush skips a player: a parrot pushes mobs, never the player.
+        && m.species() != Species::Parrot
         // Entity.push: passengers of the same vehicle never push each other.
         && m.rider.is_none()
         && p.alive
@@ -3965,6 +3967,67 @@ mod same_vehicle_push_tests {
             pushed(&events),
             vec![1],
             "the cow pushes a horse nobody rides"
+        );
+    }
+}
+
+#[cfg(test)]
+mod parrot_push_tests {
+    use super::*;
+    use crate::mobs::world::{test_player, with_test_world};
+
+    /// Vanilla `Parrot.doPush` skips a `Player`: a parrot shoves the mobs it
+    /// stands in but never the player, while a chicken in the same spot
+    /// pushes the player too.
+    #[test]
+    fn a_parrot_pushes_no_player_but_a_chicken_does() {
+        // The pushes a pusher of `kind` gives with the player in its box.
+        let player_pushes = |kind: &str| {
+            let mut pusher = None;
+            with_test_world(&[], |_, types| {
+                pusher = Some(Mob::new(
+                    1,
+                    std::sync::Arc::new(types.types[kind].clone()),
+                    Vec3::new(0.5, 64.0, 0.5),
+                    0.0,
+                ));
+            });
+            let mut pusher = pusher?;
+            let mut events = Vec::new();
+            let ran = with_test_world(&[], |w, _| {
+                let mut w = w.clone();
+                w.player = Some(test_player(Vec3::new(0.7, 64.0, 0.5)));
+                push_entities(&mut pusher, &w, &mut events);
+            });
+            ran.then_some(events)
+        };
+        // Without the vanilla data under .local/horizon-client the world
+        // cannot be built: the test has nothing to check.
+        let Some(parrot) = player_pushes("minecraft:parrot") else {
+            return;
+        };
+        assert!(
+            !parrot.iter().any(|e| matches!(
+                e,
+                MobEvent::Push {
+                    target: Who::Player,
+                    ..
+                }
+            )),
+            "a parrot pushes the player"
+        );
+        let Some(chicken) = player_pushes("minecraft:chicken") else {
+            return;
+        };
+        assert!(
+            chicken.iter().any(|e| matches!(
+                e,
+                MobEvent::Push {
+                    target: Who::Player,
+                    ..
+                }
+            )),
+            "a chicken pushes the player"
         );
     }
 }
