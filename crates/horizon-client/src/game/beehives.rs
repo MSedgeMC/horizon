@@ -80,14 +80,10 @@ impl HiveHost for GameHive<'_, '_> {
     fn set_changed(&mut self, at: [i32; 3]) {
         self.game.world.modified.insert((at[0] >> 4, at[2] >> 4));
     }
-    fn game_event(&mut self, at: [i32; 3], bee: u32) {
+    fn game_event(&mut self, at: [i32; 3], bee: &Mob) {
         let state = self.game.world.block(at[0], at[1], at[2]);
-        self.game.post_block_game_event(
-            "minecraft:block_change",
-            at,
-            Some(Who::Mob(bee)),
-            Some(state),
-        );
+        self.game
+            .post_block_game_event_from_mob("minecraft:block_change", at, bee, Some(state));
     }
 }
 
@@ -625,5 +621,58 @@ mod changed_tests {
                 e.borrow()
             );
         });
+    }
+    /// `releaseOccupant` posts the hive's `BLOCK_CHANGE` from the bee it has
+    /// just loaded, before `addFreshEntity` puts that bee in the level. A
+    /// warden beside the hive hears the vibration, which needs the bee's own
+    /// context: rebuilt from `game.mobs`, the not-yet-added bee is gone and
+    /// the warden drops a source it cannot target.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_warden_hears_the_bee_a_hive_releases() {
+        let mut game = server_game();
+        game.sculk_prepare();
+        let key = (8, 64, 8);
+        hive_at(
+            &mut game,
+            key,
+            Beehive {
+                bees: vec![Occupant {
+                    entity_data: Tag::compound([("id", Tag::String("minecraft:bee".into()))]),
+                    ticks_in_hive: 601,
+                    min_ticks_in_hive: 600,
+                }],
+                flower: None,
+            },
+        );
+        let kind = game
+            .res
+            .mob_types()
+            .get("minecraft:warden")
+            .unwrap()
+            .clone();
+        game.mobs
+            .push(Mob::new(7, kind, Vec3::new(10.5, 64.0, 8.5), 0.0));
+        game.world.day_time = 1_000;
+
+        game.tick_beehive(key);
+
+        let bee = game
+            .mobs
+            .iter()
+            .find(|m| m.id != 7)
+            .expect("the bee reached the level")
+            .id;
+        let warden = game.mobs.iter().find(|m| m.id == 7).expect("the warden");
+        let state = warden.extra.warden.as_ref().expect("the warden's state");
+        let (info, _) = state
+            .vibration
+            .selector
+            .current
+            .as_ref()
+            .expect("the warden heard the released bee");
+        assert_eq!(info.event, "minecraft:block_change");
+        assert_eq!(info.pos, [8.5, 64.5, 8.5]);
+        assert_eq!(info.source, Some(Who::Mob(bee)));
     }
 }

@@ -618,7 +618,12 @@ impl Game<'_> {
         }
         self.mob_index.find(&self.mobs, id)
     }
-    fn context_of_mob(&self, mob: Option<&Mob>, id: u32, state: Option<BlockStateId>) -> Context {
+    pub(super) fn context_of_mob(
+        &self,
+        mob: Option<&Mob>,
+        id: u32,
+        state: Option<BlockStateId>,
+    ) -> Context {
         Context {
             source: Some(Who::Mob(id)),
             owner: None,
@@ -810,6 +815,20 @@ impl Game<'_> {
         state: Option<BlockStateId>,
     ) {
         let ctx = self.who_context(who, state);
+        self.post_game_event(event, center((pos[0], pos[1], pos[2])), ctx);
+    }
+    /// `Level.gameEvent` at a block with the entity itself as the source: an
+    /// entity the level does not list yet posts a game event (a bee let out of
+    /// a hive before `add`), so a lookup of its id would find no mob and lose
+    /// the context listeners need.
+    pub(super) fn post_block_game_event_from_mob(
+        &mut self,
+        event: &'static str,
+        pos: [i32; 3],
+        mob: &Mob,
+        state: Option<BlockStateId>,
+    ) {
+        let ctx = self.context_of_mob(Some(mob), mob.id, state);
         self.post_game_event(event, center((pos[0], pos[1], pos[2])), ctx);
     }
     /// `LivingEntity.actuallyHurt`'s damage vibration, heard as the hit lands;

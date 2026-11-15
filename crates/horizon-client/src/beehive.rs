@@ -65,8 +65,9 @@ pub trait HiveHost {
     fn sound(&mut self, name: &'static str, at: [f64; 3]);
     /// `BlockEntity.setChanged`: the hive's saved bees changed.
     fn set_changed(&mut self, at: [i32; 3]);
-    /// `Level.gameEvent(bee, GameEvent.BLOCK_CHANGE, at)`: a bee let out.
-    fn game_event(&mut self, at: [i32; 3], bee: u32);
+    /// `Level.gameEvent(bee, GameEvent.BLOCK_CHANGE, at)`: a bee let out. The
+    /// bee is passed as it is loaded, before it joins the level (`add`).
+    fn game_event(&mut self, at: [i32; 3], bee: &Mob);
 }
 
 fn strip_ignored(c: &mut Compound) {
@@ -384,8 +385,9 @@ fn release(
         ],
     );
     let id = m.id;
-    // `releaseOccupant`: the bee leaving is a block change the sensors hear.
-    host.game_event(at, id);
+    // `releaseOccupant`: the bee leaving is the block change the sensors
+    // hear, posted from the bee itself before it joins the level.
+    host.game_event(at, &m);
     Some(host.add(m).then_some(id))
 }
 
