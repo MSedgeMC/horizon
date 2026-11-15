@@ -1583,9 +1583,8 @@ impl Game<'_> {
             Target::Player => {
                 // ServerPlayer.teleport: removeVehicle before placing the player.
                 self.stop_riding();
-                // A server's player teleported within their level is placed
-                // there at once: the arrival they were waiting for elsewhere
-                // in it (whose chunks lose their tickets) is abandoned.
+                // A server's player teleported within their level is placed at once;
+                // its pending arrival (whose chunks lose their tickets) is abandoned.
                 if let Some(conn) = self.lan_acting {
                     horizon_client::lan::hub::teleport_cause(Some("command"));
                     self.hold_for_chunks(conn, v);
@@ -1599,6 +1598,7 @@ impl Game<'_> {
                     p.velocity = Vec3::new(0.0, 0.0, 0.0);
                     p.fall_distance = 0.0;
                     p.ground.on_ground = false;
+                    p.teleported = true;
                 }
                 self.previous_position = v;
                 if let Some([yaw, pitch]) = rotation {
@@ -2255,7 +2255,7 @@ impl Game<'_> {
         // removed, then ENTITY_DIE by the entity itself. Mobs post theirs as
         // they die, the dragon on its own path, and EndCrystal.kill posts it
         // after onDestroyedBy. The source is captured before the removal: an
-        // armor stand is living (wardens can't target it), and a dropped item
+        // armor stand is living (wardens can't target it) and its UUID is the source, and a dropped item
         // keeps its stack's ItemEntity.dampensVibrations.
         let died = (!matches!(
             t,
@@ -2269,6 +2269,9 @@ impl Game<'_> {
         .flatten();
         let mut context = self.who_context(None, None);
         context.living = matches!(t, Target::Stand(_));
+        if let Target::Stand(id) = t {
+            context.source_uuid = Some(self.uuid_for(id));
+        }
         if let Target::Item(id) = t {
             context.dampens = self.dropped.iter().find(|i| i.id == id).is_some_and(|i| {
                 self.res
@@ -2301,9 +2304,6 @@ impl Game<'_> {
                         );
                     }
                     m.health = 0.0;
-                    if m.death_time == 0 {
-                        m.death_time = 1;
-                    }
                     killed = alive.then(|| m.clone());
                 }
                 // The hit runs LivingEntity.die before the command returns:
@@ -4487,6 +4487,23 @@ mod teleport_pitch_tests {
             )));
             assert_eq!([game.mobs[0].yaw, game.mobs[0].head_pitch], expected);
         }
+    }
+
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn teleport_to_the_current_position_marks_the_player_for_sync() {
+        use super::Target;
+        use crate::game::native_machines::tests::server_game;
+        use crate::motion::PlayerMotion;
+        use horizon_core::geometry::Vec3;
+
+        let mut game = server_game();
+        let at = Vec3::new(0.5, 64.0, 0.5);
+        game.player = Some(PlayerMotion::new(game.motion, at).unwrap());
+
+        game.teleport_to_in_level(Target::Player, [at.x, at.y, at.z], None, false);
+
+        assert!(game.player.as_ref().is_some_and(|p| p.teleported));
     }
 
     #[test]
