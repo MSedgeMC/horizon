@@ -213,10 +213,9 @@ Light); `tokens.css` carries them as `--night-*`. The game's menus don't use it.
   icons, their skin's head, mods and counts. No ornaments, no empty cards.
 - **Plates only where text needs them.** A plate is `card` at its opacity with a 1 px `stroke`;
   `card_hi` for a selected or raised one. Text sits on the bare sky only over its upper stops
-  (`UNCARDED_STOPS`): the sunset is too bright for light text. A plate cuts each corner in two 4 px
-  steps (`PIXEL_CORNER`), like the art, and its stroke follows the steps. The main action cuts one
-  step; other controls round at 8 (at 1x a step vanishes on a pale fill and looks notched on a thin
-  ring: compared in the specimen).
+  (`UNCARDED_STOPS`): the sunset is too bright for light text. A plate is square: the night look has
+  no rounded corners and no stepped cuts (`PIXEL_CORNER` and `RADIUS_CONTROL` are 0, and a zero
+  step draws a plain rectangle), so its 1 px `stroke` is a plain rectangle too.
 - **One accent.** `accent` fills the one main action (Play, Create, Install) and progress;
   `accent_hi` is the accent as text and the 2 px focus ring. Everything else is ink on plates.
 - **Bricolage Grotesque** (SIL OFL 1.1, `fonts/OFL-BricolageGrotesque.txt`), cut from upstream's
@@ -260,12 +259,12 @@ Light); `tokens.css` carries them as `--night-*`. The game's menus don't use it.
   launcher itself.
 - **The frame** (`launcher/src/shell.rs`): the sidebar is one plate from the window's top to its
   bottom (the wordmark, instances by group, servers, the launcher's version); the top bar over the
-  pages has no plate, only a rule. A selected row or tab sits on `card_hi` cut in steps (two for
-  rows, one for tabs and icon buttons); a hovered one gets the same shape at half its opacity,
-  eased in. A row's second line is its state, after a small square in the state's colour.
+  pages has no plate, only a rule. A selected row or tab sits on `card_hi`; a hovered one gets the
+  same plate at half its opacity, eased in. A row's second line is its state, after a small square
+  in the state's colour.
 - **Home** (`launcher/src/home.rs`): the selected instance's name in the display cut over the bare
   sky, a caption above it naming what it plays and its state (the same square), and when it was
-  played below. Play is the main action (`night::PLAY` tall, cut in one step); the version picker
+  played below. Play is the main action (`night::PLAY` tall); the version picker
   is a raised control of the same height; Mods and Folder are quiet buttons. A Horizon instance
   gets a plate on the right: a release's notes in one line (not a Nightly's) and Join a friend.
   While it gets ready, Play names it ("Getting ready… 34%") beside Cancel, and below sit the
