@@ -1105,8 +1105,12 @@ impl Game<'_> {
                         // VehicleEntity.hurtServer takes the damage; an item
                         // frame's ItemFrame.hurtServer.
                         let creative = t.guest.is_none() && self.creative;
+                        let by = Some(t.guest.map_or(
+                            super::commands::Target::Player,
+                            super::commands::Target::Guest,
+                        ));
                         if let Some(i) = self.boats.iter().position(|b| b.id == id) {
-                            self.hurt_boat(i, damage, creative);
+                            self.hurt_boat_by(i, damage, creative, by);
                         } else if let Some(i) = self.carts.iter().position(|c| c.id == id) {
                             // `damageSources().trident(this, owner)`: the
                             // trident is the direct entity, so no piglin anger.
@@ -1369,6 +1373,7 @@ impl Game<'_> {
             }
             let packed = (u32::from(l >> 4) * 16) | ((u32::from(l & 15) * 16) << 8);
             let poses = Poses::new(model);
+            let start = out.len();
             horizon_client::mobs::render::draw(
                 model,
                 base,
@@ -1392,6 +1397,7 @@ impl Game<'_> {
                     out,
                 );
             }
+            self.lit_entity(start..out.len());
         }
         self.mark_motion(out.len(), 0);
     }
