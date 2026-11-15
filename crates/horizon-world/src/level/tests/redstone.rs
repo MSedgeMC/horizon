@@ -898,7 +898,7 @@ fn redstone_wire_connects_to_each_neighbour_by_that_blocks_own_rule() {
     }
 }
 
-/// `RedStoneWireBlock.getConnectingSide`: a wire climbs onto a block beside it
+/// `RedstoneWireBlock.getConnectingSide`: a wire climbs onto a block beside it
 /// (`UP`) only if nothing conductive sits on top of the wire itself, and steps down
 /// to a wire below a gap (`SIDE`) only if the block beside it is not conductive: a
 /// solid block there cuts the connection. The wire is placed by an item, which
