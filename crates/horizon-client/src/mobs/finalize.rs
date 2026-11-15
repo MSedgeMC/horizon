@@ -487,6 +487,11 @@ pub struct Modifier {
 pub struct Attributes {
     pub bases: Vec<(Attr, f64)>,
     pub modifiers: Vec<Modifier>,
+    /// `NAME_TAG_DISTANCE` from a server attribute update: the client reads
+    /// it for nameplates and a save never writes it.
+    pub name_tag_distance: Option<f64>,
+    /// `BELOW_NAME_DISTANCE` from a server attribute update.
+    pub below_name_distance: Option<f64>,
     /// The transient minecraft:baby speed modifier was taken away
     /// (`/attribute ... modifier remove`) until the next setBaby. Not
     /// saved: a load runs setBaby again.
@@ -804,6 +809,19 @@ pub fn zombie_attributes(m: &mut Mob, special: f32, reason: Reason) {
 pub fn max_health(m: &Mob) -> f32 {
     value(m, Attr::MaxHealth) as f32
 }
+/// The max health `LivingEntity.readAdditionalSaveData` clamps the saved
+/// Health to: the attribute as the save left it. Vanilla reads Health before
+/// a saved Health Boost adds its modifier back, so the boost doesn't count.
+/// The cached maximum counts too when no boost is in it, for the mobs that
+/// write theirs outside the attribute model.
+pub fn loaded_max_health(m: &Mob) -> f32 {
+    let saved = base_with_modifiers(m, Attr::MaxHealth) as f32;
+    if effect_modifiers(m, Attr::MaxHealth).next().is_some() {
+        saved
+    } else {
+        saved.max(m.attrs.max_health)
+    }
+}
 /// `LivingEntity.onAttributeUpdated(MAX_HEALTH)` after a Health Boost
 /// change: the cached maximum follows the attribute model again, and Health
 /// above it is lowered (nothing is healed). Wolves write their maximum
@@ -976,21 +994,15 @@ fn age_boundary_reached(m: &mut Mob) {
 /// `Goat.finalizeSpawn` on a natural spawn (the spawn path in spawning.rs): the ram
 /// cooldowns (`GoatAi.initMemories`), screaming 2 percent of the time and a
 /// horn lost 10 percent of the time, adults only.
-pub fn goat_spawn(m: &mut Mob) {
-    let jump = m
-        .random
-        .next_int_between_inclusive(600, 1200)
-        .unwrap_or(600);
+pub fn goat_spawn(m: &mut Mob, r: &mut impl RandomSource) {
+    let jump = r.next_int_between_inclusive(600, 1200).unwrap_or(600);
     set_memory(m, "long_jump_cooling_down", i64::from(jump), i64::MAX);
-    let ram = m
-        .random
-        .next_int_between_inclusive(600, 6000)
-        .unwrap_or(600);
+    let ram = r.next_int_between_inclusive(600, 6000).unwrap_or(600);
     set_memory(m, "ram_cooldown_ticks", i64::from(ram), i64::MAX);
-    m.extra.screaming = m.random.next_double() < 0.02;
+    m.extra.screaming = r.next_double() < 0.02;
     age_boundary_reached(m);
-    if !m.is_baby() && m.random.next_float() < 0.1 {
-        let left = m.random.next_boolean();
+    if !m.is_baby() && r.next_float() < 0.1 {
+        let left = r.next_boolean();
         m.extra.lost_horns[usize::from(!left)] = true;
     }
 }
@@ -1002,7 +1014,8 @@ pub fn spawn_egg_is_for(egg: &str, kind: &str) -> bool {
 
 /// `SpawnEggItem.spawnOffspringFromSpawnEgg`: the offspring of a spawn egg
 /// used on a mob of the same kind is a baby of that kind: it starts with
-/// the age of a baby and keeps the parent's variant and colour.
+/// the age of a baby and takes the variant and colour it is given (the
+/// parent's, but a mooshroom's colour rolled by `MushroomCow.getOffspringVariant`).
 pub fn spawn_egg_offspring(child: &mut Mob, species: Species, variant: u8, color: u8) {
     set_baby(child, true);
     child.extra.variant = variant;
@@ -1916,18 +1929,11 @@ impl<L: FinalizeLevel + ?Sized, R: RandomSource> Ctx<'_, L, R> {
             }
             S::Rabbit => {
                 let at = block(m);
-                let roll = self.int(100);
-                let mut variant = if self.level.biome_tag("minecraft:spawns_white_rabbits", at) {
-                    if roll < 80 { 1 } else { 3 }
-                } else if self.level.biome_tag("minecraft:spawns_gold_rabbits", at) {
-                    4
-                } else if roll < 50 {
-                    0
-                } else if roll < 90 {
-                    5
-                } else {
-                    2
-                };
+                let mut variant = super::rabbit::random_variant(
+                    self.level.biome_tag("minecraft:spawns_white_rabbits", at),
+                    self.level.biome_tag("minecraft:spawns_gold_rabbits", at),
+                    self.random,
+                );
                 let g = match g {
                     Some(Group::Rabbit(a, v)) => {
                         variant = v;
