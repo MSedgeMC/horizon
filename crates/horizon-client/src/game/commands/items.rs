@@ -3082,10 +3082,7 @@ mod projectile_entity_slot_tests {
             Some(("minecraft:arrow", 1))
         );
         assert!(arrow.set_slot_item(ItemStack::new("minecraft:stone", 1)));
-        assert_eq!(
-            arrow.slot_item().map(|s| &*s.item),
-            Some("minecraft:stone")
-        );
+        assert_eq!(arrow.slot_item().map(|s| &*s.item), Some("minecraft:stone"));
         // `Fireball.getSlot(0)`: DATA_ITEM_STACK, written through
         // `Fireball.setItem` (an empty write restores the fire charge).
         let mut fireball = Projectile::new(ProjectileKind::SmallFireball, Vec3::ZERO, None);
