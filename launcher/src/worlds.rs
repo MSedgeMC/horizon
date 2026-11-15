@@ -52,7 +52,7 @@ pub struct World {
     pub icon: Option<PathBuf>,
 }
 
-/// The worlds in a game folder's `saves/`, the last played first.
+/// The worlds in a game folder's `saves/`, in the game's order.
 pub fn list(home: &Path) -> Vec<World> {
     let mut worlds: Vec<World> = fs::read_dir(home.join("saves"))
         .into_iter()
@@ -60,8 +60,20 @@ pub fn list(home: &Path) -> Vec<World> {
         .flatten()
         .filter_map(|e| read(&e.path()))
         .collect();
-    worlds.sort_by_key(|w| std::cmp::Reverse(w.last_played));
+    order(&mut worlds);
     worlds
+}
+
+/// `LevelSummary.compareTo`: the last played first, and worlds the game saved at the same
+/// moment by folder name, as Java's `String.compareTo` compares it (UTF-16 code units). Only
+/// the time was compared before, so a copy, whose `LastPlayed` is the original's, sat wherever
+/// the filesystem listed it.
+fn order(worlds: &mut [World]) {
+    worlds.sort_by(|a, b| {
+        b.last_played
+            .cmp(&a.last_played)
+            .then_with(|| a.folder.encode_utf16().cmp(b.folder.encode_utf16()))
+    });
 }
 
 /// level.dat: gzip, as vanilla writes it, or plain.

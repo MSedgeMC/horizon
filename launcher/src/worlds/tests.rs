@@ -153,6 +153,40 @@ fn a_backup_is_named_and_laid_out_as_vanillas() {
     fs::remove_dir_all(&home).unwrap();
 }
 
+/// `LevelSummary.compareTo` in 26.3: last played first, and two summaries with the same
+/// `LastPlayed` by level id (`String.compareTo`). Run against the client jar, a world created
+/// as "Zulu" before "Alpha", both at the same `LastPlayed`, listed Alpha, Zulu. The launcher
+/// sorted by time only, so a copy (which keeps the original's `LastPlayed`) had no fixed place.
+#[test]
+fn worlds_saved_at_the_same_moment_are_ordered_by_folder() {
+    let at = UNIX_EPOCH + Duration::from_millis(1_700_000_000_000);
+    let world = |folder: &str, last_played| World {
+        folder: folder.to_owned(),
+        path: PathBuf::from(folder),
+        name: folder.to_owned(),
+        mode: "Survival",
+        last_played,
+        version: None,
+        size: 0,
+        icon: None,
+    };
+    let folders = |worlds: &[World]| -> Vec<String> {
+        worlds.iter().map(|w| w.folder.clone()).collect()
+    };
+
+    let mut same = vec![world("Zulu", at), world("Alpha", at), world("Mike", at)];
+    order(&mut same);
+    assert_eq!(folders(&same), ["Alpha", "Mike", "Zulu"]);
+
+    // A more recent world still comes first, whatever its folder.
+    let mut later = vec![
+        world("Alpha", at),
+        world("Zulu", at + Duration::from_secs(1)),
+    ];
+    order(&mut later);
+    assert_eq!(folders(&later), ["Zulu", "Alpha"]);
+}
+
 #[test]
 fn a_copy_gets_the_next_free_name_in_its_folder_and_level_dat() {
     let home = scratch("copy");
