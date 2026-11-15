@@ -8,7 +8,7 @@ ActiveTextCollector.ClickableStyleFinder.accept	port	crates/horizon-client-rende
 ActiveTextCollector.ClickableStyleFinder.acceptScrolling	missing		minor: scrolling text is not hit-tested for click and hover styles (Chat::style_at searches chat lines only)
 ActiveTextCollector.Parameters.withScale	skip:java		record copy-with helper; Horizon has no pose matrix per text
 ActiveTextCollector.Parameters.withOpacity	skip:java		record copy-with helper; opacity is the colour's alpha byte in Horizon
-ActiveTextCollector.Parameters.withScissor	missing		minor: a nested scissor is not intersected with the enclosing rectangle; Draw::Scissor replaces it
+ActiveTextCollector.Parameters.withScissor	port	crates/horizon-client-render/src/screen_draw.rs::paint	a scissor cuts what is drawn since it opened, intersected with the enclosing one and the screen; closing it restores the enclosing one
 ComponentPath.path	skip:other		focus path builder for nested containers; Horizon focus is a flat per-screen state
 ComponentPath.Path.applyFocus	skip:other		focus path propagation; Horizon focus is a flat per-screen state
 Font.bidirectionalShaping	port	crates/horizon-client-render/src/bidi.rs::visual_str	Arabic shaping and bidi reorder
@@ -23,12 +23,12 @@ Font.PreparedTextBuilder.addEmptyGlyph	skip:other		hit areas for glyphs with no 
 Font.PreparedTextBuilder.accept	port	crates/horizon-client-render/src/hud.rs::HudBatch::text_styled	per-character draw with bold, italic, shadow, underline and strikethrough
 Font.PreparedTextBuilder.visit	skip:other		visitor over prepared glyphs for draw order and hit tests; Horizon draws straight into the batch
 Font.PreparedTextBuilder.getTextColor	inline	crates/horizon-client-render/src/hud.rs::HudBatch::text_styled	style colour with the base colour's alpha
-Font.PreparedTextBuilder.getShadowColor	inline	crates/horizon-client-render/src/hud.rs::HudBatch::text_styled	gap: minor: style shadow colour is ignored; shadow is always 0.25 of the text colour
+Font.PreparedTextBuilder.getShadowColor	inline	crates/horizon-client-render/src/hud.rs::HudBatch::text_styled	a styled glyph's shadow_color is used, its alpha scaled by the text's; otherwise the shadow is 0.25 of the text colour
 Font.PreparedTextBuilder.bounds	skip:other		bounds of prepared text for vanilla hit tests; Horizon hit-tests by advance
 Gui.update	inline	crates/horizon-client/src/game/narrator.rs::Game::narrate_screen	once a turn after the frame's widgets were read: ScreenNarrator::frame runs the narration handleDelayedNarration makes due and a new screen's
-Gui.isPausing	port	crates/horizon-client/src/game/pointer_capture.rs::Game::pauses_game	gap: minor: checks the open screen only, not the overlay part
+Gui.isPausing	port	crates/horizon-client/src/game/pointer_capture.rs::Game::pauses_game	the dialog, book and win screens' own pause flags decide first, then the open screen
 Gui.addSocialInteractionsToast	skip:service		social interactions are not offered by Horizon
-Gui.handleKeybinds	port	crates/horizon-client/src/game/play_keys.rs::Game::key_pressed	gap: minor: the social interactions key has no port (see addSocialInteractionsToast)
+Gui.handleKeybinds	port	crates/horizon-client/src/game/play_keys.rs::Game::key_pressed	the social interactions key opens the list, or says it is not available in single player
 Gui.openChatScreen	port	crates/horizon-client/src/game/chat.rs::Game::open_chat	
 Gui.openChatAndAddText	port	crates/horizon-client/src/game/chat.rs::Game::open_chat	the text is passed as the initial input
 Gui.buildInitialScreens	port	crates/horizon-client/src/title.rs::Title::next_ban_notice	the queue ban_notice::initial_notices fills (from Title::poll_account) is popped one notice at a time, the title last
