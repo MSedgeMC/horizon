@@ -116,7 +116,7 @@ FastBufferedInputStream.read	skip:java		buffered stream helper; Rust readers do 
 FastBufferedInputStream.skip	skip:java		buffered stream helper; Rust readers do their own buffering
 FastBufferedInputStream.fill	skip:java		buffered stream helper; Rust readers do their own buffering
 FileSystemUtil.safeGetPath	skip:other		opens a jar or zip filesystem for a URI; Horizon reads archives with the zip crate
-FileUtil.sanitizeName	port	crates/horizon-client/src/title.rs::Title::target_folder	gap: minor: replaces every non-alphanumeric character with _; vanilla only replaces illegal file characters, dots, slashes and quotes
+FileUtil.sanitizeName	port	crates/horizon-client/src/title.rs::Title::target_folder	sanitize_name replaces the ILLEGAL_FILE_CHARACTERS set and dots, slashes and quotes, as vanilla does (title/world_folder.rs::sanitize_name); the reserved Windows names are escaped after it
 FileUtil.isPathPortable	port	crates/horizon-client/src/game/structure_blocks.rs::portable_path	the structure path's check: no empty, `.` or `..` segment; vanilla also tests the part's characters (isPathPartPortable)
 FileUtil.decomposePath	skip:data		resource path handling; Horizon reads its data from tables and files
 FileUtil.resolvePath	skip:data		resource path handling; Horizon reads its data from tables and files
