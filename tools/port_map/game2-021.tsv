@@ -63,7 +63,7 @@ DesertPyramidPiece.placeSandBox	inline	crates/horizon-world/src/worldgen/structu
 DesertPyramidPiece.placeCollapsedRoofPiece	inline	crates/horizon-world/src/worldgen/structure/temple.rs::DesertPyramidPiece::post_process	sandstone with chance 0.33, else sand
 EndCityPieces.EndCityPiece.makeSettings	inline	crates/horizon-world/src/worldgen/structure/end_city.rs::pieces	ignore list chosen by the overwrite flag
 EndCityPieces.EndCityPiece.addAdditionalSaveData	port	crates/horizon-world/src/worldgen/structure/end_city.rs::EndCityPiece::save	rotation and OW flag, plus GD
-EndCityPieces.EndCityPiece.handleDataMarker	port	crates/horizon-world/src/worldgen/structure/end_city.rs::EndCityPiece::post_process	gap: minor: no Level.isInSpawnableBounds check before sentry and elytra spawns; sentry, elytra and chest markers are done
+EndCityPieces.EndCityPiece.handleDataMarker	port	crates/horizon-world/src/worldgen/structure/end_city.rs::EndCityPiece::post_process	sentry and elytra spawns are checked against Level.isInSpawnableBounds; sentry, elytra and chest markers are done
 IglooPieces.IglooPiece.makeSettings	inline	crates/horizon-world/src/worldgen/structure/simple.rs::igloo_pieces	rotation, pivot and ignore processor set when the piece is built
 IglooPieces.IglooPiece.addAdditionalSaveData	port	crates/horizon-world/src/worldgen/structure/simple.rs::TemplatePiece::saved	Rot tag for the igloo handler
 IglooPieces.IglooPiece.handleDataMarker	port	crates/horizon-world/src/worldgen/structure/simple.rs::TemplatePiece::post_process	chest marker clears the block and sets the igloo chest loot below

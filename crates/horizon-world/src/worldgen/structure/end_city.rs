@@ -23,6 +23,21 @@ const FAT_TOWER_BRIDGES: [(Rotation, [i32; 3]); 4] = [
     (Rotation::Clockwise180, [8, -1, 12]),
 ];
 
+/// `Level.MIN_ENTITY_SPAWN_Y` and `Level.MAX_ENTITY_SPAWN_Y`: entities may not
+/// be added outside this vertical span.
+const MIN_ENTITY_SPAWN_Y: i32 = -20_000_000;
+const MAX_ENTITY_SPAWN_Y: i32 = 20_000_000;
+/// `Level.isInWorldBoundsHorizontal`: the horizontal half-extent of the world.
+const WORLD_HORIZONTAL_LIMIT: i32 = 30_000_000;
+
+/// `Level.isInSpawnableBounds`: the vertical entity span, half-open at
+/// `MAX_ENTITY_SPAWN_Y`, and the horizontal world bounds.
+fn is_in_spawnable_bounds(pos: [i32; 3]) -> bool {
+    (MIN_ENTITY_SPAWN_Y..MAX_ENTITY_SPAWN_Y).contains(&pos[1])
+        && (-WORLD_HORIZONTAL_LIMIT..WORLD_HORIZONTAL_LIMIT).contains(&pos[0])
+        && (-WORLD_HORIZONTAL_LIMIT..WORLD_HORIZONTAL_LIMIT).contains(&pos[2])
+}
+
 /// A piece during assembly: template, position, settings and genDepth.
 #[derive(Clone)]
 struct Draft {
@@ -428,6 +443,9 @@ impl LegacyPiece for EndCityPiece {
         };
         for (marker, pos) in markers {
             if marker.starts_with("Sentry") {
+                if !is_in_spawnable_bounds(pos) {
+                    continue;
+                }
                 c.world.entity(super::legacy::spawn_nbt(
                     "minecraft:shulker",
                     pos,
@@ -435,6 +453,9 @@ impl LegacyPiece for EndCityPiece {
                     false,
                 ))?;
             } else if marker.starts_with("Elytra") {
+                if !is_in_spawnable_bounds(pos) {
+                    continue;
+                }
                 // An item frame on the marker, facing the rotated south.
                 let facing = self.0.rotation.rotate_direction(Direction::South);
                 let mut nbt = super::legacy::spawn_nbt("minecraft:item_frame", pos, false, false);
@@ -463,5 +484,206 @@ impl LegacyPiece for EndCityPiece {
             }
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        fluid::FluidState,
+        heightmap::HeightmapType,
+        nbt::{JavaString, parse_snbt},
+        registry::{BlockRegistry, BlockStateId},
+        worldgen::{
+            placement::PlacementQueryError,
+            structure::{
+                StateTransforms,
+                legacy::{PieceWorld, SolidRender},
+                processor::{PlaceSettings, ProcessorList, ProcessorRandom},
+            },
+        },
+    };
+    use horizon_core::{position::ChunkPos, random::LegacyRandom};
+    use std::{collections::BTreeMap, path::Path, sync::Mutex};
+
+    /// Air and the structure block that carries the piece's data markers.
+    fn registry() -> &'static BlockRegistry {
+        let names = ["minecraft:air", "minecraft:structure_block"];
+        let rows: Vec<serde_json::Value> = names
+            .iter()
+            .map(|name| {
+                serde_json::json!([name, name.ends_with("air"), false, "",
+                    {"id": name, "properties": {}}])
+            })
+            .collect();
+        let defaults: serde_json::Map<String, serde_json::Value> = names
+            .iter()
+            .enumerate()
+            .map(|(i, name)| ((*name).to_owned(), serde_json::json!(i)))
+            .collect();
+        let facts = serde_json::json!({"states": rows, "defaults": defaults});
+        let registry = BlockRegistry::from_facts_json(facts.to_string().as_bytes()).unwrap();
+        Box::leak(Box::new(registry))
+    }
+
+    /// The piece's world: nothing but the entities the markers spawn.
+    struct World {
+        entities: Vec<Compound>,
+    }
+    impl PieceWorld for World {
+        fn block(&mut self, _: [i32; 3]) -> Result<BlockStateId> {
+            Ok(BlockStateId(0))
+        }
+        fn set(&mut self, _: [i32; 3], _: BlockStateId, _: i32) -> Result<bool> {
+            Ok(true)
+        }
+        fn fluid(&mut self, _: [i32; 3]) -> Result<FluidState> {
+            Ok(FluidState::EMPTY)
+        }
+        fn height(&mut self, _: HeightmapType, _: i32, _: i32) -> Result<i32> {
+            Err(PlacementQueryError::Unavailable)
+        }
+        fn min_y(&mut self) -> Result<i32> {
+            Ok(-64)
+        }
+        fn max_y(&mut self) -> Result<i32> {
+            Ok(384)
+        }
+        fn block_entity(&mut self, _: [i32; 3], _: Compound) -> Result<()> {
+            Ok(())
+        }
+        fn entity(&mut self, nbt: Compound) -> Result<()> {
+            self.entities.push(nbt);
+            Ok(())
+        }
+        fn post_process(&mut self, _: [i32; 3]) -> Result<()> {
+            Ok(())
+        }
+        fn fluid_tick(&mut self, _: [i32; 3], _: crate::fluid::FluidKind, _: i32) -> Result<()> {
+            Ok(())
+        }
+        fn seed(&mut self) -> Result<i64> {
+            Ok(0)
+        }
+        fn level_boolean(&mut self) -> Result<bool> {
+            Ok(false)
+        }
+        fn level_float(&mut self) -> Result<f32> {
+            Ok(0.0)
+        }
+        fn level_int(&mut self, _: i32) -> Result<i32> {
+            Ok(0)
+        }
+        fn sea_level(&mut self) -> Result<i32> {
+            Ok(63)
+        }
+        fn face_full(&mut self, _: [i32; 3], _: Direction) -> Result<bool> {
+            Ok(false)
+        }
+        fn face_sturdy(&mut self, _: [i32; 3], _: Direction) -> Result<bool> {
+            Ok(false)
+        }
+        fn center_sturdy(&mut self, _: [i32; 3], _: Direction) -> Result<bool> {
+            Ok(false)
+        }
+        fn biome(&mut self, _: [i32; 3]) -> Result<crate::worldgen::biome::BiomeId> {
+            Err(PlacementQueryError::Unavailable)
+        }
+        fn place_template(
+            &mut self,
+            _: &StructureResources,
+            _: &StructureTemplate,
+            _: [i32; 3],
+            _: [i32; 3],
+            _: &mut PlaceSettings<'_>,
+            _: &mut dyn ProcessorRandom,
+            _: i32,
+        ) -> Result<bool> {
+            Ok(true)
+        }
+    }
+    struct Blocks;
+    impl SolidRender for Blocks {
+        fn solid_render(&self, _: BlockStateId) -> bool {
+            false
+        }
+    }
+
+    /// A one-block end city piece carrying the `Sentry` marker at `position`.
+    fn piece(registry: &'static BlockRegistry, position: [i32; 3]) -> EndCityPiece {
+        let (tag, _) = parse_snbt(
+            r#"{size:[1,1,1],palette:[{Name:"minecraft:structure_block"}],
+                blocks:[{pos:[0,0,0],state:0,nbt:{mode:"data",metadata:"Sentry"}}]}"#,
+        )
+        .unwrap();
+        let template = StructureTemplate::from_nbt(&tag, registry, &StateTransforms::default());
+        EndCityPiece(
+            TemplatePiece {
+                type_name: "minecraft:ecp",
+                gen_depth: 0,
+                template_name: "minecraft:end_city/base_floor".into(),
+                template: Arc::new(template),
+                position,
+                rotation: Rotation::None,
+                mirror: Mirror::None,
+                pivot: [0; 3],
+                processors: Arc::new(ProcessorList::default()),
+                waterlogging: false,
+                ignore: vec!["minecraft:structure_block".into()],
+                bounding_box: BoundingBox::new(position, position),
+                handler: TemplateHandler::Plain,
+                state: Mutex::new(None),
+            },
+            0,
+        )
+    }
+
+    /// The ids of the entities the piece's markers spawn, with the piece at
+    /// `position`.
+    fn spawned(position: [i32; 3]) -> Vec<String> {
+        let registry = registry();
+        let resources = StructureResources::new(
+            registry,
+            StateTransforms::default(),
+            Path::new("/nonexistent"),
+            BTreeMap::new(),
+            &BTreeMap::new(),
+        );
+        let piece = piece(registry, position);
+        let mut world = World {
+            entities: Vec::new(),
+        };
+        let mut blocks = Blocks;
+        let mut random = LegacyRandom::new(0);
+        {
+            let mut c = PieceContext {
+                world: &mut world,
+                resources: &resources,
+                blocks: &mut blocks,
+                random: &mut random,
+                chunk_box: BoundingBox::new(position, position),
+                chunk: ChunkPos::new(0, 0),
+                reference: position,
+            };
+            piece.post_process(&mut c).unwrap();
+        }
+        world
+            .entities
+            .iter()
+            .filter_map(|nbt| match nbt.get(&JavaString::from("id")) {
+                Some(Tag::String(id)) => Some(id.to_string_lossy()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// `EndCityPieces.EndCityPiece.handleDataMarker`: a sentry marker inside
+    /// `Level.isInSpawnableBounds` spawns its shulker, one at the top edge does
+    /// not.
+    #[test]
+    fn a_sentry_marker_outside_the_spawnable_bounds_spawns_no_shulker() {
+        assert_eq!(spawned([0, 64, 0]), ["minecraft:shulker"]);
+        assert!(spawned([0, 20_000_000, 0]).is_empty());
     }
 }
