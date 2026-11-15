@@ -9,9 +9,9 @@ use horizon_core::{geometry::Direction, position::BlockPos};
 /// `Direction.Axis.getDirections()`.
 fn axis_directions(axis: &str) -> [Direction; 2] {
     match axis {
-        "x" => [Direction::West, Direction::East],
-        "z" => [Direction::North, Direction::South],
-        _ => [Direction::Down, Direction::Up],
+        "x" => [Direction::East, Direction::West],
+        "z" => [Direction::South, Direction::North],
+        _ => [Direction::Up, Direction::Down],
     }
 }
 
@@ -79,5 +79,18 @@ impl Behaviours {
         state: BlockStateId,
     ) -> bool {
         self.sim(level, ticks).heart_has_required_logs(state, pos)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `Direction.Axis.getDirections`: the positive direction first.
+    #[test]
+    fn axis_directions_are_positive_first() {
+        assert_eq!(axis_directions("x"), [Direction::East, Direction::West]);
+        assert_eq!(axis_directions("z"), [Direction::South, Direction::North]);
+        assert_eq!(axis_directions("y"), [Direction::Up, Direction::Down]);
     }
 }
