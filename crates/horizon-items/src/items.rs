@@ -800,7 +800,7 @@ impl Items {
                     .or_insert(BlockStateId(i as u32));
             }
         }
-        // Block.getItem is not an inverse of BlockItem.getBlock: several items
+        // Block.asItem is not an inverse of BlockItem.getBlock: several items
         // may place the same block. Read their normal compiled bindings too.
         #[derive(Default, serde::Deserialize)]
         struct Bindings {
