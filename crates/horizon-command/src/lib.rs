@@ -2,7 +2,9 @@
 //! literal/argument node trees with redirects, parsing that tries every
 //! relevant child and keeps the best result, completion suggestions, smart
 //! usage text and the vanilla error messages. Argument types live in
-//! [`args`]; the vanilla command tree in [`vanilla`].
+//! [`args`]; the vanilla command tree in [`vanilla`]. Brigadier is a library,
+//! not part of the pinned 26.3 sources, so a comment naming its classes
+//! describes the library this module ports.
 #![forbid(unsafe_code)]
 pub mod args;
 pub mod block;
