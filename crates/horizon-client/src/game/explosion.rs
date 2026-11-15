@@ -1339,7 +1339,7 @@ impl Game<'_> {
                 radius,
             });
         }
-        // Explosion.explode: the blast is heard.
+        // Level.explode: the blast is heard.
         let ctx = horizon_client::sculk::Context::default();
         self.post_game_event("minecraft:explode", center, ctx);
         let mut targets = self.exploded_positions(center, radius, resists, source.portal_proof);
