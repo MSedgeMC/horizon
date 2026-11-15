@@ -127,7 +127,7 @@ SetBannerPatternFunction.Builder	skip:java		builder
 SetBookCoverFunction.apply	port	crates/horizon-world/src/loot.rs::Context::run	the written book's title (raw text, filtered kept), author and generation, over the component the stack already has, pages kept; `crates/horizon-items/src/item_data.rs::StackData::set_loot_component` then reads it into the book's fields
 SetComponentsFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	loot tables apply set_components when the stack becomes an item (trial chamber trims included), not only /item modify
 SetComponentsFunction.setComponent	skip:java		builder factory
-SetContainerContents.run	missing		minor: no vanilla loot table uses set_contents
+SetContainerContents.run	port	crates/horizon-world/src/loot.rs::Context::run	the set_contents arm: each expanded entry becomes the next minecraft:container slot, with the entry weight not consulted; an empty stack is unchanged
 SetContainerContents.Builder	skip:java		builder
 SetContainerLootTable	missing		minor: no vanilla loot table uses set_loot_table
 SetCustomDataFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	set_custom_data arm: the tag merges into the minecraft:custom_data component as CompoundTag.merge does; the item layer reads the component from other

@@ -1913,6 +1913,46 @@ impl<R: RandomSource> Context<'_, R> {
                     stack.components.push((id.clone(), value.clone()));
                 }
             }
+            // SetContainerContents: an empty stack is unchanged. Otherwise
+            // each entry expands to a singleton whose item stack is added, in
+            // order, to the component's slots (ItemContainerContents: the
+            // stream is slots 0, 1, ... with trailing empties trimmed). The
+            // entry weight is not consulted: this is `expand`, not a pool
+            // draw. The block entity item code reads the component back as
+            // its Items.
+            "minecraft:set_contents" => {
+                if stack.is_empty() {
+                    return stack;
+                }
+                if f["component"].as_str() != Some("minecraft:container") {
+                    return stack;
+                }
+                let Some(entries) = f["entries"].as_array() else {
+                    return stack;
+                };
+                let mut contents = Vec::new();
+                for entry in entries {
+                    let mut choices = Vec::new();
+                    self.expand(entry, &mut choices);
+                    for choice in &choices {
+                        let mut out =
+                            |_: &mut Context<'_, R>, stack: LootStack| contents.push(stack);
+                        self.create(choice, &mut out);
+                    }
+                }
+                let id = "minecraft:container";
+                stack.components.retain(|(k, _)| k != id);
+                if !contents.is_empty() {
+                    let slots = contents
+                        .iter()
+                        .enumerate()
+                        .map(|(slot, stack)| {
+                            serde_json::json!({"slot": slot, "item": container_item(stack)})
+                        })
+                        .collect();
+                    stack.components.push((id.to_owned(), Value::Array(slots)));
+                }
+            }
             // A mod's own kind: the hook changes the stack.
             k if k.contains(':') && !k.starts_with("minecraft:") => {
                 native_loot_function(k, f, &self.native_ctx(), &mut stack);
@@ -2170,6 +2210,73 @@ fn enchant(stack: &mut LootStack, name: &str, level: i32) {
         Some(slot) => slot.1 = level,
         None => stack.enchantments.push((name.to_owned(), level)),
     }
+}
+
+/// One rolled stack as an `ItemStackTemplate` in a container component:
+/// `{id, count?, components?}` (the item layer's `template_tag` shape).
+/// `ItemContainerContents.copyWithContents` keeps the whole stack, so the
+/// rolled damage, enchantments, potion, name and components are saved too.
+fn container_item(stack: &LootStack) -> Value {
+    let mut components = serde_json::Map::new();
+    if stack.damage > 0 {
+        components.insert("minecraft:damage".to_owned(), Value::from(stack.damage));
+    }
+    if !stack.enchantments.is_empty() {
+        let id = if stack.item == "minecraft:enchanted_book" {
+            "minecraft:stored_enchantments"
+        } else {
+            "minecraft:enchantments"
+        };
+        let levels = stack
+            .enchantments
+            .iter()
+            .map(|(name, level)| (name.clone(), Value::from(*level)))
+            .collect();
+        components.insert(id.to_owned(), Value::Object(levels));
+    }
+    if let Some(potion) = &stack.potion {
+        components.insert(
+            "minecraft:potion_contents".to_owned(),
+            serde_json::json!({"potion": potion}),
+        );
+    }
+    if let Some(amplifier) = stack.ominous_amplifier {
+        components.insert(
+            "minecraft:ominous_bottle_amplifier".to_owned(),
+            Value::from(amplifier),
+        );
+    }
+    if !stack.stew_effects.is_empty() {
+        let effects = stack
+            .stew_effects
+            .iter()
+            .map(|(id, duration)| serde_json::json!({"id": id, "duration": duration}))
+            .collect();
+        components.insert(
+            "minecraft:suspicious_stew_effects".to_owned(),
+            Value::Array(effects),
+        );
+    }
+    for (id, text) in &stack.names {
+        components.insert(id.clone(), text.clone());
+    }
+    // `set_components` patches the item and takes precedence.
+    for (id, value) in &stack.components {
+        if value.is_null() {
+            components.remove(id);
+        } else {
+            components.insert(id.clone(), value.clone());
+        }
+    }
+    let mut item = serde_json::Map::new();
+    item.insert("id".to_owned(), Value::String(stack.item.clone()));
+    if stack.count != 1 {
+        item.insert("count".to_owned(), Value::from(stack.count));
+    }
+    if !components.is_empty() {
+        item.insert("components".to_owned(), Value::Object(components));
+    }
+    Value::Object(item)
 }
 
 #[cfg(test)]
@@ -2587,6 +2694,72 @@ mod namespace_tests {
                 "pages": [{"raw": "page two"}],
             })
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// SetContainerContents: an entry expands to one container slot, in
+    /// order, with the entry's weight ignored; the component is the same
+    /// minecraft:container list block entity items carry. An empty stack is
+    /// returned untouched.
+    #[test]
+    fn set_contents_writes_the_container_component() {
+        let root =
+            std::env::temp_dir().join(format!("horizon-loot-contents-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let function = serde_json::json!({
+            "type": "minecraft:set_contents",
+            "component": "minecraft:container",
+            "entries": [
+                {"type": "minecraft:item", "name": "minecraft:diamond", "weight": 1,
+                 "modifier": [{"type": "minecraft:set_count", "count": 3}]},
+                {"type": "minecraft:item", "name": "minecraft:apple", "weight": 3,
+                 "condition": {"type": "minecraft:random_chance", "chance": 1.0},
+                 "modifier": [{"type": "minecraft:set_count", "count": 2}]}
+            ]
+        });
+        let table = serde_json::json!({
+            "pools": [{"rolls": 1, "entries": [{"type": "minecraft:item",
+                "name": "minecraft:shulker_box", "modifier": [function.clone()]}]}]
+        });
+        let path = root.join("data/minecraft/loot_table/chests/contents.json");
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, table.to_string()).unwrap();
+        fs::write(
+            root.join("items.json"),
+            r#"{"minecraft:shulker_box": {}, "minecraft:chest": {}}"#,
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/contents", 7, 27, None);
+        let boxed = filled.iter().flatten().next().expect("a shulker box");
+        let component: Vec<_> = boxed
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:container")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", boxed.components);
+        assert_eq!(
+            component[0].1,
+            serde_json::json!([
+                {"slot": 0, "item": {"id": "minecraft:diamond", "count": 3}},
+                {"slot": 1, "item": {"id": "minecraft:apple", "count": 2}}
+            ])
+        );
+        // An empty stack keeps no component, even with the same function.
+        let empty = LootStack {
+            count: 0,
+            ..LootStack::new("minecraft:chest")
+        };
+        let mut context = Context {
+            data: &data,
+            random: LegacyRandom::new(7),
+            biome: None,
+            visited: Vec::new(),
+            luck: 0.0,
+            open_water: None,
+            entity: None,
+        };
+        assert_eq!(context.run(&function, empty.clone()), empty);
         let _ = fs::remove_dir_all(&root);
     }
 
