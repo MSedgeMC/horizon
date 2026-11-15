@@ -3630,7 +3630,7 @@ impl Game<'_> {
         // `source.getLevel()`: the spawn, and the dimension it belongs to
         // (`RespawnData.of(level.dimension(), pos, yaw, pitch)`).
         let level = self.source_level();
-        // LevelData.setRespawnData: the world's spawn (level.dat `spawn`).
+        // Level.setRespawnData: the world's spawn (level.dat `spawn`).
         let previous_point = self.world_spawn_position().map(|v| v.floor() as i32);
         let old = self.level.world_spawn.replace(pos);
         let old_angle = self.level.world_spawn_angle;
