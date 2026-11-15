@@ -226,7 +226,11 @@ fn setup(dir: &Path) -> Result<Setup, String> {
     if !p.enable_query {
         return Ok(Setup::Off);
     }
-    let Some(port) = u16::try_from(p.query_port).ok().filter(|port| *port > 0) else {
+    // `QueryThreadGs4.create`: a port of 0 or above 65534 is invalid, so 65535 is off too.
+    let Some(port) = u16::try_from(p.query_port)
+        .ok()
+        .filter(|port| (1..65535).contains(port))
+    else {
         return Ok(Setup::Refused(format!(
             "Invalid query port {} found in server.properties (queries disabled)",
             p.query_port
@@ -759,7 +763,7 @@ mod tests {
         let write = |text: &str| std::fs::write(dir.join(crate::config::PROPERTIES), text).unwrap();
         write("enable-query=false\nquery.port=0\n");
         assert!(matches!(setup(&dir), Ok(Setup::Off)));
-        for port in ["0", "65536", "-3"] {
+        for port in ["0", "65535", "65536", "-3"] {
             write(&format!("enable-query=true\nquery.port={port}\n"));
             match setup(&dir) {
                 Ok(Setup::Refused(why)) => assert_eq!(

@@ -75,7 +75,11 @@ fn setup(dir: &Path) -> Result<Setup, String> {
     if !p.enable_rcon {
         return Ok(Setup::Off);
     }
-    let Some(port) = u16::try_from(p.rcon_port).ok().filter(|port| *port > 0) else {
+    // `RconThread.create`: a port of 0 or above 65534 is invalid, so 65535 is off too.
+    let Some(port) = u16::try_from(p.rcon_port)
+        .ok()
+        .filter(|port| (1..65535).contains(port))
+    else {
         return Ok(Setup::Refused(format!(
             "Invalid rcon port {} found in server.properties, rcon disabled!",
             p.rcon_port
@@ -715,6 +719,10 @@ mod tests {
             (
                 "enable-rcon=true\nrcon.password=pw\nrcon.port=0\n",
                 "Invalid rcon port 0 found in server.properties, rcon disabled!",
+            ),
+            (
+                "enable-rcon=true\nrcon.password=pw\nrcon.port=65535\n",
+                "Invalid rcon port 65535 found in server.properties, rcon disabled!",
             ),
             (
                 "enable-rcon=true\nrcon.password=pw\nrcon.port=65536\n",
