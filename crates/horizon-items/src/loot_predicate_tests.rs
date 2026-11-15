@@ -110,3 +110,34 @@ fn the_games_own_silk_touch_predicate_still_drops_stone() {
     pick.enchant("minecraft:silk_touch", 1);
     assert_eq!(drops(&pick), ["minecraft:stone"]);
 }
+
+/// `ItemPredicate.count`: a tool predicate naming a count holds only for a
+/// stack with that many items (an int or a `{min, max}` range).
+#[test]
+fn a_match_tool_predicate_reads_the_stack_count() {
+    let root = std::env::temp_dir().join(format!(
+        "horizon-loot-tool-count-{}",
+        std::process::id()
+    ));
+    let _ = fs::remove_dir_all(&root);
+    fs::create_dir_all(root.join("data/minecraft/loot_table/blocks")).unwrap();
+    fs::write(root.join("items.json"), "{}").unwrap();
+    fs::write(
+        root.join("data/minecraft/loot_table/blocks/stone.json"),
+        r#"{"type":"minecraft:block","pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:diamond","condition":{"type":"minecraft:match_tool","predicate":{"items":"minecraft:stick","count":{"min":2}}}}]}]}"#,
+    )
+    .unwrap();
+    let items = Items::catalog(&root, &PackOverlay::NONE).unwrap();
+    let facts = br#"{"defaults":{"minecraft:air":0,"minecraft:stone":1},
+        "states":[["air",true,false,"","minecraft:air"],
+                  ["stone",false,false,"","minecraft:stone"]]}"#;
+    let registry = BlockRegistry::from_facts_json(&facts[..]).unwrap();
+    let drops = |held: &ItemStack| {
+        items
+            .block_drops(&registry, BlockStateId(1), Some(held), &mut LegacyRandom::new(7))
+            .len()
+    };
+    assert_eq!(drops(&ItemStack::new("minecraft:stick", 1)), 0);
+    assert_eq!(drops(&ItemStack::new("minecraft:stick", 2)), 1);
+    fs::remove_dir_all(root).unwrap();
+}

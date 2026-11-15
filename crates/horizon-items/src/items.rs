@@ -2141,7 +2141,19 @@ impl LootContext<'_> {
                             self.held.and_then(ItemStack::custom_data),
                         )
                     });
-                items_ok && enchants_ok && custom_ok
+                // ItemPredicate "count": an int, or a `{min, max}` range, of the
+                // stack's count (an `IntRange`: a missing bound is open).
+                let have = i64::from(self.held.map_or(0, |h| h.count));
+                let count_ok = match &c["predicate"]["count"] {
+                    Value::Null => true,
+                    Value::Number(n) => n.as_i64() == Some(have),
+                    Value::Object(range) => {
+                        range.get("min").and_then(Value::as_i64).is_none_or(|m| have >= m)
+                            && range.get("max").and_then(Value::as_i64).is_none_or(|m| have <= m)
+                    }
+                    _ => false,
+                };
+                items_ok && count_ok && enchants_ok && custom_ok
             }
             "minecraft:killed_by_player" => self.killed_by_player,
             "minecraft:random_chance_with_enchanted_bonus" => {
