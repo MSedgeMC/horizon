@@ -1003,8 +1003,9 @@ pub fn mob_to_nbt(
             map.insert("Tame".into(), Tag::Byte(i8::from(m.extra.tame)));
             map.insert("Temper".into(), Tag::Int(m.extra.equine_temper));
             map.insert("Bred".into(), Tag::Byte(i8::from(m.extra.bred)));
-            // AbstractHorse.addAdditionalSaveData; the eating haystack is not modelled yet.
-            map.entry("EatingHaystack".into()).or_insert(Tag::Byte(0));
+            // AbstractHorse.addAdditionalSaveData writes the eating flag the
+            // model animates; a camel's save carries the same field.
+            map.insert("EatingHaystack".into(), Tag::Byte(i8::from(m.extra.flag)));
             if let Some(owner) = m.extra.owner {
                 map.insert("Owner".into(), Tag::IntArray(owner.to_vec()));
             }
@@ -2248,6 +2249,9 @@ pub fn mob_from_nbt_with_random(
         // AbstractHorse.readAdditionalSaveData: the saved Int as is, camels included.
         m.extra.equine_temper = tag.get("Temper").and_then(int_value).unwrap_or(0);
         m.extra.bred = flag(tag, "Bred");
+        // AbstractHorse.readAdditionalSaveData: the eating flag all its
+        // subclasses share (the camel branch below sets it again).
+        m.extra.flag = flag(tag, "EatingHaystack");
         m.extra.owner = crate::save::uuid_from_tag(tag.get("Owner"));
         let v = number(tag.get("Variant")).unwrap_or(0) as i32;
         (m.extra.variant, m.extra.variant2) = crate::mobs::equine::horse_look(v);
@@ -10433,8 +10437,12 @@ mod camel_inherited_saved_tests {
         }
     }
 
+    /// `AbstractHorse.readAdditionalSaveData` and
+    /// `AbstractHorse.addAdditionalSaveData`: every horse, donkey, mule,
+    /// skeleton horse, zombie horse and llama reads and writes the eating
+    /// haystack flag, not only a camel.
     #[test]
-    fn camel_saved_carry_leaves_the_seven_equine_paths_unchanged() {
+    fn every_equine_path_reads_and_saves_the_eating_haystack() {
         for (species, id) in [
             (Species::Horse, "minecraft:horse"),
             (Species::Donkey, "minecraft:donkey"),
@@ -10448,18 +10456,13 @@ mod camel_inherited_saved_tests {
             put(&mut raw, "Tame", Tag::Byte(1));
             let mob = mob_from_nbt(&raw, &types(species, id), 92, None).unwrap();
             assert_eq!(mob.extra.equine_temper, 12);
-            assert!(!mob.extra.flag, "the other species' load path is unchanged");
+            assert!(mob.extra.flag, "{id} loads EatingHaystack");
             for source in [None, Some(&raw)] {
                 let saved = mob_to_nbt(&mob, [92, 0, 0, 1], source, None, |_| None);
                 assert_eq!(saved.get("Temper"), Some(&Tag::Int(12)));
                 assert_eq!(saved.get("Tame"), Some(&Tag::Byte(1)));
                 assert_eq!(saved.get("Bred"), Some(&Tag::Byte(1)));
-                // Preserve the existing raw/default behavior outside Camel;
-                // this control does not claim the other species' eating codec.
-                assert_eq!(
-                    saved.get("EatingHaystack"),
-                    Some(&Tag::Byte(i8::from(source.is_some())))
-                );
+                assert_eq!(saved.get("EatingHaystack"), Some(&Tag::Byte(1)));
             }
         }
     }

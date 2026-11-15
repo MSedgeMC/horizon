@@ -25,7 +25,7 @@ AbstractHorse.tickRidden	port	crates/horizon-client/src/mobs/equine.rs::ridden_s
 AbstractHorse.addPassenger	inline	crates/horizon-client/src/game/mounts.rs::Game::interact_mount	gap: minor: the rider's yaw is snapped to the mount's on mounting, the pitch is not
 AbstractHorse.getRiddenInput	port	crates/horizon-client/src/mobs/equine.rs::ridden_step	gap: player: no allowStandSliding, so a horse that lands from a small hop while still rearing ignores the keys until the rear ends
 AbstractHorse.executeRidersJump	port	crates/horizon-client/src/mobs/equine.rs::ridden_step	gap: minor: the impulse is jump strength times the bar only, no honey block factor and no Jump Boost
-AbstractHorse.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	gap: minor: Tame, Temper and Owner are read; EatingHaystack and Bred are not
+AbstractHorse.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	Tame, Temper, Owner, Bred and EatingHaystack from the shared AbstractHorse fields
 AbstractHorse.setOffspringAttribute	port	crates/horizon-client/src/mobs/equine.rs::inherit	max health, jump strength and speed from both parents
 AbstractHorse.onPlayerJump	inline	crates/horizon-client/src/game/mounts.rs::Game::tick_mount_riding	gap: minor: the rear and the jump sound; donkeys and mules play the horse jump sound
 AbstractHorse.handleEntityEvent	port	crates/horizon-client-render/src/particles.rs::entity_event_burst	events 7 and 6: hearts and smoke around the mount
