@@ -51,9 +51,8 @@ pub fn peek_height_scale(m: &Mob) -> Option<f32> {
 
 pub fn register(m: &mut Mob) {
     m.no_gravity = true;
-    m.yaw = 0.0;
-    m.body_yaw = 0.0;
-    m.previous_body_yaw = 0.0;
+    // A shulker's constructor leaves the rotation `Entity` gave it; only
+    // `finalizeSpawn` squares a natural spawn, and that runs in `finalize.rs`.
     if m.extra.color == 0 && m.extra.variant == 0 {
         m.extra.color = NO_COLOR;
     }
@@ -452,9 +451,9 @@ pub fn keep_eased_peek(slot: &mut Mob, old: &Mob) {
 /// [`shell_tick`].
 pub fn tick(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     m.velocity = Vec3::ZERO;
+    // `Shulker.tick` keeps the rotation `Entity.load` read; only the body
+    // stays square (`ShulkerBodyRotationControl.clientTick` is empty).
     m.body_yaw = 0.0;
-    m.yaw = 0.0;
-    m.head_pitch = 0.0;
     shell_tick(m, w, events);
 }
 /// `Shulker.tick`'s own part, which runs with or without AI: a shell that

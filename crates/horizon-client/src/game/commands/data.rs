@@ -300,6 +300,13 @@ impl Game<'_> {
                 let [x, y, z] = c.at;
                 // Read the live cloud, including its current radius and age;
                 // the raw compound alone does not contain generated clouds.
+                // `Entity.load` reads its rotation from that compound, and
+                // nothing turns a cloud, so this reads the loaded angles.
+                let rotation = self
+                    .persist
+                    .raw
+                    .get(&id)
+                    .map_or([0.0, 0.0], entity_nbt::rotation);
                 let mut tag = self.other_to_nbt(
                     &super::OtherEntity {
                         id,
@@ -309,8 +316,8 @@ impl Game<'_> {
                         knot_check: None,
                         eye: None,
                         position: horizon_core::geometry::Vec3::new(x, y, z),
-                        yaw: 0.0,
-                        pitch: 0.0,
+                        yaw: rotation[0],
+                        pitch: rotation[1],
                     },
                     uuid,
                 );

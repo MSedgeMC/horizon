@@ -3586,7 +3586,9 @@ pub fn cushion_to_nbt(c: &Cushion, uuid: [i32; 4], raw: Option<&Tag>) -> Tag {
         uuid,
         position: c.position,
         motion: Vec3::ZERO,
-        rotation: [c.yaw, 0.0],
+        // `Entity.saveWithoutId`: the yaw is the placed or loaded one, and the
+        // pitch is the one the compound was loaded with (a cushion never tips).
+        rotation: [c.yaw, raw.map_or(0.0, |tag| rotation(tag)[1])],
         on_ground,
         fall_distance,
     };

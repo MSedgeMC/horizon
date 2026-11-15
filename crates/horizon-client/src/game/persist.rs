@@ -818,7 +818,9 @@ impl Game<'_> {
             self.remember_uuid(self.next_entity, uuid, &tag);
             let uuid = self.uuid_for(self.next_entity);
             self.falling.push(FallingBlock {
-                rotation: [0.0, 0.0],
+                // `Entity.load`: a falling block saves no rotation of its own,
+                // so the `Rotation` in its compound is the entity's.
+                rotation: entity_nbt::rotation(&tag),
                 join: Default::default(),
                 id: self.next_entity,
                 state,
@@ -6136,3 +6138,104 @@ mod mob_hurt_cooldown_tests;
 #[cfg(test)]
 #[path = "trader_llama_discard_tests.rs"]
 mod trader_llama_discard_tests;
+
+#[cfg(test)]
+mod rotation_generic_entity_tests {
+    use super::*;
+
+    /// `Rotation` is `Entity`'s, not the kind's: a cloud, a falling block, a
+    /// shulker and a cushion summoned with `[75f,20f]` read it through
+    /// `/data get`, write it into their chunk and read it back when the chunk
+    /// loads again (#16909).
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_summoned_rotation_survives_a_save_and_load() {
+        use super::super::{Audio, Options, Progress, Settings, load_resources};
+        let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
+        let settings = Settings::default();
+        let loaded = load_resources(
+            root.clone(),
+            None,
+            &root,
+            &settings,
+            std::time::Instant::now(),
+            false,
+            true,
+            &Progress::new(),
+            &mut |_, _| unreachable!("no menu handoff"),
+        )
+        .unwrap();
+        let mut options = Options::parse(std::iter::empty()).unwrap().unwrap();
+        options.resources = root.clone();
+        options.headless = true;
+        options.execution_role = crate::game::execution_role::ExecutionRole::IntegratedServer;
+        let mut game = Game::new(
+            &loaded.resources,
+            loaded.pack,
+            loaded.gui.unwrap(),
+            options,
+            settings,
+            Audio::silent(&root),
+            None,
+        )
+        .unwrap();
+        game.build_registries();
+        game.set_allow_commands(true);
+        game.world
+            .chunks
+            .insert((0, 0), Arc::new(Chunk::empty(0, 0)));
+        // `FallingBlockEntity` loads through its `BlockState`; the rest take the
+        // plain compound.
+        let kinds = [
+            ("area_effect_cloud", ""),
+            ("falling_block", ",BlockState:{Name:\"minecraft:sand\"}"),
+            ("shulker", ""),
+            ("cushion", ""),
+        ];
+        let uuid = |n: usize| [16909, 0, 0, (n + 1) as i32];
+        for (n, (kind, block)) in kinds.iter().enumerate() {
+            let u = uuid(n);
+            let summon = format!(
+                "summon minecraft:{kind} 4.5 64 4.5 {{UUID:[I;{},{},{},{}],Rotation:[75f,20f]{block}}}",
+                u[0], u[1], u[2], u[3]
+            );
+            assert!(game.run_command(&summon), "{summon}");
+        }
+        let rotation = |game: &mut Game<'_>, n: usize| {
+            game.target_with_uuid(uuid(n))
+                .and_then(|t| game.entity_nbt(t))
+                .map(|tag| entity_nbt::rotation(&tag))
+        };
+        for (n, (kind, _)) in kinds.iter().enumerate() {
+            assert_eq!(
+                rotation(&mut game, n),
+                Some([75.0, 20.0]),
+                "{kind} reads its summoned Rotation"
+            );
+        }
+        // The chunk's save writes the entity's rotation.
+        let saved = game.entity_chunks(&HashSet::from([(0, 0)]), true);
+        let written: Vec<Tag> = saved.into_iter().flat_map(|(_, tags)| tags).collect();
+        for (kind, _) in kinds {
+            let tag = written
+                .iter()
+                .find(|tag| entity_nbt::kind(tag).as_deref() == Some(&format!("minecraft:{kind}")))
+                .unwrap_or_else(|| panic!("{kind} is saved"));
+            assert_eq!(
+                entity_nbt::rotation(tag),
+                [75.0, 20.0],
+                "{kind} saves its Rotation"
+            );
+        }
+        // Loading the chunk again gives the rotation back.
+        game.world.queue_entity_nbt((0, 0), written);
+        game.spawn_loaded_entities();
+        for (n, (kind, _)) in kinds.iter().enumerate() {
+            assert_eq!(
+                rotation(&mut game, n),
+                Some([75.0, 20.0]),
+                "{kind} reads its Rotation back"
+            );
+        }
+    }
+}
