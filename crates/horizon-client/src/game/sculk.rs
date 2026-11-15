@@ -2389,7 +2389,7 @@ impl Game<'_> {
                 g.who_context(Some(who), Some(state))
             });
         }
-        // Entity.updateInWaterStateAndDoFluidPushing: entering water splashes.
+        // Entity.updateFluidInteraction: entering water splashes.
         if in_water && !previous.in_water {
             self.post_entity_event("minecraft:splash", who);
         }

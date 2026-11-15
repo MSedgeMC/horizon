@@ -65,7 +65,7 @@ pub trait HeartHost {
     fn creaking_type(&self) -> Option<Arc<MobType>>;
     /// A new mob of the type (the next entity id, its random seeded).
     fn create_mob(&mut self, kind: Arc<MobType>, at: Vec3) -> Mob;
-    /// `Level.addFreshEntity`.
+    /// `LevelWriter.addFreshEntity`.
     fn add_mob(&mut self, m: Mob);
     /// `ServerLevel.isSpawningMonsters` (rules and difficulty).
     fn spawning_monsters(&self) -> bool;

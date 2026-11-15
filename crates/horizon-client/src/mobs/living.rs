@@ -173,7 +173,7 @@ impl MobWorld<'_> {
         }
         (f.fluid, f64::from(f.fluid_level) / 9.0)
     }
-    /// Entity.updateFluidHeightAndDoFluidPushing heights over the deflated box.
+    /// Entity.updateFluidInteraction heights over the deflated box.
     pub fn fluids(&self, bounds: Aabb, eye_y: f64) -> Fluids {
         let b = bounds.deflate(Vec3::new(0.001, 0.001, 0.001));
         let (lo, hi) = (b.min_position(), b.max_position());
@@ -316,7 +316,7 @@ impl MobWorld<'_> {
         });
         Some(m)
     }
-    /// Entity.updateFluidHeightAndDoFluidPushing's currents over the deflated
+    /// Entity.updateFluidInteraction's currents over the deflated
     /// box: the flow of every water and lava block it touches, summed (a thin
     /// fluid layer scales its flow down), as (water, lava); `modded` sums the
     /// flow of that mod fluid instead.

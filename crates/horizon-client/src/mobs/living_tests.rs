@@ -608,7 +608,7 @@ fn a_mob_on_soul_sand_or_honey_is_slowed_by_the_move() {
     }
 }
 
-/// `Entity.collectColliders`: the world border's wall stops a mob's move
+/// `Entity.collectAllColliders`: the world border's wall stops a mob's move
 /// as it stops the player's (#7080). A border of size 10 around (8, 8)
 /// has its east wall at x = 13.
 #[test]

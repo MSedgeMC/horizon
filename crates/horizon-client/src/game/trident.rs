@@ -1245,7 +1245,7 @@ impl Game<'_> {
                 t.has_been_shot = true;
                 let rain = self.arrow_rain();
                 t.was_touching_water = self.arrow_scene(&rain).in_water(t.position);
-                // Entity.updateInWaterStateAndDoFluidPushing: resetFallDistance in water.
+                // Entity.updateFluidInteraction: resetFallDistance in water.
                 if t.was_touching_water {
                     t.fall_distance = 0.0;
                 }
