@@ -81,6 +81,43 @@ fn reads_the_shown_servers_with_their_pictures() {
     assert!(List::load(home.as_path()).servers().is_empty());
 }
 
+/// `ExtraCodecs.BASE64_STRING` decodes with `Base64.getDecoder()`, which takes the last group
+/// without its `=`: a picture another tool wrote unpadded is the same picture to the game. The
+/// launcher only tried the padded form, so it showed no icon where the game showed one. Run
+/// against the real 26.3 codec: `iVBORw0K` and `iVBORw0KGg` decode, `iVBORw0K=` and
+/// `iVBORw0K==` are rejected as malformed.
+#[test]
+fn a_picture_without_its_last_padding_decodes() {
+    let home = scratch("unpadded");
+    let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+    let icon = base64::engine::general_purpose::STANDARD_NO_PAD.encode(png);
+    assert!(!icon.ends_with('='), "the picture is written unpadded");
+    let root = NamedTag {
+        name: "".into(),
+        tag: Tag::compound([(
+            "servers",
+            Tag::List(vec![Tag::compound([
+                ("name", s("Friends")),
+                ("ip", s("friends.example")),
+                ("icon", s(&icon)),
+            ])]),
+        )]),
+    };
+    fs::write(
+        home.join(FILE),
+        nbt::write_named(&root, Limits::default()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        List::load(home.as_path()).servers()[0].icon.as_deref(),
+        Some(&png[..]),
+        "the game shows this picture"
+    );
+    // And the decoder accepts the unused bits of a last character that are not zero.
+    assert_eq!(decode_icon("AB==").as_deref(), Some(&[0u8][..]));
+    fs::remove_dir_all(&home).unwrap();
+}
+
 #[test]
 fn adding_and_removing_keeps_every_other_field_and_the_hidden_servers() {
     let home = scratch("keeps");

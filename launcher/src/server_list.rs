@@ -60,6 +60,23 @@ fn entry(name: &str, ip: &str) -> Compound {
     .collect()
 }
 
+/// A saved server's picture: `ExtraCodecs.BASE64_STRING`, whose decoder is `Base64.getDecoder()`.
+/// That decoder takes the last group without its `=`, and does not check the unused bits of the
+/// last character; the standard engine here does both, so an icon is decoded as Java decodes it.
+fn decode_icon(text: &str) -> Option<Vec<u8>> {
+    use base64::{
+        alphabet,
+        engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig},
+    };
+    let engine = GeneralPurpose::new(
+        &alphabet::STANDARD,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+            .with_decode_allow_trailing_bits(true),
+    );
+    engine.decode(text).ok()
+}
+
 /// An address as the game connects to it: any case, 25565 when no port is given.
 fn same_address(a: &str, b: &str) -> bool {
     let norm = |ip: &str| {
@@ -115,7 +132,7 @@ impl List {
                 ip: text(e, "ip"),
                 icon: Some(text(e, "icon"))
                     .filter(|s| !s.is_empty())
-                    .and_then(|s| base64::engine::general_purpose::STANDARD.decode(s).ok()),
+                    .and_then(|s| decode_icon(&s)),
             })
             .collect()
     }
