@@ -239,7 +239,7 @@ host's version), `host_unreachable`, `full`, `rate_limited`, `bad_request`.
   leases (725), taken ports (718), `DeletePortMapping`), the verdicts and endpoint order, gateway
   parsing for Linux, macOS and Windows, the key exchange and frames (wrong secret, tampering), the direct
   race.
-- `crates/horizon-relay/tests/tunnel.rs`: the code alone with no server (1 MiB, two guests at once); a
+- `crates/horizon-relay/tests/it/tunnel.rs`: the code alone with no server (1 MiB, two guests at once); a
   self-hosted relay with the short code (relayed, then its direct race); dead endpoints falling back to
   the relay named in the code; wrong secrets (full and short codes, the short code retired after five);
   unknown and ended codes, version mismatch, rate limits, bandwidth caps, `/health`.
