@@ -4,7 +4,7 @@
 
 Horizon once shipped three pieces of code under MIT that came from projects whose licenses don't allow that. All
 three are gone from main. They are listed here for anyone who holds an older commit, tag or release: in those
-versions, that code is not covered by Horizon's MIT license. It stays under its authors' copyright and its original
+versions, that code is not covered by Horizon's then-MIT license. It stays under its authors' copyright and its original
 license.
 
 - **Shader packs written from Iris's source.** `crates/horizon-shaderpack` and the render stages that used it were
@@ -82,10 +82,11 @@ it and checks both checksums (`tools/ci/fetch_dxc.py`); it is not in this reposi
 integrated GPUs (`crates/horizon-client-render/src/gfx/dx12_compiler.rs`,
 [#8513](https://github.com/horizon-rust/horizon/issues/8513)); every other GPU compiles with FXC, part of Windows.
 
-Copyright (c) Microsoft Corporation. It is not covered by Horizon's MIT license. It is distributed under the
-"Microsoft Software License Terms, Microsoft DirectX Shader Compiler" (`LICENSE-MS.txt` of that release). Its
-Distributable Code terms are the Windows SDK's: end users get terms that protect the code and Microsoft at least as
-much, and the distributor indemnifies Microsoft. The project accepted them on 2026-11-08. Its open-source part is also under the University of Illinois/NCSA license (`LICENSE-LLVM.txt`). Both
+Copyright (c) Microsoft Corporation. It is not covered by Horizon's LGPL-3.0-or-later license. It is
+distributed under the "Microsoft Software License Terms, Microsoft DirectX Shader Compiler"
+(`LICENSE-MS.txt` of that release). Its Distributable Code terms are the Windows SDK's: end users get
+terms that protect the code and Microsoft at least as much, and the distributor indemnifies Microsoft.
+The project accepted them on 2026-11-08. Its open-source part is also under the University of Illinois/NCSA license (`LICENSE-LLVM.txt`). Both
 files ship beside the DLL as `DXC-LICENSE-MS.txt` and `DXC-LICENSE-LLVM.txt`, with `DXC-NOTICE.txt`
 (`packaging/windows/`), which tells players those terms apply and that deleting the DLL brings back FXC.
 

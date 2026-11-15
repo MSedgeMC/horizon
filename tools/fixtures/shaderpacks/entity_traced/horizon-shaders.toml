@@ -5,7 +5,7 @@ version = "1.0.0"
 api = "0.2"
 description = "A test fixture of the frame identity harness: a material stage that traces and an entity stage. Not a look."
 authors = ["Horizon"]
-license = "MIT"
+license = "LGPL-3.0-or-later"
 
 [ray_tracing]
 

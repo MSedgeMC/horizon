@@ -57,9 +57,9 @@ of a vanilla server does.
   height; `tests/tall_column.rs` streams, lights and meshes a 131-section level to its top and remeshes after an
   edit at y 1800.
 - `HORIZON_PARITY_DATAPACKS=tools/fixtures/tall_datapacks python3 tools/test_datapack_worldgen_parity.py`
-  generates the fixture's 2096-high Overworld (`horizon_tall_test`, Horizon's own MIT pack, terrain from about
-  y 475 to 1900) with the vanilla oracle, which takes each level's range from its dimension type, and with
-  Horizon, and compares every block, biome and block entity.
+  generates the fixture's 2096-high Overworld (`horizon_tall_test`, Horizon's own LGPL-3.0-or-later pack,
+  terrain from about y 475 to 1900) with the vanilla oracle, which takes each level's range from its
+  dimension type, and with Horizon, and compares every block, biome and block entity.
 - Vanilla worlds are unchanged at every step: `chunkgen_bench --snapshot`, `test_light_parity.py` and the save
   and LAN tests give the same results as before.
 

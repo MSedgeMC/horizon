@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare chunks generated with a world's data packs block-for-block with vanilla.
 
-The packs of tools/fixtures/datapacks (Horizon's own, MIT) override and add
+The packs of tools/fixtures/datapacks (Horizon's own, LGPL-3.0-or-later) override and add
 noises, density functions, the overworld noise settings, a placed feature and
 a biome tag. Vanilla side: VanillaChunkGenerationOracle with HORIZON_DATAPACKS,
 which selects every pack of the folder after vanilla, as a world does, and

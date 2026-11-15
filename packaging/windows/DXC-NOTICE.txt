@@ -3,9 +3,10 @@ unmodified, from https://github.com/microsoft/DirectXShaderCompiler/releases/tag
 (dxc_2026_09_29.zip, bin/x64/dxcompiler.dll). Horizon loads it only on integrated GPUs with DirectX 12,
 to compile its shaders.
 
-It is not part of Horizon and not covered by Horizon's MIT licence. It is distributed under Microsoft's
-licence terms in DXC-LICENSE-MS.txt (its open-source part also under DXC-LICENSE-LLVM.txt), and using
-it means accepting those terms. If you pass this folder on, keep these three files with the DLL.
+It is not part of Horizon and not covered by Horizon's LGPL-3.0-or-later licence. It is
+distributed under Microsoft's licence terms in DXC-LICENSE-MS.txt (its open-source part also
+under DXC-LICENSE-LLVM.txt), and using it means accepting those terms. If you pass this folder
+on, keep these three files with the DLL.
 
 If you don't accept them, delete dxcompiler.dll: Horizon then compiles its shaders with FXC, part of
 Windows, and runs as before.

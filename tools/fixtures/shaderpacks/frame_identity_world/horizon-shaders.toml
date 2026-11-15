@@ -5,7 +5,7 @@ version = "1.0.0"
 api = "0.2"
 description = "A test fixture of the frame identity harness: its own sky, weather, a material reading the water mirror and opaque copies, and a post pass reading the surface target. Not a look."
 authors = ["Horizon"]
-license = "MIT"
+license = "LGPL-3.0-or-later"
 
 [sky]
 file = "sky.wgsl"

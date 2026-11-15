@@ -2,7 +2,7 @@
 # Built and run by tools/perf_bench.py; never shipped.
 modLoader = "javafml"
 loaderVersion = "[4,)"
-license = "MIT"
+license = "LGPL-3.0-or-later"
 
 [[mods]]
 modId = "horizon_bench"

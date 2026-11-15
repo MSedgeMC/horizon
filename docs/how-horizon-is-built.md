@@ -21,7 +21,7 @@ Not every line is read by a person. Instead, every change is checked against the
 
 ## Why it's safe to run
 
-- **Open source.** All of the code is public on [GitHub](https://github.com/horizon-rust/horizon), under the MIT licence.
+- **Open source.** All of the code is public on [GitHub](https://github.com/horizon-rust/horizon), under the LGPL-3.0-or-later licence.
 - **Built from the public code.** Releases are built by GitHub Actions, the build service of GitHub, from the public source. Linux and Windows are built on GitHub's machines, and macOS on Ludovic's Mac mini, which runs GitHub Actions jobs. Every build log is [public](https://github.com/horizon-rust/horizon/actions/workflows/release.yml).
 - **Signed checksums.** Every release has a `SHA256SUMS` file, a fingerprint of each download, and `SHA256SUMS.sig`, a signature of that list made with Horizon's release key, which only release builds from main can use. The launcher and `horizon-server update` check both before they install anything, and refuse a file that does not match. The very first server install with `install.sh` checks the fingerprint but not the signature.
 - **Not yet signed by Apple or Microsoft.** The macOS app is not notarized by Apple, because it is not signed with a paid Apple developer account, so macOS asks you to confirm the first time ([Install](https://playhorizon.dev/docs/install#download-the-launcher) shows how). The Windows programs are not code-signed either, so Windows may warn you too.

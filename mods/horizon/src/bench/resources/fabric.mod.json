@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "name": "Horizon benchmark driver",
   "description": "Dev-only: flies the vanilla client along tools/perf_bench.py's paths and records frame times. Never shipped.",
-  "license": "MIT",
+  "license": "LGPL-3.0-or-later",
   "environment": "client",
   "entrypoints": {
     "client": [
