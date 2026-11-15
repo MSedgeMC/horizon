@@ -42,7 +42,7 @@ impl SimplexNoise {
         self.get2_f64(x, y) as f32
     }
 
-    /// `get2` before its cast to `float` (1.21's `SimplexNoise.getValue(x, y)` returned the double).
+    /// `get2` before its cast to `float` (the old `SimplexNoise.get(x, y)` returned the double).
     pub fn get2_f64(&self, x: f64, y: f64) -> f64 {
         let x = x + self.table.offsets[0];
         let y = y + self.table.offsets[1];
