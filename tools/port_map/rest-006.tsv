@@ -58,11 +58,11 @@ TeamArgument.getTeam	port	crates/horizon-client/src/scoreboard_cmd.rs::team_name
 TeamArgument.listSuggestions	port	crates/horizon-command/src/args.rs::ArgType::suggest	ArgType::Team arm
 TimeArgument.time	skip:java		builder: Horizon names ArgType::Time in the command tree
 TimeArgument.listSuggestions	port	crates/horizon-command/src/args.rs::ArgType::suggest	ArgType::Time arm
-BlockInput.test	port	crates/horizon-client/src/game/commands.rs::Game::block_matches	gap: minor: block-entity NBT of the input is not compared
+BlockInput.test	port	crates/horizon-client/src/game/commands.rs::Game::block_matches	the block state, then the input's block-entity NBT pattern (an snbt subset compare)
 BlockInput.overwriteWithDefinedProperties	port	crates/horizon-client/src/game/commands.rs::Game::block_input_state	/setblock normalizes neighbour shapes, then reapplies explicit properties; strict skips normalization; gap: /fill still places resolved input directly
 BlockPredicateArgument.parse	port	crates/horizon-command/src/block.rs::parse	
-BlockPredicateArgument.BlockPredicate.test	port	crates/horizon-client/src/game/commands.rs::Game::block_matches	gap: minor: block-entity NBT is not compared
-BlockPredicateArgument.TagPredicate.test	port	crates/horizon-client/src/game/commands.rs::Game::block_matches	gap: minor: block-entity NBT is not compared
+BlockPredicateArgument.BlockPredicate.test	port	crates/horizon-client/src/game/commands.rs::Game::block_matches	the block state, then the predicate's block-entity NBT pattern
+BlockPredicateArgument.TagPredicate.test	port	crates/horizon-client/src/game/commands.rs::Game::block_matches	the block matches the tag, and its block-entity NBT when the predicate has one
 BlockStateArgument.parse	port	crates/horizon-command/src/block.rs::parse	
 BlockStateParser.parseForTesting	port	crates/horizon-command/src/block.rs::parse	for_testing = true, tags allowed
 BlockStateParser.suggestPropertyNameOrEnd	inline	crates/horizon-command/src/block.rs::BlockParser::fill_suggestions	property name suggestions and ]
