@@ -69,7 +69,7 @@ ChunkMap.updateChunkTracking	port	crates/horizon-client/src/lan/hub.rs::Hub::upd
 ChunkMap.applyChunkTrackingView	inline	crates/horizon-client/src/lan/hub.rs::Hub::update_view	SetChunkCacheCenter, then forget and queue the difference
 ChunkMap.getPlayers	inline	crates/horizon-client/src/lan/hub.rs::Hub::broadcast_block_changes	guests whose sent_chunks hold the column; the border form is in broadcast_light_changes
 ChunkMap.removeEntity	inline	crates/horizon-client/src/lan/entity.rs::Entities::tick	entities gone from the level leave each client in one RemoveEntities at the next tick
-ChunkMap.sendToTrackingPlayers	port	crates/horizon-client/src/lan/containers.rs::Hub::broadcast_near	gap: minor: goes to guests within a fixed distance, not to the clients that track the entity
+ChunkMap.sendToTrackingPlayers	port	crates/horizon-client/src/lan/containers.rs::Hub::send_to_tracking	sends to every placed guest whose tracker holds the entity
 ChunkMap.sendToTrackingPlayersFiltered	port	crates/horizon-client/src/lan/containers.rs::Hub::broadcast_near	gap: minor: only an except-one-guest filter, same distance rule
 ChunkMap.sendToTrackingPlayersAndSelf	port	crates/horizon-client/src/lan/containers.rs::Hub::critical_hit	the one caller, the crit animation, goes to the attacker and the clients tracking them
 ChunkMap.isTrackedByAnyPlayer	skip:debug		only the debug synchronizers ask
@@ -78,7 +78,7 @@ ChunkMap.resendBiomesForChunks	inline	crates/horizon-client/src/game/commands/te
 ChunkMap.waitForLightBeforeSending	inline	crates/horizon-client/src/lan/hub.rs::Hub::next_batch	columns are sent only once lit
 ChunkMap.forEachReadyToSendChunk	skip:debug		only the debug synchronizers ask
 ChunkMap.TrackedEntity.equals	skip:java		identity by entity id; Horizon keys tracked entities by id
-ChunkMap.TrackedEntity.sendToTrackingPlayers	port	crates/horizon-client/src/lan/containers.rs::Hub::broadcast_near	gap: minor: distance based, see ChunkMap.sendToTrackingPlayers
+ChunkMap.TrackedEntity.sendToTrackingPlayers	port	crates/horizon-client/src/lan/containers.rs::Hub::send_to_tracking	sends to the guests tracking the entity, see ChunkMap.sendToTrackingPlayers
 ChunkMap.TrackedEntity.sendToTrackingPlayersAndSelf	port	crates/horizon-client/src/lan/containers.rs::Hub::critical_hit	the attacker plus clients tracking them
 ChunkMap.TrackedEntity.sendToTrackingPlayersFiltered	port	crates/horizon-client/src/lan/containers.rs::Hub::broadcast_near	gap: minor: only an except-one-guest filter
 ChunkMap.TrackedEntity.broadcastRemoved	inline	crates/horizon-client/src/lan/entity.rs::Entities::tick	removed entities leave each client in one RemoveEntities
