@@ -729,7 +729,7 @@ pub trait LevelAccess {
     fn container_open(&self, _pos: BlockPos) -> bool {
         false
     }
-    /// `ContainerOpenersCounter.recheckOpenCount` for the chest or ender chest
+    /// `ContainerOpenersCounter.recheckOpeners` for the chest or ender chest
     /// block entity at `pos`: recounts its openers and returns the previous
     /// and new counts (the caller plays open/close effects when they change),
     /// or None when there is no such block entity.
@@ -876,7 +876,7 @@ pub trait LevelAccess {
     fn world_seed(&self) -> i64 {
         0
     }
-    /// `Level.getDayTime` (the overworld clock driving the day timeline's
+    /// `Level.getOverworldClockTime` (the overworld clock driving the day timeline's
     /// environment attributes, e.g. eyeblossoms opening at night).
     fn day_time(&self) -> i64 {
         6000
@@ -1298,7 +1298,7 @@ impl Behaviours {
         let block = self.block(sim.state(pos));
         sim.update_neighbour_for_output_signal(pos, block);
     }
-    /// `Level.scheduleTick(pos, block, delay)` for the block at `pos`.
+    /// `ScheduledTickAccess.scheduleTick(pos, block, delay)` for the block at `pos`.
     pub fn schedule_tick<L: LevelAccess + ?Sized>(
         &self,
         level: &mut L,

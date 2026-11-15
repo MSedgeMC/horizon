@@ -1189,7 +1189,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         }
         true
     }
-    /// `Registry.getRandomElementOf(tag, random)`: default state of a random member.
+    /// `HolderGetter.getRandomElementOf(tag, random)`: default state of a random member.
     fn random_tag_element(&mut self, tag: &str) -> Option<BlockStateId> {
         let features = self.b.live_features()?;
         let entries = features.block_tag_entries(tag);

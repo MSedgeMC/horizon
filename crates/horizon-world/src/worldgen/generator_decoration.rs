@@ -1310,7 +1310,7 @@ impl PlacementContext for World<'_> {
         self.entities.push(nbt);
         Ok(())
     }
-    /// SpikeFeature.placeSpike: the crystal is a fresh entity of the region,
+    /// EndSpikeFeature.placeSpike: the crystal is a fresh entity of the region,
     /// saved with the chunk.
     fn spawn_end_crystal(
         &mut self,
