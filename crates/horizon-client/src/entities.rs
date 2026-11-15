@@ -2443,7 +2443,7 @@ impl ArmorStand {
     }
     /// LivingEntity.travel (armor stands have no other movement): clamp tiny
     /// velocity components (`LivingEntity.aiStep`), move by the velocity (a
-    /// landing stops the fall, `Block.fallOn`, and a
+    /// landing stops the fall, `Entity.restituteMovementAfterCollisions`, and a
     /// wall collision zeros that horizontal axis), let the blocks it is inside
     /// push it (`push`: a bubble column), then in water the 0.8 slowdown and
     /// `getFluidFallingAdjustedMovement`, in air gravity 0.08, ground/air
