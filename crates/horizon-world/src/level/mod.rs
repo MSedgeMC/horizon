@@ -876,7 +876,7 @@ pub trait LevelAccess {
     fn world_seed(&self) -> i64 {
         0
     }
-    /// `Level.getDayTime` (the overworld clock driving the day timeline's
+    /// `Level.getOverworldClockTime` (the overworld clock driving the day timeline's
     /// environment attributes, e.g. eyeblossoms opening at night).
     fn day_time(&self) -> i64 {
         6000

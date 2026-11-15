@@ -155,7 +155,7 @@ pub struct NativeLootLevel {
     pub dimension: String,
     /// `Level.getGameTime`.
     pub game_time: i64,
-    /// `Level.getDayTime`: it counts on from day to day, so the time of
+    /// `Level.getOverworldClockTime`: it counts on from day to day, so the time of
     /// day is `day_time % 24000` (night from 13000 to 23000).
     pub day_time: i64,
     /// `Level.isRaining`.
