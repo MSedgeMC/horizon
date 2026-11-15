@@ -147,19 +147,42 @@ pub fn find(home: &Path, query: &str) -> Result<World, String> {
         .ok_or_else(|| format!("No world {query} in {}", home.join("saves").display()))
 }
 
+/// The names Windows keeps for devices: `FileUtil.RESERVED_WINDOWS_FILENAMES`, without the
+/// trailing-dot case (a dot is already an `_` here).
+fn reserved_windows_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    if ["COM", "CLOCK$", "CON", "PRN", "AUX", "NUL"].contains(&upper.as_str()) {
+        return true;
+    }
+    // `COM1`..`COM9` and `LPT1`..`LPT9`; a bare `LPT` or `COM0` is a portable name.
+    ["COM", "LPT"].iter().any(|prefix| {
+        upper
+            .strip_prefix(prefix)
+            .is_some_and(|n| n.len() == 1 && matches!(n.as_bytes()[0], b'1'..=b'9'))
+    })
+}
+
 /// `base`, else `base (1)`, `base (2)`... from the `first` count: the first name free in `dir`
-/// (vanilla's `FileUtil.findAvailableName`, after making the name safe for every file system).
+/// (vanilla's `FileUtil.findAvailableName`: `sanitizeName` turns the illegal characters and `.`
+/// into `_`; a reserved Windows device name is not a portable path part and is wrapped in `_`).
 fn free_name(dir: &Path, base: &str, suffix: &str, first: u32) -> String {
     let safe: String = base
         .chars()
         .map(|c| match c {
-            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            // `sanitizeName`: `ILLEGAL_FILE_CHARACTERS` and `[/.\\"]` become `_`.
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' | '`' | '.' => '_',
             c if c.is_control() => '_',
             c => c,
         })
         .collect();
+    // Trimmed as well, so a folder never ends in a dot (moot now) or a space, which Windows drops.
     let safe = safe.trim_matches(|c: char| c == '.' || c.is_whitespace());
     let safe = if safe.is_empty() { "World" } else { safe };
+    let safe = if reserved_windows_name(safe) {
+        format!("_{safe}_")
+    } else {
+        safe.to_owned()
+    };
     (first..)
         .map(|n| match n {
             0 => format!("{safe}{suffix}"),

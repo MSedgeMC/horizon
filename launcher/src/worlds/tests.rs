@@ -185,3 +185,24 @@ fn a_copy_gets_the_next_free_name_in_its_folder_and_level_dat() {
     );
     fs::remove_dir_all(&home).unwrap();
 }
+
+/// `FileUtil.findAvailableName` in 26.3: `sanitizeName` turns `.` and a backtick into `_`, and a
+/// reserved Windows device name is not a portable path part, so it is wrapped in `_`.
+#[test]
+fn a_free_name_is_sanitized_as_vanillas_file_util_does() {
+    let home = scratch("free-name");
+    let saves = home.join("saves");
+    fs::create_dir_all(&saves).unwrap();
+    assert_eq!(free_name(&saves, "My.World", "", 0), "My_World");
+    assert_eq!(free_name(&saves, "a`b", "", 0), "a_b");
+    for device in ["CON", "con", "COM", "LPT9", "NUL", "CLOCK$"] {
+        assert_eq!(
+            free_name(&saves, device, "", 0),
+            format!("_{device}_"),
+            "{device}"
+        );
+    }
+    assert_eq!(free_name(&saves, "COM0", "", 0), "COM0");
+    assert_eq!(free_name(&saves, "LPT10", "", 0), "LPT10");
+    fs::remove_dir_all(&home).unwrap();
+}
