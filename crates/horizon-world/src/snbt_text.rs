@@ -3,7 +3,7 @@
 //! a tag's string form.
 use crate::nbt::Tag;
 
-/// `Double.toString`.
+/// How Java prints a double.
 pub fn java_double(v: f64) -> String {
     java_float_text(v, &format!("{v}"), &format!("{v:e}"))
 }

@@ -456,7 +456,7 @@ fn adjust(
     shift_all(limits, pieces, [0, dy, 0]);
 }
 
-/// MineshaftStructure.postLayoutAdjustments: the layout's top moved to 15
+/// The layout's top is moved to 15
 /// blocks under the lowest ocean floor at the chunk's middle and 16 blocks
 /// to each side, within y_allowance; never up.
 fn below_terrain(

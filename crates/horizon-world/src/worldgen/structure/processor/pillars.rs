@@ -125,7 +125,7 @@ impl Blocks {
             .into_iter()
             .all(|d| self.occlusion.is_full(state, d).unwrap_or(false))
     }
-    /// BlockState.blocksMotion.
+    /// Whether a state blocks motion.
     fn blocks_motion(&self, state: BlockStateId) -> bool {
         !self.no_motion.contains(&state) && self.solid.contains(state)
     }

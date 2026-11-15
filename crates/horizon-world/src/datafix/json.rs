@@ -560,7 +560,7 @@ pub fn from_nbt(tag: &Tag) -> Json {
     }
 }
 
-/// Java `Double.toString`.
+/// How Java prints a double.
 pub fn java_double_string(d: f64) -> String {
     java_fp_string(d, format!("{d:e}"))
 }

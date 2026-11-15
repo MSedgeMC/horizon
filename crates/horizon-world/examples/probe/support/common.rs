@@ -3,7 +3,7 @@ use horizon_core::position::BlockPos;
 use horizon_world::nbt::Tag;
 use serde_json::Value;
 
-/// An f64's bits, every NaN as Java's canonical one (Double.doubleToLongBits).
+/// An f64's bits, every NaN as Java's canonical one (its `doubleToLongBits` form).
 pub fn f64_bits(v: f64) -> u64 {
     if v.is_nan() {
         f64::NAN.to_bits()

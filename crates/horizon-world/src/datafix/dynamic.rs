@@ -157,7 +157,7 @@ pub fn map(tag: &Tag) -> Option<&Compound> {
         _ => None,
     }
 }
-/// `Dynamic.set`: only maps change.
+/// Only maps change when a field is set.
 pub fn set(tag: &mut Tag, field: &str, value: Tag) {
     if let Tag::End = tag {
         *tag = empty_map();

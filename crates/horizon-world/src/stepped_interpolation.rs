@@ -18,7 +18,7 @@ pub struct PosRot {
 
 impl PosRot {
     /// `PositionAndRotation.is`: the same rotation and `Vec3.equals`
-    /// position (`Double.compare`, so -0.0 is not 0.0).
+    /// position (Java compares the bits, so -0.0 is not 0.0).
     fn is(&self, position: [f64; 3], yaw: f32, pitch: f32) -> bool {
         self.yaw == yaw && self.pitch == pitch && same_position(self.position, position)
     }
