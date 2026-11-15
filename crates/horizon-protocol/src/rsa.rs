@@ -265,7 +265,7 @@ const RESTRICT_EXPONENT_ABOVE: usize = 3072;
 const MAX_RESTRICTED_EXPONENT_BITS: usize = 64;
 
 /// The bit length of a big-endian unsigned integer with no leading zero bytes, as
-/// `BigInteger.bitLength`.
+/// Java's `BigInteger` bit length.
 fn bit_len(int: &[u8]) -> usize {
     int.first().map_or(0, |&top| {
         (int.len() - 1) * 8 + (8 - top.leading_zeros() as usize)
@@ -302,7 +302,7 @@ impl RsaPublicKey {
             modulus: strip(n),
             exponent: strip(e),
         };
-        // RSAKeyFactory.checkKeyLengths, as vanilla's KeyFactory applies it: a modulus of at most
+        // Java's RSA key-length check, as vanilla's KeyFactory applies it: a modulus of at most
         // 16384 bits and, past 3072 bits, an exponent of at most 64. The cost of an encryption
         // grows with the modulus squared times the exponent's bits, and the server sends the key
         // before anything is encrypted: unbounded, one key in a Hello held a login for hours.
@@ -331,7 +331,7 @@ impl RsaPublicKey {
         )
         .to_be_bytes(self.size())
     }
-    /// [`RsaPublicKey::apply`] with a private exponent: [`Mont::pow_secret`], whose time doesn't
+    /// The public-key operation with a private exponent (`pow_secret`), whose time doesn't
     /// depend on the exponent. Vanilla's JCE blinds this operation; this at least takes the same
     /// steps for every input.
     fn apply_secret(&self, block: &[u8], exponent: &[u8]) -> Vec<u8> {
@@ -398,7 +398,7 @@ impl SignatureHash {
 }
 
 impl RsaPublicKey {
-    /// `Signature.verify` for RSASSA-PKCS1-v1_5 (RFC 8017 8.2.2): the
+    /// Java signature verification for RSASSA-PKCS1-v1_5 (RFC 8017 8.2.2): the
     /// signature is exactly the modulus' length and below it, and opens to
     /// `00 01 FF.. 00 DigestInfo`. Anything else is a failed check, as
     /// SignatureValidator reports Java's exceptions.
@@ -585,7 +585,7 @@ impl RsaPrivateKey {
         })
     }
 
-    /// PublicKey.getEncoded: X.509 SubjectPublicKeyInfo.
+    /// The public key encoding: X.509 SubjectPublicKeyInfo.
     pub fn public_der(&self) -> Vec<u8> {
         let key = der_element(
             0x30,
@@ -679,7 +679,7 @@ impl RsaPrivateKey {
         Ok(Self { public, exponent })
     }
 
-    /// `Signature.sign` for RSASSA-PKCS1-v1_5 (RFC 8017 8.2.1), checked with
+    /// Java signature generation for RSASSA-PKCS1-v1_5 (RFC 8017 8.2.1), checked with
     /// the public exponent before it leaves, so a faulty result is never sent.
     pub fn sign(&self, hash: SignatureHash, message: &[u8]) -> Result<Vec<u8>> {
         let k = self.public.size();
