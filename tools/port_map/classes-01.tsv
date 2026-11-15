@@ -5,7 +5,7 @@ GlowSquid.hurtServer	inline	crates/horizon-client/src/mobs.rs::Mob::damage_with_
 WolfSoundVariants	skip:data		registry bootstrap of the wolf sound sets; sounds are in species.rs and finalize.rs
 AbstractDragonPhaseInstance.getTurnSpeed	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_dragon	0.7 / dist / rot turn for every phase but Landing; only applied while a fly target is set
 DragonChargePlayerPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Charging arm: 10-tick countdown once close; gap: minor: no collision re-target
-DragonDeathPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_dragon_death	gap: player: the phase's explosion puff every 10 ticks through the whole dying flight is missing; only the tickDeath bursts at 180 to 200 are drawn
+DragonDeathPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::Game::remote_dragon_phase_tick	the dying arm adds an explosion emitter every 10 ticks through the whole dying flight (doClientTick); only that puff is drawn here
 DragonDeathPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Dying arm sets health 1 or 0; gap: minor: egg found with the leaves-excluded heightmap, vanilla uses MOTION_BLOCKING
 DragonHoldingPatternPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Holding arm; gap: minor: horizontal and vertical collision re-target not tracked (always false)
 DragonHoldingPatternPhase.findNewTarget	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Holding arm: landing roll, strafe pick by egg distance, ring path
@@ -18,7 +18,7 @@ DragonLandingApproachPhase.navigateToNextPathNode	port	crates/horizon-client/src
 DragonLandingPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::breath_puffs	the fan of dragon breath at the head: eight a tick along getHeadLookVector(1) plus the dragon's motion; every client (single player on its server thread included) breathes it in remote_dragon_phase_tick
 DragonLandingPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Landing arm: sets flame count 0 and goes to Scanning on reaching the podium
 DragonLandingPhase.getTurnSpeed	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_dragon	Landing turn min(rot,40)/rot, the one turn formula that differs from the default
-DragonSittingAttackingPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	gap: player: the growl is played once at the start of the 40 ticks; vanilla replays it on every client tick
+DragonSittingAttackingPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::Game::remote_dragon_phase_tick	the attacking arm growls on every client tick, pitch 0.8 to 1.1 from the dragon's random
 DragonSittingAttackingPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Attacking arm: 40 ticks then Flaming
 DragonSittingFlamingPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::breath_puffs	on flame ticks 2, 4, 6 and 8: eight starts, each six puffs down the look line; every client breathes it in remote_dragon_phase_tick
 DragonSittingFlamingPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Flaming arm: the flame cloud at tick 10, 200 ticks, flame count 4 leads to Takeoff
@@ -51,7 +51,7 @@ Pillager.wantsItem	skip:other		dead code: only a white banner passes, and Pillag
 PiglinBrute.createAttributes	skip:data		attributes come from entity-types.json
 PiglinBrute.customServerAiStep	inline	crates/horizon-client/src/mobs/piglin.rs::ai_step	after the goals that pick the target: update_activity, then maybe_play_brute_sound; the goals set in register_brute stand in for vanilla's brain tick
 PiglinBrute.finalizeSpawn	inline	crates/horizon-client/src/mobs/finalize.rs::Ctx::mob	golden axe in the main hand via populate; initMemories is missing
-PiglinBrute.hurtServer	inline	crates/horizon-client/src/mobs/piglin.rs::register_brute	gap: minor: retaliation is the HurtByTarget goal; no PiglinAi.maybeRetaliate for non-piglin attackers
+PiglinBrute.hurtServer	inline	crates/horizon-client/src/mobs/piglin.rs::piglin_hurt	PiglinBruteAi.wasHurtBy is PiglinAi.maybeRetaliate: a hit that passes it calls the adult piglins and brutes to the attacker; another brute's or a piglin's hit is ignored
 PiglinBrute.wantsToPickUp	port	crates/horizon-client/src/mobs/equip.rs::wants_to_pick_up	
 PiglinBruteAi.createIdleLookBehaviors	inline	crates/horizon-client/src/mobs/piglin.rs::register_brute	gap: minor: looks at players only (LookAtPlayer); no look at piglins, random look or do-nothing pause
 PiglinBruteAi.createIdleMovementBehaviors	inline	crates/horizon-client/src/mobs/piglin.rs::register_brute	the walk back to the home memory is `BruteStrollHome` (`StrollToPoi(HOME, 0.6F, 2, 100)`); gap: minor: no visits to piglins (`InteractWith`) and no `StrollAroundPoi`, and the goal yields within ten blocks of home where vanilla re-targets it every 80 ticks
@@ -108,7 +108,7 @@ AbstractMinecartContainer.applyNaturalSlowdown	inline	crates/horizon-client/src/
 AbstractMinecartContainer.createMenu	inline	crates/horizon-client/src/game/minecarts.rs::Game::interact_cart	gap: minor: opens the chest for anyone; no refusal of a loot-table cart for spectators
 AbstractMinecartContainer.remove	port	crates/horizon-client/src/game/minecarts.rs::Game::drop_vehicle_contents	Containers.dropContents on every destroying removal, whatever entity_drops says: the damage path's kill or a creative player's discard, and /kill after the open menu writes its slots back; a loot table still held drops the roll made on load
 MinecartChest.interact	inline	crates/horizon-client/src/game/minecarts.rs::Game::interact_cart	chest arm: opens the cart's items and plays the chest sound
-MinecartCommandBlock.activateMinecart	inline	crates/horizon-client/src/game/minecarts.rs::Game::activate_cart	gap: minor: no command ever runs; the cart holds no command since its editor is missing
+MinecartCommandBlock.activateMinecart	inline	crates/horizon-client/src/game/command_minecarts.rs::Game::perform_cart_command	a powered activator rail marks the command due at most every 4 ticks (activate_cart), then the cart tick runs it from the cart's game-master source and records its output and success count
 MinecartCommandBlock.defineSynchedData	port	crates/horizon-client/src/game/minecarts.rs::Minecart::new	the cart's `synced_command` and `synced_output` start empty on the cart itself, as `DATA_ID_COMMAND_NAME` and `DATA_ID_LAST_OUTPUT` do
 MinecartCommandBlock.interact	port	crates/horizon-client/src/game/remote.rs::Game::remote_use_entity	the client opens the command editor of the cart it right-clicked
 MinecartCommandBlock.onSyncedDataUpdated	inline	crates/horizon-client/src/game/command_minecarts.rs::Game::cart_command_updated	the command is the cart's own field rather than synched entity data, which `onUpdated` copies out
