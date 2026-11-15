@@ -2153,8 +2153,7 @@ mod tests {
     #[test]
     fn a_parrot_does_not_land_on_an_owner_in_water() {
         use crate::mobs::goals::Cx;
-        use crate::mobs::world::{test_player, with_built_test_world};
-        use horizon_core::random::LegacyRandom;
+        use crate::mobs::world::{level_random, test_player, with_built_test_world};
         use std::sync::Arc;
         let mut outcomes = Vec::new();
         if !with_built_test_world(
@@ -2202,7 +2201,7 @@ mod tests {
                     parrot.extra.tame = true;
                     parrot.age = 200;
                     parrot.ai.goals.add(1, LandOnOwnersShoulder);
-                    let mut lr = LegacyRandom::new(0);
+                    let mut lr = level_random(0);
                     let mut events = Vec::new();
                     let mut cx = Cx {
                         w: &world,
