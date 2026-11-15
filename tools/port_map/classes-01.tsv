@@ -22,7 +22,7 @@ DragonSittingAttackingPhase.doClientTick	inline	crates/horizon-client/src/game/d
 DragonSittingAttackingPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Attacking arm: 40 ticks then Flaming
 DragonSittingFlamingPhase.doClientTick	inline	crates/horizon-client/src/game/dragon.rs::breath_puffs	on flame ticks 2, 4, 6 and 8: eight starts, each six puffs down the look line; every client breathes it in remote_dragon_phase_tick
 DragonSittingFlamingPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Flaming arm: the flame cloud at tick 10, 200 ticks, flame count 4 leads to Takeoff
-DragonSittingScanningPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Scanning arm; gap: minor: turns every tick, vanilla skips the turn while the target is within 10 degrees of the facing
+DragonSittingScanningPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Scanning arm: turns only while the player is more than 10 degrees off the facing (the float acos plus 0.5), and switches to attacking after 25 ticks near one
 DragonTakeoffPhase.doServerTick	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Takeoff arm: first tick finds a new target, later ticks go to Holding once 10 blocks from the podium
 DragonTakeoffPhase.findNewTarget	inline	crates/horizon-client/src/game/dragon.rs::Game::tick_phase	Takeoff arm; gap: minor: no path leaves an empty path, vanilla leaves none and searches again next tick
 DragonTakeoffPhase.navigateToNextPathNode	port	crates/horizon-client/src/game/dragon.rs::Game::next_target	
@@ -65,7 +65,7 @@ PiglinBruteAi.maybePlayActivitySound	port	crates/horizon-client/src/mobs/piglin.
 PiglinBruteAi.playActivitySound	port	crates/horizon-client/src/mobs/piglin.rs::play_brute_sound	entity.piglin_brute.angry when the fight activity starts
 PiglinBruteAi.setAngerTarget	missing		minor: no 600-tick anger memory; the target goals keep the target instead
 PiglinBruteAi.updateActivity	inline	crates/horizon-client/src/mobs/piglin.rs::update_activity	the first valid activity (fight on a target, else idle for a brute) is stored and voiced on a change; shared with PiglinAi and HoglinAi
-StartAdmiringItemIfSeen.create	inline	crates/horizon-client/src/game/piglins.rs::Game::piglin_pickups	gap: player: a piglin takes a wanted item and admires it in hand; it does not stop to admire one it only sees on the ground
+StartAdmiringItemIfSeen.create	inline	crates/horizon-client/src/game/piglins.rs::Game::piglin_pickups	PiglinAi.admire_seen starts ADMIRING_ITEM for a loved item seen within 32 blocks (none in the off hand, not disabled, not walking off), so a seen ground item is admired without being taken
 StopAdmiringIfItemTooFarAway.create	inline	crates/horizon-client/src/mobs/piglin.rs::Memories::admire_seen	the 9 block test on NEAREST_VISIBLE_WANTED_ITEM (squared 81) while the off hand holds what is admired, folded into the admire memory tick
 StopAdmiringIfTiredOfTryingToReachItem.create	inline	crates/horizon-client/src/mobs/piglin.rs::Memories::admire_seen	the 200 tick TIME_TRYING_TO_REACH_ADMIRE_ITEM countdown that ends the admire, then DISABLE_WALK_TO_ADMIRE_ITEM for 200
 Parched.getArrow	inline	crates/horizon-client/src/mobs/undead.rs::perform_ranged_attack	Parched arrows carry weakness for 600 ticks
@@ -74,7 +74,7 @@ Stray.checkStraySpawnRules	port	crates/horizon-client/src/mobs/spawn_rules.rs::c
 Stray.getArrow	inline	crates/horizon-client/src/mobs/undead.rs::perform_ranged_attack	Stray arrows carry slowness for 600 ticks
 CaveSpider.getVehicleAttachmentPoint	port	crates/horizon-client/src/mobs/riders.rs::vehicle_attachment	0.21875 of the scale when the vehicle's box is no wider than the spider's; the wider case falls to the type default
 VillagerDataHolder.finalizeVillagerType	inline	crates/horizon-client/src/mobs/finalize.rs::Ctx::villager_type	
-Abilities.apply	port	crates/horizon-client/src/game/remote.rs::Game::apply_remote_abilities	gap: minor: invulnerable, flying, may fly and flying speed only; instabuild, may build and walk speed are not applied
+Abilities.apply	port	crates/horizon-client/src/game/remote.rs::Game::apply_remote_abilities	invulnerable, flying, may fly and flying speed here; the instabuild bit is read where the packet arrives and the walking speed where the field of view divides by it (Game::remote_walking_speed)
 Abilities.pack	skip:java		record copy for the abilities packet; the flags are read in remote.rs
 PlayerSkin.with	missing		minor: skin patches (body, cape, elytra and model overrides) are not applied on top of a profile skin
 PlayerSkin.Patch.create	skip:java		record factory for the patch; the patch itself is missing (see PlayerSkin.with)
@@ -104,7 +104,7 @@ PriorityProvider.select	port	crates/horizon-client/src/mobs/finalize.rs::Variant
 SpawnConditions.bootstrap	skip:data		registry bootstrap of spawn condition codecs; Horizon reads variant conditions from files
 SpawnContext.create	inline	crates/horizon-client/src/mobs/finalize.rs::VariantRegistry::select	the level and position passed to select; no separate context object
 variant/StructureCheck.test	inline	crates/horizon-client/src/mobs/finalize.rs::VariantRegistry::select	Condition::Structure arm: structures with a piece at the position
-AbstractMinecartContainer.applyNaturalSlowdown	inline	crates/horizon-client/src/game/minecarts.rs::Game::natural_slowdown	gap: minor: plain cart friction 0.96; the container's 0.98 plus 0.001 per empty redstone level is missing
+AbstractMinecartContainer.applyNaturalSlowdown	inline	crates/horizon-client/src/game/minecarts.rs::Game::natural_slowdown	container carts keep 0.98 plus 0.001 per empty comparator step (container_keep), a still-unrolled loot table counting as full; water multiplies by 0.95; a plain cart keeps the behavior's 0.96
 AbstractMinecartContainer.createMenu	inline	crates/horizon-client/src/game/minecarts.rs::Game::interact_cart	gap: minor: opens the chest for anyone; no refusal of a loot-table cart for spectators
 AbstractMinecartContainer.remove	port	crates/horizon-client/src/game/minecarts.rs::Game::drop_vehicle_contents	Containers.dropContents on every destroying removal, whatever entity_drops says: the damage path's kill or a creative player's discard, and /kill after the open menu writes its slots back; a loot table still held drops the roll made on load
 MinecartChest.interact	inline	crates/horizon-client/src/game/minecarts.rs::Game::interact_cart	chest arm: opens the cart's items and plays the chest sound
