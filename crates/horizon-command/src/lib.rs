@@ -84,7 +84,7 @@ impl CommandError {
         e.key = key.to_owned();
         e
     }
-    /// CommandSyntaxException.getContext: up to ten characters before the
+    /// Brigadier's command exception context: up to ten characters before the
     /// cursor followed by "<--[HERE]".
     pub fn context(&self) -> Option<String> {
         let input = self.input.as_ref()?;
@@ -350,7 +350,7 @@ impl Node {
             NodeKind::Argument { name, .. } => name,
         }
     }
-    /// CommandNode.getUsageText.
+    /// Brigadier's node usage text.
     pub fn usage_text(&self) -> String {
         match &self.kind {
             NodeKind::Root => String::new(),
@@ -411,7 +411,7 @@ impl Context {
             .find(|a| a.name == name)
             .map(|a| &a.value)
     }
-    /// CommandContextBuilder.findSuggestionContext: the node whose children
+    /// Brigadier's suggestion context: the node whose children
     /// complete the text at `cursor`, and where that text starts.
     pub fn suggestion_context(&self, cursor: usize) -> (usize, usize, &Context) {
         if self.range.1 < cursor {
@@ -518,7 +518,7 @@ pub struct Suggestion {
     pub int_value: Option<i32>,
 }
 impl Suggestion {
-    /// Suggestion.apply.
+    /// Brigadier's suggestion apply.
     pub fn apply(&self, input: &str) -> String {
         let (s, e) = (self.range.0.min(input.len()), self.range.1.min(input.len()));
         format!("{}{}{}", &input[..s], self.text, &input[e..])
@@ -555,7 +555,7 @@ impl<'a> SuggestionsBuilder<'a> {
             });
         }
     }
-    /// SuggestionsBuilder.suggest(int).
+    /// Brigadier's suggestions-builder `suggest(int)`.
     pub fn suggest_int(&mut self, value: i32) {
         self.out.push(Suggestion {
             range: (self.start, self.input.len()),
@@ -578,7 +578,7 @@ impl<'a> SuggestionsBuilder<'a> {
     pub fn offset(&self, start: usize) -> SuggestionsBuilder<'a> {
         SuggestionsBuilder::new(self.input, start)
     }
-    /// SuggestionsBuilder.add: keep another builder's suggestions (with their own ranges).
+    /// Brigadier's suggestions-builder `add`: keep another builder's suggestions (with their own ranges).
     pub fn add(&mut self, other: SuggestionsBuilder) {
         self.out.extend(other.out);
     }

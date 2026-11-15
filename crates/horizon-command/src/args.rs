@@ -143,7 +143,7 @@ pub enum ArgType {
     ResourceSelector(&'static str),
 }
 
-/// FilenameUtils.wildcardMatch (case-sensitive) of `*` and `?` patterns.
+/// Apache Commons IO's case-sensitive wildcard match of `*` and `?` patterns.
 pub fn wildcard_match(text: &str, pattern: &str) -> bool {
     // Keep the backtracking cursors as UTF-8 byte offsets.  The old port
     // materialised both strings as `Vec<char>` for indexing, which made every
@@ -637,7 +637,7 @@ pub fn read_float_bounds(reader: &mut Reader) -> CmdResult<(Option<f32>, Option<
         "parsing.float.invalid",
     )
 }
-/// Integer.parseInt over number characters.
+/// Java integer parsing over number characters.
 pub fn java_parse_int(s: &str) -> Option<i32> {
     let digits = s.strip_prefix(['-', '+']).unwrap_or(s);
     if digits.is_empty() || !digits.chars().all(|c| c.is_ascii_digit()) {
@@ -645,7 +645,7 @@ pub fn java_parse_int(s: &str) -> Option<i32> {
     }
     s.parse().ok()
 }
-/// Double.parseDouble over the characters StringReader reads as a number.
+/// Java double parsing over the characters Brigadier's reader reads as a number.
 pub fn java_parse_double(s: &str) -> Option<f64> {
     let t = s.trim_matches(|c: char| c <= ' ');
     let body = t.strip_prefix(['-', '+']).unwrap_or(t);
@@ -920,7 +920,7 @@ fn parse_nbt_path(reader: &mut Reader) -> CmdResult<()> {
             '[' => {
                 reader.skip();
                 if !reader.can_read() {
-                    // StringReader.peek past the end (StringIndexOutOfBoundsException).
+                    // Brigadier's reader peek past the end (StringIndexOutOfBoundsException).
                     let len = reader.string.encode_utf16().count();
                     let message = format!("Index {len} out of bounds for length {len}");
                     return Err(CommandError::tr_at(
@@ -1331,7 +1331,7 @@ impl ArgType {
                         reader,
                     ));
                 }
-                // Integer.parseInt(s, begin, end, 16) per channel: a bad digit
+                // The Java hexadecimal parse (s, begin, end, 16) per channel: a bad digit
                 // escapes Brigadier as a dispatcher parse exception.
                 let width = text.len() / 3;
                 for chunk in text.as_bytes().chunks(width) {
@@ -1432,7 +1432,7 @@ impl ArgType {
                 Arg::Str(reader.string[start..reader.cursor].to_owned())
             }
             ArgType::Component | ArgType::Style => {
-                // ParserBasedArgument.withCodec: SNBT, then the codec (errors at the start).
+                // CommandArgumentParser.withCodec: SNBT, then the codec (errors at the start).
                 let tag = super::snbt::parse_tag_argument(reader)?;
                 let (decoded, key) = if matches!(self, ArgType::Style) {
                     (
