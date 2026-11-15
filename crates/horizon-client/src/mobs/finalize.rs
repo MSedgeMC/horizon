@@ -2438,6 +2438,32 @@ pub fn species_variant_component(s: Species, variant: u8) -> Option<(&'static st
     };
     Some((component, format!("minecraft:{}", variant_name(s, variant))))
 }
+/// The sound variant data component a mob reports (`Entity.get`, e.g.
+/// `Chicken.get(DataComponents.CHICKEN_SOUND_VARIANT)`): component id and
+/// registry entry. Only the species with a `*_sound_variant` registry have
+/// one; `None` is the registry's classic default, as `variant_sound` reads it.
+pub fn sound_variant_component(m: &Mob) -> Option<(&'static str, String)> {
+    species_sound_variant_component(m.species(), m.extra.sound_variant)
+}
+/// [`sound_variant_component`] of a species with the kept sound variant index.
+pub fn species_sound_variant_component(
+    s: Species,
+    sound: Option<u8>,
+) -> Option<(&'static str, String)> {
+    let component = match s {
+        Species::Pig => "minecraft:pig/sound_variant",
+        Species::Cow => "minecraft:cow/sound_variant",
+        Species::Chicken => "minecraft:chicken/sound_variant",
+        Species::Cat => "minecraft:cat/sound_variant",
+        Species::Wolf => "minecraft:wolf/sound_variant",
+        _ => return None,
+    };
+    let name = sound
+        .and_then(|i| sound_variants(s).get(i as usize))
+        .copied()
+        .unwrap_or("classic");
+    Some((component, format!("minecraft:{name}")))
+}
 /// Whether the mob's save keeps its variant under `variant` — the registry
 /// id `VariantUtils.writeVariant` stores — rather than under its own key (a
 /// fox's and a mooshroom's `Type`) or a packed int (a horse's and a llama's
@@ -2584,6 +2610,38 @@ mod tests {
         // Variant.DEFAULT is red: an unknown name, or an index past brown.
         assert_eq!(variant_index(Species::Mooshroom, "minecraft:temperate"), 0);
         assert_eq!(variant_name(Species::Mooshroom, 2), "red");
+    }
+    /// `Chicken.get(DataComponents.CHICKEN_SOUND_VARIANT)` and the pig, cow,
+    /// cat and wolf equivalents: the registry entry the entity carries, with
+    /// an absent index standing for the classic default.
+    #[test]
+    fn farm_animals_and_tames_report_their_sound_variant_component() {
+        for (species, component) in [
+            (Species::Pig, "minecraft:pig/sound_variant"),
+            (Species::Cow, "minecraft:cow/sound_variant"),
+            (Species::Chicken, "minecraft:chicken/sound_variant"),
+            (Species::Cat, "minecraft:cat/sound_variant"),
+            (Species::Wolf, "minecraft:wolf/sound_variant"),
+        ] {
+            assert_eq!(
+                species_sound_variant_component(species, None),
+                Some((component, "minecraft:classic".to_owned()))
+            );
+            for (index, name) in sound_variants(species).iter().enumerate() {
+                assert_eq!(
+                    species_sound_variant_component(species, Some(index as u8)),
+                    Some((component, format!("minecraft:{name}"))),
+                    "{species:?} {index}"
+                );
+            }
+            // An index past the registry falls back to the classic default.
+            assert_eq!(
+                species_sound_variant_component(species, Some(200)).map(|(_, v)| v),
+                Some("minecraft:classic".to_owned())
+            );
+        }
+        // Sheep have no sound-variant registry, so they report no component.
+        assert_eq!(species_sound_variant_component(Species::Sheep, None), None);
     }
     /// `Horse.get(DataComponents.HORSE_VARIANT)` and
     /// `Llama.get(DataComponents.LLAMA_VARIANT)`: the coat colour a horse or a

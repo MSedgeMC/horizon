@@ -839,6 +839,10 @@ impl Game<'_> {
             components: horizon_client::mobs::finalize::variant_component(m)
                 .map(|(id, value)| (id.to_owned(), value))
                 .into_iter()
+                .chain(
+                    horizon_client::mobs::finalize::sound_variant_component(m)
+                        .map(|(id, value)| (id.to_owned(), value)),
+                )
                 .collect(),
             custom_name: m.custom_name_text.as_ref().map(Text::component),
             passengers,

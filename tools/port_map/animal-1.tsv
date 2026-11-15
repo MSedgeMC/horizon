@@ -129,7 +129,7 @@ Chicken.finalizeSpawn	port	crates/horizon-client/src/mobs/finalize.rs::Ctx::fina
 Chicken.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	gap: variant is synced, sound variant is not
 Chicken.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	EggLayTime, variant, sound_variant; jockey in riders.rs
 Chicken.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	
-Chicken.get	port	crates/horizon-client/src/mobs/finalize.rs::variant_component	gap: chicken/variant only, no chicken/sound_variant
+Chicken.get	port	crates/horizon-client/src/mobs/finalize.rs::variant_component	chicken/variant and chicken/sound_variant from the mob's variant and sound variant, the classic default when none is kept
 Chicken.applyImplicitComponents	port	crates/horizon-client/src/entity_nbt.rs::apply_item_components	chicken/variant and chicken/sound_variant from the stack that spawns or buckets it
 Chicken.applyImplicitComponent	port	crates/horizon-client/src/entity_nbt.rs::apply_item_components	the same fn reads both components
 Chicken.positionRider	port	crates/horizon-client/src/mobs/riders.rs::takes_vehicle_body	gap: minor: a riding player's own body yaw is not copied (its model is drawn by solveBodyRot); mob riders take the chicken's body yaw
