@@ -53,7 +53,9 @@ impl ServerEntry {
         };
         Some(Self {
             name: string("name").unwrap_or_default(),
-            ip: string("ip")?,
+            // ServerData.read: `getStringOr("ip", "")`. An entry without an address, or with
+            // one that is not a string, is still a server the list keeps with an empty address.
+            ip: string("ip").unwrap_or_default(),
             icon: string("icon"),
             accept_textures: match tag.get("acceptTextures") {
                 Some(Tag::Byte(b)) => Some(*b != 0),
@@ -308,6 +310,42 @@ mod tests {
             nbt::read_named(&std::fs::read(&path).unwrap(), nbt::Limits::default()).unwrap();
         assert_eq!(root.name, JavaString::from(""));
         assert!(matches!(root.tag.get("servers"), Some(Tag::List(l)) if l.len() == 2));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_server_without_a_string_address_is_kept_with_an_empty_one() {
+        let dir = std::env::temp_dir().join(format!("horizon-no-ip-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("servers.dat");
+        let server = |name: &str, ip: Option<Tag>| {
+            let mut fields = vec![("name", Tag::String(JavaString::from(name)))];
+            if let Some(ip) = ip {
+                fields.push(("ip", ip));
+            }
+            Tag::compound(fields)
+        };
+        let root = NamedTag {
+            name: JavaString::from(""),
+            tag: Tag::compound([(
+                "servers",
+                Tag::List(vec![
+                    server("No address", None),
+                    server("Numeric address", Some(Tag::Int(25565))),
+                    server(
+                        "Has address",
+                        Some(Tag::String(JavaString::from("a.example"))),
+                    ),
+                ]),
+            )]),
+        };
+        write(&path, &root).unwrap();
+        let shown = load(&path);
+        let names: Vec<&str> = shown.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["No address", "Numeric address", "Has address"]);
+        assert_eq!(shown[0].ip, "", "getStringOr(\"ip\", \"\")");
+        assert_eq!(shown[1].ip, "");
+        assert_eq!(shown[2].ip, "a.example");
         std::fs::remove_dir_all(dir).unwrap();
     }
 
