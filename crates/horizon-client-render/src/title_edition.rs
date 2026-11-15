@@ -3,7 +3,7 @@
 //! Vanilla's `textures/gui/title/edition.png` reads "JAVA EDITION". Horizon
 //! never ships Mojang's art, so the banner is rebuilt at load time from the
 //! player's own texture: "EDITION" is kept column for column, and R, U, S and T
-//! are Horizon's own glyphs (MIT, the rectangles below), drawn the way the
+//! are Horizon's own glyphs (LGPL-3.0-or-later, the rectangles below), drawn the way the
 //! texture's letters are built (a face with darker sides and a light bottom
 //! edge, a dark extrusion under it that leans toward the banner's vanishing
 //! point, a black outline and a soft rim) in the shades sampled from the

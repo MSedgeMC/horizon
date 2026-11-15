@@ -1,7 +1,7 @@
 // Adapted from Starling (https://github.com/starling-client/starling, `android` branch at
 // 150a414b09a1, `crates/horizon-client-render/src/touch.rs`), written by Vasysik and the
 // Starling contributors. Copyright (c) 2026 Ludovic Marie and the Horizon contributors, under the
-// same MIT license as Horizon (LICENSE at the repository root).
+// MIT license (LICENSES/MIT.txt).
 
 //! What a touch aims at and what it does: camera turns from a drag, the ray
 //! through a tapped point, the hotbar slot under a finger, and which held

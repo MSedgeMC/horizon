@@ -1,8 +1,7 @@
 // Adapted from Starling (https://github.com/starling-client/starling, `android` branch at
 // 150a414b09a1, `crates/horizon-client-render/src/android_gamepad.rs` and the input-mode part of
 // `android_runtime.rs`), written by Vasysik and the Starling contributors. Copyright (c) 2026
-// Ludovic Marie and the Horizon contributors, under the same MIT license as Horizon (LICENSE at
-// the repository root).
+// Ludovic Marie and the Horizon contributors, under the MIT license (LICENSES/MIT.txt).
 
 //! Controllers as Android reports them: its standard key codes and motion axes,
 //! the same for USB and Bluetooth pads, decoded into `gamepad::PadState`, and

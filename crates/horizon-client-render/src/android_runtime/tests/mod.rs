@@ -1,7 +1,7 @@
 // Adapted from Starling (https://github.com/starling-client/starling, `android` branch at
 // 150a414b09a1, `crates/horizon-client-render/src/android_runtime.rs`), written by Vasysik and the
 // Starling contributors. Copyright (c) 2026 Ludovic Marie and the Horizon contributors, under the
-// same MIT license as Horizon (LICENSE at the repository root).
+// MIT license (LICENSES/MIT.txt).
 
 //! Tests of the Android input runtime. Its state is process-wide, so each
 //! test holds [`serial`] and starts from [`reset`].
