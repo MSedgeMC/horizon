@@ -109,8 +109,8 @@ WrappedGoal.equals	skip:java		identity of wrapped goals in a set
 HurtByTargetGoal.alertOthers	inline	crates/horizon-client/src/mobs/goals.rs::HurtByTarget::start	alerts same-species mobs within follow range, skipping another owner's pets and pets allied with the hurting player; a bee only alerts with the attacker in sight
 NonTameRandomTargetGoal.canUse	inline	crates/horizon-client/src/mobs/tame.rs::NonTameTarget::can_use	wolf and cat target goals wrap NearestTarget: wild only, then the prey search
 NonTameRandomTargetGoal.canContinueToUse	inline	crates/horizon-client/src/mobs/tame.rs::NonTameTarget::can_continue	re-tests the prey selector (a baby turtle out of water), then the base TargetGoal rules
-ResetUniversalAngerTargetGoal.wasHurtByPlayer	missing		minor: the universal_anger rule is never read by mobs (default off)
-ResetUniversalAngerTargetGoal.getNearbyMobsOfSameType	missing		minor: the universal_anger rule is never read by mobs (default off)
+ResetUniversalAngerTargetGoal.wasHurtByPlayer	inline	crates/horizon-client/src/mobs/golem.rs::ResetUniversalAnger	`can_use` tests the universal_anger rule, a player as `last_hurt_by` and a newer hurt timestamp; `start` restarts the anger timer at 400 to 780 ticks
+ResetUniversalAngerTargetGoal.getNearbyMobsOfSameType	skip:other	crates/horizon-client/src/mobs/golem.rs::register_iron	the iron golem's goal is built with `alertOthersOfSameType` false, so no mobs of its type are gathered; the rule is read by the golem, the piglins and the wolf's anger
 TargetGoal.canAttack	inline	crates/horizon-client/src/mobs/goals.rs::NearestTarget::can_use	gap: minor: no isWithinHome test and no must-reach path test
 TargetGoal.canReach	missing		minor: must_reach is stored by reach() but never read, so polar bears, llamas and endermen pick targets they cannot path to
 GossipContainer.getGossipEntries	port	crates/horizon-client/src/gossip.rs::Gossips::entries	
