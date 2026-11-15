@@ -1246,7 +1246,7 @@ fn write_patch(s: &Stack, w: &mut Writer) {
 
 /// A stack of either optional codec: with `delimited` each component value
 /// has a length in front (DataComponentPatch.DELIMITED_STREAM_CODEC). The
-/// patch is also kept, in the delimited form, for [`Stack::wire`].
+/// patch is also kept, in the delimited form, in the stack's `wire` bytes.
 fn read_stack(r: &mut Reader, delimited: bool) -> Result<Option<Stack>> {
     if v1_20_3::reading() {
         return v1_20_3::read_stack(r);
@@ -1406,7 +1406,7 @@ pub struct Hashed {
 }
 impl Hashed {
     /// The stack hashed without registry names: only components that hold no
-    /// registry id get a hash (see [`Hashed::create`]).
+    /// registry id get a hash (see `Hashed`'s `create`).
     pub fn of(stack: &Stack) -> Self {
         Self::create(stack, &NoNames)
     }

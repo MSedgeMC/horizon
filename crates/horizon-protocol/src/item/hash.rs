@@ -78,7 +78,7 @@ fn pick(table: &[&str], id: i32) -> Option<HashCode> {
 fn text(tag: &horizon_world::nbt::Tag) -> HashCode {
     HashOps::from_nbt(tag, &TEXT_BOOLS)
 }
-/// `Filterable.codec`: the full record (`Codec.withAlternative` encodes with
+/// `Filterable.codec`: the full record (a withAlternative encodes with
 /// the first codec), the filtered variant absent when there is none.
 fn filterable(raw: HashCode, filtered: Option<HashCode>) -> HashCode {
     RecordHash::new()
@@ -86,7 +86,7 @@ fn filterable(raw: HashCode, filtered: Option<HashCode>) -> HashCode {
         .optional("filtered", filtered)
         .build()
 }
-/// `Codec.xxx.optionalFieldOf(name, default)`: absent when equal to the default.
+/// An optional codec field (`optionalFieldOf(name, default)`), absent when equal to the default.
 fn or_default<T: PartialEq>(
     rec: RecordHash,
     name: &str,
@@ -434,7 +434,7 @@ impl Component {
         })
     }
 
-    /// [`Component::code`] as `HashCode.asInt`, the value the packet carries.
+    /// The component's `code`, as an int, the value the packet carries.
     pub fn hash(&self, id: i32, names: &dyn Names) -> Option<i32> {
         self.code(id, names).map(HashCode::as_int)
     }
@@ -446,7 +446,7 @@ impl Hashed {
     /// removed ones' ids.
     pub fn create(stack: &Stack, names: &dyn Names) -> Self {
         // A stack kept as the server sent it goes back as its own patch bytes
-        // ([`Stack::wire`]): that patch is what it holds.
+        // (the stack's `wire` bytes): that patch is what it holds.
         let decoded = stack
             .wire
             .0
