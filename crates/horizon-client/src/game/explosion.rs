@@ -1329,7 +1329,7 @@ impl Game<'_> {
         if self.serving.is_some() || self.options.dedicated.is_some() {
             self.native_explosion_prime(center, radius);
         }
-        // Explosion.explode: the blast is heard.
+        // ServerExplosion.explode: the blast is heard.
         let ctx = horizon_client::sculk::Context::default();
         self.post_game_event("minecraft:explode", center, ctx);
         let mut targets = self.exploded_positions(center, radius, resists, source.portal_proof);
