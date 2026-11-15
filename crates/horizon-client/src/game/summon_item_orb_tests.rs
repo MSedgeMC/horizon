@@ -46,8 +46,10 @@ fn with_game(test: impl FnOnce(&mut Game<'_>)) {
 /// `ItemEntity(EntityType, Level)` leaves the stack `ItemStack.EMPTY`, and
 /// `readAdditionalSaveData` discards such an entity, so `addEntity` adds
 /// nothing; `tryAddFreshEntityWithPassengers` still answers true, so both
-/// summon forms report success. The entity id is taken all the same, and the
-/// name is `ItemStack.EMPTY.getItemName()`: an empty component.
+/// summon forms report success. The entity id is taken all the same, and
+/// `ItemEntity.getName` reads `ItemStack.EMPTY.getItemName()`: `getItem()` is
+/// `AirItem`, whose `getName` reads AIR's prototype `ITEM_NAME`, so the name is
+/// `block.minecraft.air` ("Air").
 #[test]
 #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
 fn summon_item_succeeds_with_and_without_nbt_without_leaving_an_entity() {
@@ -68,8 +70,13 @@ fn summon_item_succeeds_with_and_without_nbt_without_leaving_an_entity() {
                 game.ui.chat.recent_components(1),
                 vec![serde_json::json!({
                     "translate": "commands.summon.success",
-                    "with": [{ "text": "" }],
+                    "with": [{ "translate": "block.minecraft.air" }],
                 })],
+                "{command}"
+            );
+            assert_eq!(
+                game.ui.chat.recent_lines(1),
+                vec!["Summoned new Air"],
                 "{command}"
             );
         }

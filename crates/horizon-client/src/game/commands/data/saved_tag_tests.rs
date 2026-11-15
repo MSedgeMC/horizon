@@ -203,6 +203,25 @@ fn tag_list_is_not_repeated_to_the_operators() {
     });
 }
 
+/// `/data get` prints the entity as `Entity.getDisplayName` shows it:
+/// `EntityDataAccessor.getPrintSuccess` passes `entity.getDisplayName()`, and
+/// `Entity.getName` answers the `CustomName` component before the type's name.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_named_ominous_item_spawner_reads_its_name_in_data_get() {
+    with_command_game("data-get-spawner-name", |game| {
+        assert!(game.run_command(
+            "summon ominous_item_spawner 4.5 200 4.5 {UUID:[I;329,0,0,7],CustomName:\"sw\"}"
+        ));
+        let said = say(game, "data get entity 00000149-0000-0000-0000-000000000007");
+        let text = said.iter().map(Text::plain).collect::<String>();
+        assert!(
+            text.starts_with("sw has the following entity data:"),
+            "{text}"
+        );
+    });
+}
+
 /// `TagCommand.addTag`/`removeTag` store a tag on an ominous item spawner
 /// (`OminousItemSpawner.readAdditionalSaveData` keeps the compound, its chunk
 /// saves it), and `Entity.saveWithoutId` writes `Tags` only for a nonempty set,

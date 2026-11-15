@@ -658,6 +658,23 @@ impl Game<'_> {
                 Text::translate("entity.minecraft.falling_block_type", &[block])
             }
             Target::Mob(id) => self.mob_command_name(id),
+            // OminousItemSpawner.getName: Entity.getName in 26.3, so its
+            // CustomName when it has one, else the type's name. Its compound is
+            // the spawner's `raw`, not one persist kept.
+            Target::Spawner(id) => {
+                let custom = self
+                    .ominous_spawners
+                    .iter()
+                    .find(|s| s.id == id)
+                    .and_then(|s| s.raw.as_deref())
+                    .and_then(|r| r.get("CustomName"));
+                if let Some(c) = custom {
+                    return horizon_client::scoreboard::comp_text(
+                        &horizon_client::scoreboard::tag_to_json(c),
+                    );
+                }
+                Text::translate("entity.minecraft.ominous_item_spawner", &[])
+            }
             other => {
                 // Entity.getDisplayName: the CustomName component, else the type.
                 let custom = super::native_entities::target_id(other)
