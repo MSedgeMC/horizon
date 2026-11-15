@@ -35,8 +35,8 @@ JfrCommand.startJfr	skip:server		JVM flight recorder profiler; Horizon has its o
 KillCommand.register	port	crates/horizon-command/src/vanilla.rs::registered	kill literal with optional targets
 KillCommand.kill	port	crates/horizon-client/src/game/commands.rs::Game::cmd_kill	kills each target and reports the count
 ListPlayersCommand.register	port	crates/horizon-command/src/vanilla.rs::registered	list literal with uuids branch
-ListPlayersCommand.listPlayersWithUuids	inline	crates/horizon-client/src/game/commands.rs::Game::execute_command	gap: minor: the 'list' arm always shows the one local player out of 8 (hard-coded), no server player list
-ListPlayersCommand.format	inline	crates/horizon-client/src/game/commands.rs::Game::execute_command	gap: minor: same hard-coded 1 of 8 summary as the list arm
+ListPlayersCommand.listPlayersWithUuids	port	crates/horizon-client/src/game/commands.rs::Game::cmd_list	every placed guest in join order; the uuids branch formats commands.list.nameAndId per player
+ListPlayersCommand.format	port	crates/horizon-client/src/game/commands.rs::Game::cmd_list	commands.list.players carries the count and shared.max_players, names joined by gray commas
 LocateCommand.getHolders	port	crates/horizon-client/src/game/commands.rs::Game::structure_tag	gap: minor: resolves a #tag to its structures; an unknown id is not validated here
 LocateCommand.showLocateResult	inline	crates/horizon-client/src/game/commands.rs::Game::cmd_locate	distance (2D for structures, 3D for biomes) and the success message
 LocateCommand.dist	inline	crates/horizon-client/src/game/commands.rs::Game::cmd_locate	floored horizontal distance computed in cmd_locate
@@ -45,7 +45,7 @@ LookAt.LookAtEntity.perform	port	crates/horizon-client/src/game/commands/world_c
 LootCommand.register	port	crates/horizon-command/src/tree_world.rs::loot	loot literal with loot/mine/kill/fish/replace/insert/give/spawn
 LootCommand.addTargets	port	crates/horizon-command/src/tree_world.rs::loot	replace entity|block, insert, give, spawn subcommands
 LootCommand.blockDistribute	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_loot	insert branch of cmd_loot
-LootCommand.distributeToContainer	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_loot	gap: minor: insert branch fills slots without container.canPlaceItem checks
+LootCommand.distributeToContainer	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_loot	insert branch checks every slot through slot_accepts -> block_can_place -> Containers::can_place (furnace output/fuel, brewing stand, jukebox disc, crafter limit, chiseled bookshelf)
 LootCommand.blockReplace	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_loot	replace block branch of cmd_loot
 LootCommand.canMergeItems	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_loot	same item and components check inside the insert branch
 LootCommand.playerGive	inline	crates/horizon-client/src/game/commands/terrain_cmds.rs::Game::cmd_loot	give branch of cmd_loot
@@ -112,7 +112,7 @@ ReturnCommand.ReturnValueCustomExecutor.run	port	crates/horizon-client/src/game/
 RideCommand.mount	port	crates/horizon-client/src/game/commands/world_cmds.rs::Game::cmd_ride	mount branch with already-riding, player and loop checks
 RideCommand.dismount	port	crates/horizon-client/src/game/commands/world_cmds.rs::Game::cmd_ride	dismount branch
 RotateCommand.register	port	crates/horizon-command/src/tree_world.rs::rotate_swing	rotate literal with entity, facing and rotation syntax
-SaveAllCommand.register	port	crates/horizon-client/src/game/autosave.rs::Game::save_game_metadata	gap: minor: the full save exists here (level, advancements, scoreboard, world state) but no /save-all literal reaches it
+SaveAllCommand.register	port	crates/horizon-command/src/tree_extra.rs::register	the save-all literal (with a flush child) under OWNERS; execute_command dispatches it to cmd_save_all, whose save_all_reply runs save_game -> save_game_with -> save_game_metadata
 SayCommand.register	port	crates/horizon-command/src/vanilla.rs::registered	say literal; message delivery is Game::cmd_say
 ScheduleCommand.remove	port	crates/horizon-client/src/game/functions.rs::Game::cmd_schedule	schedule.clear branch: removes by id, failure when none
 ScoreboardCommand.createRenderTypeModify	port	crates/horizon-command/src/tree_scoreboard.rs::scoreboard	rendertype literal per render type
