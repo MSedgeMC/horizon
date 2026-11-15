@@ -2289,6 +2289,7 @@ mod set_rotation_tests {
             fall_distance: 0.0,
             join: Default::default(),
             no_gravity: false,
+            invulnerable: false,
             id: 0,
             position: horizon_core::geometry::Vec3::ZERO,
             previous: horizon_core::geometry::Vec3::ZERO,

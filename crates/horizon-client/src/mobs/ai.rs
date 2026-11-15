@@ -722,6 +722,15 @@ pub fn tick(
         super::villager_brain::woken(m, w.game_time);
     }
     if m.no_ai {
+        // Witch.aiStep runs before LivingEntity.aiStep whether or not NoAI
+        // skips serverAiStep: a burning NoAI witch still picks its
+        // fire-resistance potion.
+        if m.species() == Species::Witch {
+            let far = m
+                .target_info(w)
+                .is_some_and(|t| t.position.distance_squared(m.position) > 121.0);
+            super::witch::ai_step(m, events, far);
+        }
         update_fall_flying(m, w, events);
         reset_effect_fall_distance(m);
         // Mob.aiStep still runs without AI: undead burn, endermites age.

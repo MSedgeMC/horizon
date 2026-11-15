@@ -1279,6 +1279,9 @@ pub struct ExperienceOrb {
     pub air: i32,
     /// `Entity.noGravity`: `ExperienceOrb.tick`'s `applyGravity` does nothing.
     pub no_gravity: bool,
+    /// `Entity.isPermanentlyInvulnerable` (`Invulnerable` in the save): whether
+    /// `ExperienceOrb.hurtServer` refuses the damage before health changes.
+    pub invulnerable: bool,
     /// `ExperienceOrb.followingPlayer`: the followed player's entity id, kept
     /// until they are gone or further than 8 blocks. Never saved.
     pub following: Option<u32>,
@@ -1316,6 +1319,7 @@ impl ExperienceOrb {
             health: 5,
             air: 300,
             no_gravity: false,
+            invulnerable: false,
             following: None,
             fall_distance: 0.0,
             fire_ticks: 0,
@@ -1324,6 +1328,11 @@ impl ExperienceOrb {
     /// `ExperienceOrb.hurtServer`: the damage comes off the health as an
     /// `int`; an orb at 0 or below is discarded. True when it is gone.
     pub fn hurt(&mut self, damage: f32) -> bool {
+        // `Entity.isInvulnerableToBase`: an `Invulnerable` orb refuses the
+        // hurt (fire, a lightning bolt, a blast) before its health changes.
+        if self.invulnerable {
+            return false;
+        }
         self.health = (self.health as f32 - damage) as i32;
         self.health <= 0
     }
@@ -2372,6 +2381,7 @@ impl ArmorStand {
         world: &World,
         facts: &BlockFacts,
         registry: &horizon_world::registry::BlockRegistry,
+        invulnerable: bool,
     ) -> bool {
         let (lo, hi) = (self.bounds().min_position(), self.bounds().max_position());
         let mut water = false;
@@ -2396,6 +2406,7 @@ impl ArmorStand {
                 && !self.invisible
                 && !self.marker
                 && self.health > 0.5
+                && !invulnerable
             {
                 self.health -= 4.0;
             }
@@ -2409,7 +2420,9 @@ impl ArmorStand {
         // which a NoGravity stand does not feel (measured beside the server).
         if fire && !self.invisible && !self.marker && !self.no_gravity {
             if self.fire_ticks > 0 {
-                self.health -= 0.15;
+                if !invulnerable {
+                    self.health -= 0.15;
+                }
             } else {
                 self.fire_ticks = 100;
             }
@@ -2868,7 +2881,7 @@ mod fire_environment_tests {
             )
             .unwrap();
         for _ in 0..150 {
-            assert!(stand.environment_tick(&world, facts, assets.registry));
+            assert!(stand.environment_tick(&world, facts, assets.registry, false));
         }
         assert_eq!(stand.health, 20.0, "lava does not hurt armor stands");
     }
@@ -3392,6 +3405,7 @@ mod world_border_tests {
                 rotation: [0.0, 0.0],
                 join: Default::default(),
                 no_gravity: false,
+                invulnerable: false,
                 id: 2,
                 position: Vec3::new(24.0, 4.0, 20.5),
                 previous: Vec3::new(24.0, 4.0, 20.5),
@@ -4733,6 +4747,7 @@ mod orb_underwater_tests {
                     rotation: [0.0, 0.0],
                     join: Default::default(),
                     no_gravity: false,
+                    invulnerable: false,
                     id: 1,
                     position: Vec3::ZERO,
                     previous: Vec3::ZERO,
@@ -4770,6 +4785,7 @@ mod render_light_tests {
             rotation: [0.0, 0.0],
             join: Default::default(),
             no_gravity: false,
+            invulnerable: false,
             id: 1,
             position: Vec3::new(0.5, y, 0.5),
             previous: Vec3::new(0.5, y, 0.5),
@@ -4969,6 +4985,7 @@ mod orb_lava_tests {
             rotation: [0.0, 0.0],
             join: Default::default(),
             no_gravity: false,
+            invulnerable: false,
             id: 1,
             position: at,
             previous: at,

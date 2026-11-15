@@ -180,6 +180,7 @@ mod tests {
             rotation: [0.0, 0.0],
             join: Default::default(),
             no_gravity: false,
+            invulnerable: false,
             id: 0,
             position: at,
             previous: at,

@@ -1028,8 +1028,18 @@ impl Game<'_> {
             // LivingEntity.aiStep calls pushEntities after travel. The stand's
             // own doPush is empty; only this shove runs.
             self.push_rideable_minecarts(i);
+            let invulnerable = self
+                .persist
+                .raw
+                .get(&self.armor_stands[i].id)
+                .is_some_and(|tag| horizon_client::entity_nbt::flag(tag, "Invulnerable"));
             let a = &mut self.armor_stands[i];
-            if !a.environment_tick(&self.world, self.res.facts(), self.pack.assets.registry) {
+            if !a.environment_tick(
+                &self.world,
+                self.res.facts(),
+                self.pack.assets.registry,
+                invulnerable,
+            ) {
                 dead.push(i);
             }
         }

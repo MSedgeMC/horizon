@@ -29,6 +29,10 @@ pub fn orb_to_nbt(o: &ExperienceOrb, uuid: [i32; 4]) -> Tag {
     if o.no_gravity {
         put(&mut tag, "NoGravity", Tag::Byte(1));
     }
+    // Base wrote the false default; Entity.saveWithoutId writes the flag.
+    if o.invulnerable {
+        put(&mut tag, "Invulnerable", Tag::Byte(1));
+    }
     tag
 }
 /// One orb with its merged `Count`.
@@ -42,6 +46,7 @@ pub fn orbs_from_nbt(tag: &Tag) -> Vec<ExperienceOrb> {
         rotation: rotation(tag),
         join: Default::default(),
         no_gravity: flag(tag, "NoGravity"),
+        invulnerable: flag(tag, "Invulnerable"),
         id: 0,
         position,
         previous: position,

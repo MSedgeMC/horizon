@@ -12631,6 +12631,8 @@ mod inline_loot_reference_tests;
 #[cfg(test)]
 mod interaction_data_tests;
 #[cfg(test)]
+mod invulnerable_fire_tests;
+#[cfg(test)]
 mod invulnerable_time_tests;
 #[cfg(test)]
 mod kill_die_cancel_tests;

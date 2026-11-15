@@ -554,6 +554,7 @@ impl Game<'_> {
             rotation: [0.0, 0.0],
             join: Default::default(),
             no_gravity: false,
+            invulnerable: false,
             id: self.next_entity,
             position: p,
             previous: p,

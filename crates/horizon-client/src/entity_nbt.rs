@@ -6049,6 +6049,7 @@ mod tests {
             rotation: [0.0, 0.0],
             join: Default::default(),
             no_gravity: false,
+            invulnerable: false,
             id: 0,
             position: Vec3::new(1.0, 2.0, 3.0),
             previous: Vec3::ZERO,
