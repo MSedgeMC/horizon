@@ -164,7 +164,7 @@ pub(crate) fn modifier_uuid(id: &str) -> u128 {
         }
     }
     // A new arbitrary identifier has no old UUID. Assign a stable UUID using Java's
-    // UUID.nameUUIDFromBytes convention, rather than introducing a random identity per write.
+    // name-based UUIDv3 convention, rather than introducing a random identity per write.
     let mut bytes = crate::crypto::md5(id.as_bytes());
     bytes[6] = (bytes[6] & 0x0f) | 0x30;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;

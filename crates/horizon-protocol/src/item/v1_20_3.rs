@@ -2002,8 +2002,8 @@ mod tests {
     fn vanilla_legacy_slots_match_current_datafix_and_component_encoder() {
         use crate::adapter::ServerVersion;
         let _registries = ids::legacy_registries(Arc::new(context()));
-        // Actual FriendlyByteBuf.writeItem output is identical in 1.20.3/1.20.4. The pinned
-        // fixture is vanilla26.3 DataFixer.update(ITEM_STACK,3698,CURRENT), parsed by its
+        // The actual item-stack writer output is identical in 1.20.3/1.20.4. The pinned
+        // fixture is vanilla 26.3's data-fixer update (ITEM_STACK, 3698, CURRENT), parsed by its
         // DataComponentPatch.CODEC and encoded by its real STREAM_CODEC. Test registry ids
         // use that oracle's vanilla registries; connections instead retain their own ids.
         for (label, old, pinned) in [

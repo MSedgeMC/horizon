@@ -43,7 +43,7 @@ fn boolean(r: &mut Reader) -> Option<bool> {
 fn ident(r: &mut Reader) -> Option<HashCode> {
     Some(string(&r.string(32767).ok()?))
 }
-/// `Codec.xxx.optionalFieldOf(name, default)` for a float.
+/// An optional codec field (`optionalFieldOf(name, default)`) for a float.
 fn float_or(rec: RecordHash, name: &str, v: f32, default: f32) -> RecordHash {
     or_default(
         rec,
@@ -108,7 +108,7 @@ pub(super) fn sound(r: &mut Reader, names: &dyn Names) -> Option<Sound> {
         }
     }
 }
-/// `SoundEvent.CODEC.optionalFieldOf(name, default)`.
+/// The sound event codec's optional field (`optionalFieldOf(name, default)`).
 fn sound_or(rec: RecordHash, name: &str, s: Sound, default: &str) -> RecordHash {
     if s.name.as_deref() == Some(default) {
         rec
@@ -237,7 +237,7 @@ pub(super) const PREDICATE_BOOLS: [&str; 12] = [
 /// `DataComponentPredicate.STREAM_CODEC`: each entry is a type (a predicate
 /// type, or a component type for `AnyValue`) and the predicate as the NBT its
 /// `CODEC` encodes (`fromCodecWithRegistries`), hashed as the map
-/// `DataComponentPredicate.CODEC` (`Codec.dispatchedMap`) writes.
+/// `DataComponentPredicate.CODEC` (a dispatched map) writes.
 fn partial_predicate(r: &mut Reader, names: &dyn Names) -> Option<(HashCode, HashCode)> {
     let registry = if boolean(r)? {
         "minecraft:data_component_predicate_type"

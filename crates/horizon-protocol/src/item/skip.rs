@@ -12,7 +12,7 @@ use crate::{
 
 type Read = fn(&mut Reader) -> Result<()>;
 
-/// DataComponents' registry order (26.3) for the ids `Component::read`
+/// DataComponents' registry order (26.3) for the ids the component reader
 /// doesn't decode itself.
 pub(super) fn component(kind: i32, r: &mut Reader) -> Result<()> {
     match kind {
@@ -423,7 +423,7 @@ fn kinetic_weapon(r: &mut Reader) -> Result<()> {
     optional(r, sound)?;
     optional(r, sound)
 }
-/// PotionContents' customEffects and customName (`Component::read` reads
+/// PotionContents' customEffects and customName (the component reader reads
 /// the potion and colour before them).
 pub(super) fn potion_effects_and_name(r: &mut Reader) -> Result<()> {
     list(r, mob_effect)?;
