@@ -49,7 +49,7 @@ to players. Players still prepare their own copy from their official launcher (`
   tables and `BlockStateData`) is not committed: the game reads what `horizon-prepare` exports from the user's own
   jar, so it follows a new version by itself as long as the exporters still compile and the formats still parse.
 
-- **The proof.** ~300 harnesses (`tools/test_*_parity.py`) each compare a Rust probe with a Java oracle that calls
+- **The proof.** about 680 harnesses (`tools/test_*_parity.py`) each compare a Rust probe with a Java oracle that calls
   vanilla's own classes; `tools/parity.py` runs them and records each one's dependencies.
 
 ## The pipeline
