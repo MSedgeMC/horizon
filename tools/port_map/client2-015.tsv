@@ -111,7 +111,7 @@ GameModeSwitcherScreen.extractBackground	port	crates/horizon-client/src/game/gam
 GameModeSwitcherScreen.switchToHoveredGameMode	port	crates/horizon-client/src/game/gamemode_switcher.rs::Game::close_gamemode_switcher	applies the selected mode on close when gamemaster and it differs
 GameModeSwitcherScreen.keyPressed	port	crates/horizon-client/src/game/debug_keys.rs::Game::debug_key	the switch key cycles the selection
 GameModeSwitcherScreen.keyReleased	port	crates/horizon-client/src/game/debug_keys.rs::Game::debug_key	releasing the debug modifier applies and closes
-GameModeSwitcherScreen.mouseReleased	missing		minor: a debug modifier bound to a mouse button does not close the switcher; debug keys are keyboard only
+GameModeSwitcherScreen.mouseReleased	port	crates/horizon-client/src/game/gamemode_switcher.rs::Game::switcher_release	releasing the debug modifier's own mouse button applies the hovered mode and closes the switcher (game_mode_switcher::release_applies)
 GameModeSwitcherScreen.GameModeIcon.getNext	port	crates/horizon-client/src/game_mode_switcher.rs::GameModeSwitcher::cycle	creative, survival, adventure, spectator, then creative
 GameModeSwitcherScreen.GameModeIcon.getFromGameType	inline	crates/horizon-client/src/game/gamemode_switcher.rs::Game::close_gamemode_switcher	compares the chosen mode with the current one before sending
 GameModeSwitcherScreen.GameModeSlot.extractWidgetRenderState	inline	crates/horizon-client/src/game/gamemode_switcher.rs::Game::draw_gamemode_switcher	slot, selection frame and icon per mode
