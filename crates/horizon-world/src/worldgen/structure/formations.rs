@@ -81,7 +81,7 @@ impl Def {
     }
 }
 
-/// Structure.findGenerationPoint, or JigsawPlacement.addPieces for a pieced one: the start's
+/// SimpleStructure.findGenerationPoint, or PiecedStructure's: the start's
 /// position and pieces.
 pub fn generate(
     def: &Def,
@@ -121,7 +121,7 @@ pub fn generate(
     let Some((max_depth, distance)) = def.pieced else {
         return Some(([x, y, z], vec![piece]));
     };
-    // JigsawPlacement.addPieces: the start sits at the element's centre, one
+    // PiecedStructure.addPieces: the start sits at the element's centre, one
     // above the height found, and its children may fill the box of
     // `distance` around it (not clamped to the world's height) less its own.
     let (cx, cy, cz) = (

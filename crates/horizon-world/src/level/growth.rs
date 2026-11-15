@@ -265,7 +265,7 @@ fn weighted<R: RandomSource>(
 }
 
 impl<L: LevelAccess + ?Sized> Sim<'_, L> {
-    /// `Feature.place(level, generator, level.random, pos)`. The
+    /// `ConfiguredFeature.place(level, generator, level.random, pos)`. The
     /// feature draws from a copy of the level random that replaces it after.
     pub(crate) fn place_configured_feature(&mut self, name: &str, pos: BlockPos) -> bool {
         let b = self.b;

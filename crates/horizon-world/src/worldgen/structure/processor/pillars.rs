@@ -115,7 +115,7 @@ impl Blocks {
     fn passable(&self, state: BlockStateId, forced: bool) -> bool {
         (forced && !self.unbreakable.contains(&state)) || !self.can_occlude.contains(state)
     }
-    /// StructurePiece.isReplaceableByStructures.
+    /// GeneralUtils.isReplaceableByStructures.
     fn replaceable(&self, state: BlockStateId) -> bool {
         self.air(state) || self.fluid(state) || self.replaceable_by_trees.contains(&state)
     }
