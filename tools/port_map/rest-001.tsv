@@ -96,7 +96,7 @@ AdvancementProgress.isCriterionDone	port	crates/horizon-client/src/advancements.
 AdvancementProgress.getPercent	port	crates/horizon-client/src/game/advancements_screen.rs::Game::adv_draw_hover	obtained over total requirement groups, drives the progress bar and icon frame
 AdvancementProgress.getProgressText	port	crates/horizon-client/src/game/advancements_screen.rs::Game::adv_draw_hover	advancements.progress text, only when there are more than one group
 AdvancementProgress.getRemainingCriteria	inline	crates/horizon-client/src/game/advancements.rs::Game::grant_advancement	GRANT without a criterion walks the advancement's criteria and grants each; an already obtained one is a no-op, so the undone criteria are the ones acted on
-AdvancementProgress.getCompletedCriteria	inline	crates/horizon-client/src/game/advancements.rs::Game::revoke_advancement	REVOKE without a criterion walks the advancement's criteria and revokes each; Progress::done is the per-criterion test
+AdvancementProgress.getCompletedCriteria	inline	crates/horizon-client/src/game/advancements.rs::Game::revoke_advancement	REVOKE without a criterion walks the advancement's criteria and revokes each; the per-criterion check is the return value of Progress::revoke (revoke_criterion)
 AdvancementProgress.getFirstProgressDate	skip:java		used only by compareTo, which has no caller
 AdvancementProgress.compareTo	skip:java		Comparable with no vanilla caller
 AdvancementRequirements.test	port	crates/horizon-client/src/advancements.rs::Progress::done	every requirement group has a criterion obtained
