@@ -37,7 +37,7 @@ impl Mode {
             Self::Redstone => "minecraft:command_block",
         }
     }
-    /// `Enum.ordinal`, which `ServerboundSetCommandBlockPacket` writes.
+    /// The enum ordinal, which `ServerboundSetCommandBlockPacket` writes.
     pub fn ordinal(self) -> i32 {
         match self {
             Self::Sequence => 0,

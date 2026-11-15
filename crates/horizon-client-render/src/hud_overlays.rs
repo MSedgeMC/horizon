@@ -1048,7 +1048,7 @@ fn closer_than(a: [f64; 3], b: [f64; 3], range: f32) -> bool {
     let r = f64::from(range);
     distance_sqr(a, b) < r * r
 }
-/// `Vec3.equals`: `Double.compare` on each axis.
+/// `Vec3.equals`: each axis compared as a double.
 fn same_location(a: [f64; 3], b: [f64; 3]) -> bool {
     let bits = |v: f64| {
         if v.is_nan() {

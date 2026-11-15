@@ -134,7 +134,7 @@ pub fn contents_color(stack: &ItemStack) -> u32 {
                 .map(|e| (e.id, e.amplifier)),
         )
 }
-/// `PotionContents.equals(EMPTY)`: colour and custom name also make contents
+/// `PotionContents` equality: colour and custom name also make contents
 /// nonempty, even when there is no registered potion or custom effect.
 pub fn contents_empty(stack: &ItemStack) -> bool {
     use horizon_world::nbt::Tag;

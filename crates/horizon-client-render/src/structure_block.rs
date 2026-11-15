@@ -36,7 +36,7 @@ impl StructureMode {
     pub fn of_serialized_name(name: &str) -> Option<Self> {
         Self::ALL.into_iter().find(|m| m.serialized_name() == name)
     }
-    /// `StructureMode.LEGACY_CODEC`: `Enum.name()`.
+    /// `StructureMode.LEGACY_CODEC`: the enum name.
     pub fn legacy_name(self) -> &'static str {
         match self {
             Self::Save => "SAVE",

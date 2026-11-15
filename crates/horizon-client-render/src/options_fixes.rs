@@ -167,7 +167,7 @@ fn java_number(text: &str) -> Option<Number<'_>> {
     Some(Number::Decimal(negative, body))
 }
 
-/// `Double.parseDouble(String)` for decimal and special forms.
+/// Java number syntax for decimal and special forms.
 pub fn java_parse_double(text: &str) -> Option<f64> {
     match java_number(text)? {
         Number::Special(v) => Some(v),

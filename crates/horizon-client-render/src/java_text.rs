@@ -47,7 +47,7 @@ fn render(negative: bool, digits: &str, exponent: i32) -> String {
     out
 }
 
-/// `Double.toString`.
+/// How Java prints a double.
 pub fn double_to_string(value: f64) -> String {
     if value.is_nan() {
         return "NaN".into();

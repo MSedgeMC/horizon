@@ -297,7 +297,7 @@ fn codec_string(json: &Json) -> Option<&str> {
     }
 }
 fn double_range(v: f64, lo: f64, hi: f64) -> Option<f64> {
-    // Double.compareTo: -0.0 sorts below 0.0 and NaN above everything.
+    // Java compares doubles: -0.0 sorts below 0.0 and NaN above everything.
     (v.total_cmp(&lo).is_ge() && v.total_cmp(&hi).is_le() && !v.is_nan()).then_some(v)
 }
 fn log_mouse(value: i32) -> f64 {

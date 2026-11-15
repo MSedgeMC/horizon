@@ -24,7 +24,7 @@ pub fn decal_uv([x, y, z]: [f32; 3], direction: Direction) -> [f32; 2] {
 }
 
 /// The light bytes of a crack vertex: the pass is unlit, so they carry the origin of the
-/// vertex's destroy stage sprite (each crack in `LevelRenderer.destroyingBlocks` has its own
+/// vertex's destroy stage sprite (each crack in the renderer destroy set has its own
 /// stage; every stage sprite has the same size, `crumbling_sprite.zw`).
 pub fn stage_light([u0, v0]: [f32; 2]) -> u32 {
     let q = |x: f32| (x.clamp(0.0, 1.0) * 65535.0).round() as u32;
