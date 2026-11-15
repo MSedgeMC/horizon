@@ -3,7 +3,7 @@
 //! velocity becomes three shorts), set_default_spawn_position (the dimension name and the pitch go),
 //! player_rotation (the relative flags go) and explode (the radius, the block count and the block particles go).
 //! Entity data: a player's main hand and skin parts move back to 18 and 17, its hearts and score to 15 and 16, and
-//! the shoulder data (19, 20), which 1.21.8 sends as an NBT, is dropped.
+//! the shoulder data (19, 20) goes back to the compound tag 1.21.8 reads, a parrot with its variant.
 //!
 //! The 1.21.10 entity data steps come before this one ([`entity_data`] reads 1.21.10's indexes and types). The
 //! debug packets 1.21.10 added and the serverbound debug subscription have no 1.21.8 counterpart the id tables
@@ -15,6 +15,7 @@ use crate::{
     ids as packet_ids,
     packets::play::{self, SoundHolder},
 };
+use horizon_world::nbt::{Compound, JavaString, Tag};
 
 /// The pinned clientbound packet `id` (`payload` in 1.21.10's layout) in 1.21.8's layout; `None` when laid out
 /// alike.
@@ -125,10 +126,30 @@ pub(super) fn entity_data(kind: Option<i32>, data: &mut play::SetEntityData) {
     if kind != PLAYER {
         return;
     }
-    // The shoulder data (an NBT in 1.21.8) is dropped: a 1.21.8 client does not show the parrot.
-    // TODO(step1.21.8): write 1.21.8's NBT (a parrot with its variant) instead of dropping it.
-    data.values
-        .retain(|(index, _, _)| !matches!(*index, 19 | 20));
+    // The shoulders (19, 20) are an Optional VarInt from 1.21.9: 0 for none, the parrot's variant id + 1 for
+    // one. 1.21.8 reads a compound tag instead, a parrot's id and Variant or an empty tag for no parrot.
+    data.values.retain_mut(|(index, kind, value)| {
+        use crate::entity_data::{Value, serializer};
+        if !matches!(*index, 19 | 20) {
+            return true;
+        }
+        let Value::Id(id) = value else {
+            return false;
+        };
+        if *kind != serializer::OPTIONAL_UNSIGNED_INT {
+            return false;
+        }
+        let mut shoulder = Compound::new();
+        if (1..=5).contains(&*id) {
+            shoulder.insert(
+                JavaString::from("id"),
+                Tag::String(JavaString::from("minecraft:parrot")),
+            );
+            shoulder.insert(JavaString::from("Variant"), Tag::Int(*id - 1));
+        }
+        *value = Value::Nbt(Tag::Compound(shoulder));
+        true
+    });
     for (index, _, _) in &mut data.values {
         *index = match *index {
             15 => 18,
@@ -253,7 +274,7 @@ mod tests {
     fn a_player_s_main_hand_and_hearts_move_back_to_1_21_8_s_indexes() {
         let session = Session::new(ServerVersion::V1_21_8);
         session.kinds.lock().unwrap().insert(2, PLAYER);
-        // 1.21.10's order: main hand, skin parts, hearts, score and the shoulders (dropped here).
+        // 1.21.10's order: main hand, skin parts, hearts and score.
         let player = play::SetEntityData {
             id: 2,
             values: vec![
@@ -261,7 +282,6 @@ mod tests {
                 (16, ser::BYTE, Value::Byte(0x7f)),
                 (17, ser::FLOAT, Value::Float(4.0)),
                 (18, ser::INT, Value::Int(3)),
-                (19, ser::OPTIONAL_UNSIGNED_INT, Value::Id(0)),
             ],
         };
         let mut d = player.clone();
@@ -275,7 +295,7 @@ mod tests {
                 (16, ser::INT, Value::Int(3)),
             ]
         );
-        // The way back, by translate's reader, gives 1.21.10's order again, minus the shoulders.
+        // The way back, by translate's reader, gives 1.21.10's order again.
         let mut back = d.clone();
         translate::client_layout_v1_21_8::entity_data(&session, &mut back);
         assert_eq!(
@@ -287,6 +307,45 @@ mod tests {
                 (18, ser::INT, Value::Int(3)),
             ]
         );
+    }
+
+    #[test]
+    fn a_shoulder_parrot_goes_back_as_1_21_8_s_nbt() {
+        use crate::{adapter::ids, entity_data::EntityData};
+
+        let session = Session::new(ServerVersion::V1_21_8);
+        session.kinds.lock().unwrap().insert(2, PLAYER);
+        // 1.21.10's shoulders: an optional variant, 0 for none and the parrot's id + 1 for one.
+        let mut d = play::SetEntityData {
+            id: 2,
+            values: vec![
+                (19, ser::OPTIONAL_UNSIGNED_INT, Value::Id(3)),
+                (20, ser::OPTIONAL_UNSIGNED_INT, Value::Id(0)),
+            ],
+        };
+        entity_data(Some(PLAYER), &mut d);
+
+        // 1.21.8 reads a compound tag: the parrot and its variant, an empty tag for no parrot.
+        let _ids = ids::renumbering(ServerVersion::V1_21_8.ids().unwrap(), ids::Way::Down);
+        let mut got = Writer::new();
+        EntityData::write(&d.values, &mut got);
+        let mut parrot = Compound::new();
+        parrot.insert(
+            JavaString::from("id"),
+            Tag::String(JavaString::from("minecraft:parrot")),
+        );
+        parrot.insert(JavaString::from("Variant"), Tag::Int(2));
+        let mut want = Writer::new();
+        for (index, tag) in [
+            (19, Tag::Compound(parrot)),
+            (20, Tag::Compound(Compound::new())),
+        ] {
+            want.u8(index);
+            want.varint(16);
+            want.nbt(&tag);
+        }
+        want.u8(0xFF);
+        assert_eq!(got.data, want.data);
     }
 
     #[test]

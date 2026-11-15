@@ -17,6 +17,8 @@ pub enum Value {
     Long(i64),
     Float(f32),
     String(String),
+    /// An NBT compound: a 1.21.8 player's shoulder data, which no pinned serializer writes.
+    Nbt(Tag),
     Text(Tag),
     OptText(Option<Tag>),
     Item(Option<Stack>),
@@ -508,6 +510,7 @@ fn write_value(kind: i32, v: &Value, w: &mut Writer) {
         Value::Long(l) => w.varlong(*l),
         Value::Float(f) => w.f32(*f),
         Value::String(s) => w.string(s),
+        Value::Nbt(t) => w.nbt(t),
         Value::Text(t) => w.nbt(t),
         Value::OptText(t) => {
             w.bool(t.is_some());
@@ -580,6 +583,16 @@ impl Codec<Vec<(u8, i32, Value)>> for EntityData {
     }
     fn write(v: &Vec<(u8, i32, Value)>, w: &mut Writer) {
         for (index, kind, value) in v {
+            // A 1.21.8 client reads a player's shoulders as compound tags (serializer 16), which have no
+            // pinned counterpart.
+            if let Value::Nbt(tag) = value {
+                if ids::quirks_written().shoulder_parrots_as_nbt {
+                    w.u8(*index);
+                    w.varint(16);
+                    w.nbt(tag);
+                }
+                continue;
+            }
             // Written for an older client: its serializer ids, and nothing it has no serializer for.
             let wire = match ids::active() {
                 Some((ids, ids::Way::Down)) => match ids.entity_data_serializer.down(*kind) {
