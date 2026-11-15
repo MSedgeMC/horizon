@@ -73,9 +73,9 @@ AttributeMap.onAttributeModified	port	crates/horizon-world/src/attribute_map.rs:
 AttributeMap.getBaseValue	port	crates/horizon-world/src/attribute_map.rs::value	ValueKind::Base
 AttributeMap.addTransientAttributeModifiers	port	crates/horizon-world/src/attributes/live.rs::add_effect_modifiers	effect modifiers: remove the old one by id, then add transient
 AttributeMap.removeAttributeModifiers	port	crates/horizon-world/src/attributes/live.rs::remove_effect_modifiers	
-AttributeMap.assignAllValues	missing		minor: the player is rebuilt from default attributes when respawning out of the End (PlayerMotion::new), so values and modifiers carried by keepAll are lost
-AttributeMap.assignBaseValues	missing		minor: base values changed by /attribute (max_health, speed) reset on respawn because the player's attributes are rebuilt
-AttributeMap.assignPermanentModifiers	missing		minor: permanent modifiers added by /attribute are lost on respawn out of the End
+AttributeMap.assignAllValues	inline	crates/horizon-client/src/game/nether_portal/respawn_attributes.rs::Game::take_carried_attributes	a respawn that keeps modifiers replaces each modeled attribute's base and every modifier from the old player (`replace_from`), then applies the early UpdateAttributes snapshots
+AttributeMap.assignBaseValues	inline	crates/horizon-client/src/game/nether_portal/respawn_attributes.rs::Game::take_carried_attributes	a death respawn keeps only the old base values (`set_base_value`), not the modifiers
+AttributeMap.assignPermanentModifiers	inline	crates/horizon-client/src/game/nether_portal/respawn_attributes.rs::Game::take_carried_attributes	permanent modifiers ride the `replace_from` when the respawn keeps modifiers and are dropped when it does not
 AttributeMap.resetBaseValue	port	crates/horizon-world/src/attribute_map.rs::reset_base	live.rs reset_base for the player
 AttributeMap.apply	inline	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	the bases the store models are read, and `saved_attributes::read_attribute_modifiers` applies every saved permanent modifier of those attributes (`AttributeInstance.apply`); unknown ids and a player's raw attributes are not applied
 AttributeSupplier.getAttributeInstance	port	crates/horizon-world/src/attributes/entity.rs::instance	EntityAttributes::instance
@@ -94,7 +94,7 @@ AnimalMakeLove.stop	port	crates/horizon-client/src/mobs/animal_brain.rs::do_stop
 AnimalMakeLove.hasBreedTargetOfRightType	inline	crates/horizon-client/src/mobs/animal_brain.rs::can_mate_with	same-species test on the remembered partner
 AnimalPanic.checkExtraStartConditions	inline	crates/horizon-client/src/mobs/animal_brain.rs::try_start	hurt by a panic cause, or already panicking
 AnimalPanic.start	port	crates/horizon-client/src/mobs/animal_brain.rs::try_start	panic memory set, walk target cleared, navigation stopped
-AnimalPanic.lookForWater	missing		minor: a burning brain animal (sniffer, ghastling) does not run for nearby water; goal-driven animals do (goals.rs Panic)
+AnimalPanic.lookForWater	port	crates/horizon-client/src/mobs/animal_panic.rs::panic_pos	a burning animal looks 5 blocks out for the nearest water (`animal_water_pos`, the 2x2 check shared with `PanicGoal`), else a land spot 5 out and 4 up or down
 BabyFollowAdult.create	port	crates/horizon-client/src/mobs/animal_brain.rs::trigger	B::FollowAdult for the ghastling; goat, camel, armadillo, axolotl and hoglin babies use the FollowParent goal
 BackUpIfTooClose.create	inline	crates/horizon-client/src/mobs/piglin.rs::too_close	goal stand-in for the piglin brain (no tick parity: the probe has no piglin brain); only a crossbow piglin, and the backward strafe is BackUpIfTooClose's Goal::tick
 BecomePassiveIfMemoryPresent.create	port	crates/horizon-client/src/mobs/piglin.rs::hoglin_repellent	a hoglin near a repellent is pacified for 200 ticks and drops its target
