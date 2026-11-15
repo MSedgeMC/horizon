@@ -376,8 +376,9 @@ impl Game<'_> {
                 set_key(&mut tag, "Fire", Tag::Short(0));
                 tag
             }
-            // A fishing bobber saves only the entity it hooked
-            // (FishingHook.addAdditionalSaveData); the rest is Entity's.
+            // A fishing bobber adds no data of its own (26.3's
+            // FishingHook.addAdditionalSaveData is empty); the rest is
+            // Entity's.
             Target::Hook(id) => {
                 let uuid = self.uuid_for(id);
                 let position = self.hook_at(id)?;
@@ -396,9 +397,6 @@ impl Game<'_> {
                     uuid,
                 );
                 crate::game::persist::write_static_entity_fields(&mut tag);
-                if let Some(hooked) = self.hook_hooked(id) {
-                    set_key(&mut tag, "HookedEntity", Tag::Int(hooked as i32));
-                }
                 tag
             }
         })

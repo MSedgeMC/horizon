@@ -1561,13 +1561,6 @@ impl Hook {
     pub(super) fn id(&self) -> u32 {
         self.id
     }
-    /// `FishingHook.addAdditionalSaveData`: the entity it hooked, if any.
-    fn hooked(&self) -> Option<u32> {
-        match self.state {
-            State::Hooked(id) => Some(id),
-            _ => None,
-        }
-    }
     /// `Entity.teleportTo` for a command: placed still and on the ground
     /// there (`TeleportCommand.performTeleport`), with no server update left
     /// to interpolate towards.
@@ -1588,13 +1581,6 @@ impl Hook {
 impl RemoteHook {
     pub(super) fn id(&self) -> u32 {
         self.id
-    }
-    /// `FishingHook.addAdditionalSaveData`: the entity it hooked, if any.
-    fn hooked(&self) -> Option<u32> {
-        match self.state {
-            State::Hooked(id) => Some(id),
-            _ => None,
-        }
     }
     /// `Entity.teleportTo` for a command, as this client's own hook's.
     fn teleport_to(&mut self, at: Vec3) {
@@ -2059,26 +2045,6 @@ impl Game<'_> {
             .iter()
             .find(|h| h.id() == id)
             .map(RemoteHook::bounds)
-    }
-
-    /// `FishingHook.addAdditionalSaveData`'s `HookedEntity` of the fishing
-    /// hook a command names: the entity it hooked, if any.
-    pub(in crate::game) fn hook_hooked(&self, id: u32) -> Option<u32> {
-        if let Some(h) = self.hook.as_ref().filter(|h| h.id() == id) {
-            return h.hooked();
-        }
-        if let Some(host) = self.lan.as_ref() {
-            for guest in host.hub.guests.iter().filter(|g| host.hub.here(g)) {
-                let hook = host.play.get(&guest.conn).and_then(|p| p.hook.as_ref());
-                if let Some(h) = hook.filter(|h| h.id() == id) {
-                    return h.hooked();
-                }
-            }
-        }
-        self.remote_hooks
-            .iter()
-            .find(|h| h.id() == id)
-            .and_then(RemoteHook::hooked)
     }
 
     /// `/kill` on a fishing hook: `Entity.discard` takes the bobber out of
