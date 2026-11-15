@@ -17,10 +17,28 @@ use horizon_world::blocking_rules::{BlockingRules, DamageReduction, ItemDamageFu
 #[path = "shield_ram_tests.rs"]
 mod ram_tests;
 
+#[cfg(test)]
+#[path = "shield_use_tests.rs"]
+mod use_tests;
+
 /// `Inventory.SLOT_OFFHAND`: the `using` slot of an off-hand item.
 pub(super) const OFFHAND_SLOT: usize = 40;
 
 impl Game<'_> {
+    /// `AbstractArrow.onHitEntity` on the player: a piercing arrow passes item blocking, whoever
+    /// shot it, because `applyItemBlocking` reads the direct entity's pierce level.
+    pub(super) fn arrow_hits_player(
+        &mut self,
+        amount: f32,
+        p: &horizon_client::projectiles::Projectile,
+    ) -> bool {
+        self.combat.piercing_hit = p.arrow.as_ref().is_some_and(|a| a.pierce > 0);
+        self.mob_hits_player(
+            amount,
+            [p.previous.x, p.previous.y, p.previous.z],
+            "minecraft:arrow",
+        )
+    }
     /// The stack in an inventory slot, the off hand at `OFFHAND_SLOT`.
     pub(super) fn stack_in(&self, slot: usize) -> Option<&ItemStack> {
         if slot == OFFHAND_SLOT {
@@ -52,10 +70,27 @@ impl Game<'_> {
         if self.blocks_attacks(stack).is_none() {
             return false;
         }
+        // `Item.use` reads `consumable` before `blocks_attacks`: a stack
+        // carrying both starts being eaten (or refuses to be), never raised.
+        if self.consumable(stack).is_some() {
+            return false;
+        }
         if self.shield_cooldown == 0 {
             self.start_using_item();
         }
         true
+    }
+    /// `ServerLevel.broadcastDamageEvent`: the hurt one's own client plays its
+    /// hurt sound from `ClientboundDamageEventPacket`.
+    fn broadcast_hurt_damage(&mut self, source: HurtSource<'_>) {
+        let Some(id) = self.health_resources.damage.id(source.damage_type) else {
+            return;
+        };
+        if let Some(p) = self.player.as_mut() {
+            p.events.push(horizon_client::motion::MotionEvent::Health(
+                horizon_client::health::HealthEvent::DamageBroadcast { source: id },
+            ));
+        }
     }
     /// `LivingEntity.getItemBlockingWith` and the inputs of `applyItemBlocking`
     /// for an attack from `from` (`DamageSource.getSourcePosition`).
@@ -114,7 +149,10 @@ impl Game<'_> {
                     factor,
                 },
             },
-            bypassed: component.bypassed_by.as_deref().is_some_and(matches),
+            bypassed: component
+                .bypassed_by
+                .as_deref()
+                .is_some_and(|list| list.iter().any(|spec| matches(spec))),
             pierce,
             angle,
         })
@@ -144,6 +182,7 @@ impl Game<'_> {
             && blocked > 0.0
         {
             let outcome = BlockOutcome {
+                blocking_item_used: true,
                 blocked,
                 fully_blocked: blocked >= damage,
                 ..Default::default()
@@ -187,62 +226,78 @@ impl Game<'_> {
             .player
             .as_ref()
             .map(|p| [p.position.x, p.position.y, p.position.z]);
+        // `BlocksAttacks.hurtBlockingItem` runs inside `applyItemBlocking`, so
+        // the wear (its Unbreaking draws included) comes before `hurtServer`
+        // reads BLOCKS_ATTACKS off the used stack again, and before the block
+        // sound's pitch draw.
+        if outcome.blocking_item_used {
+            // BlocksAttacks.hurtBlockingItem: the hit counts the blocking item
+            // as used, before the blocked-damage gate (vanilla awards it on the
+            // server even when the item blocks none of the damage).
+            if self.remote.is_none() {
+                self.award_stat("used", &stack.item, 1);
+            }
+            // ItemDamageFunction.apply, then hurtAndBreak.
+            let (threshold, base, factor) = component.item_damage;
+            let item_damage = ItemDamageFunction {
+                threshold,
+                base,
+                factor,
+            }
+            .apply(outcome.blocked);
+            if item_damage > 0
+                && !self.creative
+                && let Some(max) = blocking_item_max_damage(
+                    &stack,
+                    self.items()
+                        .get(&stack.item)
+                        .map_or(0, |item| item.max_damage),
+                )
+            {
+                let loss = self.wear(&stack, item_damage as u32);
+                let cell = self.stack_in_mut(slot);
+                if loss > 0
+                    && let Some(s) = cell.as_mut()
+                {
+                    s.damage = s.damage.saturating_add(loss).min(max);
+                    if s.damage >= max {
+                        let broken = s.clone();
+                        s.count -= 1;
+                        if s.count == 0 {
+                            *cell = None;
+                        }
+                        self.using = None;
+                        // ItemStack.hurtAndBreak: onEquippedItemBroken for the hand it was used from.
+                        let hand = if slot == OFFHAND_SLOT {
+                            horizon_world::player_inventory::EquipmentSlot::OffHand
+                        } else {
+                            horizon_world::player_inventory::EquipmentSlot::MainHand
+                        };
+                        self.player_equipment_broke(hand, &broken);
+                    }
+                }
+            }
+        }
+        // `ItemStack.getComponents` is empty for an emptied stack: the hit that
+        // emptied it finds no BLOCKS_ATTACKS there, so `onBlocked` does not run
+        // and `hurtServer`'s else branch broadcasts instead. Only a hit that
+        // was blocked owes that here; the others broadcast already.
+        if self.stack_in(slot).is_none() {
+            if outcome.sound {
+                self.broadcast_hurt_damage(source);
+            }
+            return;
+        }
         if outcome.sound
             && let Some(sound) = &component.block_sound
         {
             let pitch = 0.8 + self.world.random.next_float() * 0.4;
             self.audio.play(sound, at, 1.0, pitch);
         }
-        // BlocksAttacks.hurtBlockingItem: the hit counts the blocking item as
-        // used, before the blocked-damage gate (vanilla awards it on the
-        // server even when the item blocks none of the damage).
-        if self.remote.is_none() {
-            self.award_stat("used", &stack.item, 1);
-        }
-        if outcome.blocked <= 0.0 {
+        if !outcome.blocking_item_used {
             return;
         }
-        // ItemDamageFunction.apply, then hurtAndBreak.
-        let (threshold, base, factor) = component.item_damage;
-        let item_damage = if outcome.blocked < threshold {
-            0
-        } else {
-            (base + factor * outcome.blocked).floor() as i32
-        };
-        if item_damage > 0
-            && !self.creative
-            && let Some(max) = blocking_item_max_damage(
-                &stack,
-                self.items()
-                    .get(&stack.item)
-                    .map_or(0, |item| item.max_damage),
-            )
-        {
-            let loss = self.wear(&stack, item_damage as u32);
-            let cell = self.stack_in_mut(slot);
-            if loss > 0
-                && let Some(s) = cell.as_mut()
-            {
-                s.damage = s.damage.saturating_add(loss).min(max);
-                if s.damage >= max {
-                    let broken = s.clone();
-                    s.count -= 1;
-                    if s.count == 0 {
-                        *cell = None;
-                    }
-                    self.using = None;
-                    // ItemStack.hurtAndBreak: onEquippedItemBroken for the hand it was used from.
-                    let hand = if slot == OFFHAND_SLOT {
-                        horizon_world::player_inventory::EquipmentSlot::OffHand
-                    } else {
-                        horizon_world::player_inventory::EquipmentSlot::MainHand
-                    };
-                    self.player_equipment_broke(hand, &broken);
-                    return;
-                }
-            }
-        }
-        if projectile {
+        if outcome.blocked <= 0.0 || projectile {
             return;
         }
         let Some(id) = attacker else {
@@ -354,7 +409,7 @@ impl Game<'_> {
                     self.add_cooldown(group, ticks as i32);
                 }
             }
-            self.using = None;
+            self.stop_using();
             if let Some(sound) = &component.disabled_sound {
                 let pitch = 0.8 + self.world.random.next_float() * 0.4;
                 self.audio.play(sound, at, 0.8, pitch);
@@ -409,6 +464,7 @@ mod tests {
             direct: 1,
         };
         let outcome = BlockOutcome {
+            blocking_item_used: true,
             hurt: true,
             blocked: 5.0,
             fully_blocked: true,
