@@ -49,7 +49,7 @@ pub struct Death<'a> {
     pub luck: f32,
     /// The entity the mob rides.
     pub vehicle: Option<LootEntity>,
-    /// Entity.getTags of the dying mob: the /tag labels
+    /// Entity.entityTags of the dying mob: the /tag labels
     /// minecraft:entity_tags reads.
     pub this_tags: Vec<String>,
     /// The `doMobLoot` game rule.

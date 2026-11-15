@@ -341,7 +341,7 @@ pub struct LootEntity {
     /// Worn and held items by `EquipmentSlot` name (mainhand, offhand,
     /// feet, legs, chest, head, body, saddle).
     pub equipment: Vec<(String, LootStack)>,
-    /// `Entity.getTags`: the `/tag` labels on the entity, which
+    /// `Entity.entityTags`: the `/tag` labels on the entity, which
     /// `minecraft:entity_tags` reads.
     pub tags: Vec<String>,
 }
