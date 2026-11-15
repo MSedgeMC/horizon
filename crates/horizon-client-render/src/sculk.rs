@@ -378,7 +378,7 @@ fn info_from_nbt(tag: &Tag) -> Option<Info> {
     })
 }
 
-/// `VibrationSystem.isOccluded`: whether wool-like blocks block every line between
+/// `VibrationSystem.Listener.isOccluded`: whether wool-like blocks block every line between
 /// the centres of the source and listener blocks (nudged one direction each).
 pub fn is_occluded(
     origin: [f64; 3],
