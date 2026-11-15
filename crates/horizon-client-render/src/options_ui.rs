@@ -4539,6 +4539,18 @@ impl OptionsUi {
                     p.erase(&m, 1);
                     return Vec::new();
                 }
+                K::Tab => {
+                    if !p.confirming() {
+                        p.tab(!shift);
+                    }
+                    return Vec::new();
+                }
+                K::ArrowUp | K::ArrowDown if p.arrow(key == K::ArrowUp, shift) => {
+                    return Vec::new();
+                }
+                K::Enter | K::NumpadEnter | K::Space if p.activate() => {
+                    return Vec::new();
+                }
                 _ => {}
             }
         }

@@ -20,7 +20,7 @@ MultilineTextField.reflowDisplayLines	port	crates/horizon-client/src/game/books.
 MultilineTextField.truncateFullText	port	crates/horizon-client-render/src/ui.rs::EditBox::set_value	truncates to max_length characters
 MultilineTextField.truncateInsertionText	inline	crates/horizon-client-render/src/ui.rs::EditBox::insert_text	room left under max_length
 MultilineTextField.overflowsLineLimit	port	crates/horizon-client/src/game/books.rs::Game::page_keep	counts page_rows, which adds the row after a trailing newline as vanilla does
-ObjectSelectionList.nextFocusPath	inline	crates/horizon-client/src/title.rs::Title::arrow_key	arrow keys move the world list's selection; multiplayer.rs::Screen::arrow does the server list; pack lists take no keyboard
+ObjectSelectionList.nextFocusPath	inline	crates/horizon-client/src/title.rs::Title::arrow_key	arrow keys move the world list's selection; multiplayer.rs::Screen::arrow does the server list; pack_screen::PackScreen::tab and arrow walk a pack list's focus and selection
 ObjectSelectionList.updateWidgetNarration	skip:other		screen-reader narration; Horizon has no narration output
 OptionsList.addBig	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::layout	Row::Big: 310 wide at width/2 - 155
 OptionsList.addHeader	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::layout	gap: minor: the header is centred text, not a focusable widget

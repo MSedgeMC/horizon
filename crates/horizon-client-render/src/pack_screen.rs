@@ -1019,6 +1019,120 @@ impl PackScreen {
         // The browser's own box counts: the game routes typing by this.
         self.browser_typing() || (self.confirm.is_none() && self.focus == Focus::Search)
     }
+    /// `ObjectSelectionList.nextFocusPath`: Tab moves the keyboard focus
+    /// through the search box, both lists and the footer buttons; a list that
+    /// was never clicked selects its first pack when it takes the focus.
+    pub fn tab(&mut self, forward: bool) -> bool {
+        if self.confirm.is_some() {
+            return false;
+        }
+        let order = [
+            Focus::Search,
+            Focus::List(0),
+            Focus::List(1),
+            Focus::Button(0),
+            Focus::Button(1),
+        ];
+        let at = order
+            .iter()
+            .position(|f| *f == self.focus)
+            .unwrap_or(if forward { order.len() - 1 } else { 0 });
+        let next = if forward {
+            (at + 1) % order.len()
+        } else {
+            (at + order.len() - 1) % order.len()
+        };
+        self.set_focus(order[next]);
+        if let Focus::List(side) = self.focus {
+            let l = &mut self.lists[side];
+            l.focused = true;
+            if l.selected.is_none() {
+                let first = l.entries.iter().position(|e| matches!(e.row, Row::Pack(_)));
+                l.set_selected(first);
+            }
+        }
+        true
+    }
+    /// `ObjectSelectionList`'s arrow keys on the focused pack list: Up and
+    /// Down move the selection to the previous or next pack; with Shift they
+    /// move the pack itself, as the entry's arrows do.
+    pub fn arrow(&mut self, up: bool, shift: bool) -> bool {
+        if self.confirm.is_some() {
+            return false;
+        }
+        let Focus::List(side) = self.focus else {
+            return false;
+        };
+        let rows: Vec<usize> = self.lists[side]
+            .entries
+            .iter()
+            .enumerate()
+            .filter(|(_, e)| matches!(e.row, Row::Pack(_)))
+            .map(|(i, _)| i)
+            .collect();
+        if rows.is_empty() {
+            return false;
+        }
+        let Some(i) = self.lists[side].selected else {
+            self.lists[side].set_selected(Some(rows[0]));
+            return true;
+        };
+        let Row::Pack(id) = self.lists[side].entries[i].row.clone() else {
+            return false;
+        };
+        if shift {
+            let index = self.model_index(side, &id).unwrap_or(0);
+            if !self.model.move_by(side == 1, index, up) {
+                return false;
+            }
+            self.changed = true;
+            self.populate(Some(&id));
+            return true;
+        }
+        let at = rows.iter().position(|&row| row == i).unwrap_or(0);
+        let next = if up {
+            at.saturating_sub(1)
+        } else {
+            (at + 1).min(rows.len() - 1)
+        };
+        self.lists[side].set_selected(Some(rows[next]));
+        true
+    }
+    /// `PackEntry.keyPressed(select)`: Enter or Space acts on the focused
+    /// list's pack as a click on its icon does.
+    pub fn activate(&mut self) -> bool {
+        if self.confirm.is_some() {
+            return false;
+        }
+        let Focus::List(side) = self.focus else {
+            return false;
+        };
+        let Some(i) = self.lists[side].selected else {
+            return false;
+        };
+        let Row::Pack(id) = self.lists[side].entries[i].row.clone() else {
+            return false;
+        };
+        let (select, unselect, _, _) = self.flags(side, &id);
+        if !select && !unselect {
+            return false;
+        }
+        let index = self.model_index(side, &id).unwrap_or(0);
+        if select
+            && self
+                .info(&id)
+                .is_some_and(|p| p.compat != Compat::Compatible)
+        {
+            self.open_confirm(&id);
+            return true;
+        }
+        if !self.model.activate(side == 1, index, false) {
+            return false;
+        }
+        self.changed = true;
+        self.populate(Some(&id));
+        true
+    }
     /// Resize (`Screen.init` on a new size: `repositionElements`).
     pub fn resize(&mut self, m: &Measure, width: i32, height: i32) {
         self.width = width;
@@ -2452,5 +2566,90 @@ mod icon_slot_tests {
         let other = self::atlas();
         assert_ne!(other.revision, atlas.revision);
         assert_eq!(frame(&screen, &other).2.len(), 3);
+    }
+}
+
+#[cfg(test)]
+mod keyboard_tests {
+    use super::*;
+
+    fn pack(id: &str) -> PackInfo {
+        PackInfo {
+            id: id.into(),
+            title: Text::literal(id),
+            description: Text::literal(""),
+            description_style: Style::default(),
+            source: Source::BuiltIn,
+            compat: Compat::Compatible,
+            icon: None,
+            required: false,
+            position: Position::Top,
+            fixed: false,
+        }
+    }
+
+    fn screen() -> PackScreen {
+        let atlas =
+            crate::hud::HudAtlas::build(std::path::Path::new("/nonexistent/horizon-test-assets"))
+                .unwrap();
+        let m = Measure(&atlas.font);
+        PackScreen::new(
+            &m,
+            tr("resourcePack.title"),
+            480,
+            320,
+            false,
+            vec![pack("file/a"), pack("file/b"), pack("file/c")],
+            &[],
+        )
+    }
+
+    fn selected(s: &PackScreen, side: usize) -> String {
+        match &s.lists[side].entries[s.lists[side].selected.unwrap()].row {
+            Row::Pack(id) => id.clone(),
+            Row::Header => panic!("a header has the selection"),
+        }
+    }
+
+    #[test]
+    fn tab_and_the_arrows_navigate_the_pack_lists() {
+        let mut s = screen();
+        // The search box has the keyboard at init; arrows there move nothing.
+        assert!(s.search_focused());
+        assert!(!s.arrow(false, false) && !s.activate());
+        // Tab reaches the available list, which takes its first pack.
+        assert!(s.tab(true));
+        assert_eq!(s.focus, Focus::List(0));
+        assert!(s.lists[0].focused);
+        assert_eq!(selected(&s, 0), "file/a");
+        // Down and Up move the selection; the ends hold.
+        assert!(s.arrow(false, false));
+        assert_eq!(selected(&s, 0), "file/b");
+        assert!(s.arrow(true, false));
+        assert_eq!(selected(&s, 0), "file/a");
+        // Shift+Down moves the pack itself below its neighbour.
+        assert!(s.arrow(false, true));
+        let order: Vec<&str> = s.model.unselected.iter().map(|p| p.id.as_str()).collect();
+        assert_eq!(order, ["file/b", "file/a", "file/c"]);
+        // Enter selects the focused pack and moves the focus to its new list.
+        assert!(s.activate());
+        assert_eq!(s.commit(), ["file/a"]);
+        assert_eq!(s.focus, Focus::List(1));
+        // Space unselects it again.
+        assert!(s.activate());
+        assert!(s.commit().is_empty());
+        assert_eq!(s.focus, Focus::List(0));
+        // Tab walks the other list, both footer buttons and the search box.
+        for focus in [
+            Focus::List(1),
+            Focus::Button(0),
+            Focus::Button(1),
+            Focus::Search,
+        ] {
+            assert!(s.tab(true));
+            assert_eq!(s.focus, focus);
+        }
+        assert!(s.tab(false));
+        assert_eq!(s.focus, Focus::Button(1));
     }
 }
