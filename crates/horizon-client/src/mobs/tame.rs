@@ -2151,6 +2151,7 @@ mod tests {
     /// powder snow. The test puts the owner in water: the parrot must not
     /// start to land.
     #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
     fn a_parrot_does_not_land_on_an_owner_in_water() {
         use crate::mobs::goals::Cx;
         use crate::mobs::world::{level_random, test_player, with_built_test_world};
