@@ -296,6 +296,15 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
                     volume: 1.0,
                     pitch: 1.0,
                 });
+                // `AbstractCandleBlock.extinguish`'s wick smoke is a
+                // `level.addParticle` at each `getParticleOffsets`, drawn by a
+                // client; the empty-hand path hands it over as this event, so
+                // a water bucket or flowing water must post it too.
+                self.emit(super::LevelEvent::BlockEvent {
+                    pos,
+                    state: next,
+                    kind: "candle_smoke",
+                });
             }
             // `CampfireBlock.douse` and `AbstractCandleBlock.extinguish` both
             // end with `level.gameEvent(null, GameEvent.BLOCK_CHANGE, pos)`,

@@ -3277,6 +3277,41 @@ fn water_douses_a_lit_candle_with_the_candle_sound() {
 }
 
 #[test]
+fn water_dousing_a_candle_posts_the_wick_smoke() {
+    // `CandleBlock.placeLiquid` runs `AbstractCandleBlock.extinguish` on a lit
+    // candle, whose `getParticleOffsets` smoke is a `level.addParticle` the
+    // server must send on. The empty-hand path hands the client that smoke as
+    // a `candle_smoke` block event; a water bucket or flowing water must too.
+    let mut w = world!();
+    let at = BlockPos::new(0, 1, 0);
+    w.put(at, w.id("candle", &[("lit", "true")]));
+    w.level.events.clear();
+    let placed = w.f.behaviours.bucket_empty(
+        &mut w.level,
+        &mut w.ticks,
+        at,
+        None,
+        BucketContent::Fluid(crate::fluid::FluidKind::Water),
+        "minecraft:item.bucket.empty",
+        false,
+        false,
+    );
+    assert_eq!(placed, Some(at));
+    let next = w.get(at);
+    assert!(
+        w.level.events.iter().any(|e| matches!(
+            e,
+            LevelEvent::BlockEvent {
+                pos,
+                state,
+                kind: "candle_smoke",
+            } if *pos == at && *state == next
+        )),
+        "the wick smoke, with the new waterlogged state"
+    );
+}
+
+#[test]
 fn an_empty_hand_snuffs_a_lit_candle() {
     // CandleBlock.useItemOn: an empty hand on a lit candle (`mayBuild`) runs
     // AbstractCandleBlock.extinguish: unlit, the wick smoke, the extinguish
