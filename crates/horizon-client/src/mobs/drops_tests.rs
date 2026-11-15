@@ -57,6 +57,7 @@ fn death(loot: &LootData) -> Death<'_> {
         player_killed: false,
         luck: 0.0,
         vehicle: None,
+        this_tags: Vec::new(),
         mob_drops: true,
         world_seed: 0,
     }

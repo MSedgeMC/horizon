@@ -289,6 +289,7 @@ pub fn main() -> horizon_client::Result<()> {
                 player_killed: pkill,
                 luck: get("luck", "0").parse()?,
                 vehicle: c.get("vehicle").map(|v| LootEntity::new(v)),
+                this_tags: Vec::new(),
                 mob_drops: true,
                 world_seed,
             };
