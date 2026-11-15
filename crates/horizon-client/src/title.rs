@@ -2549,7 +2549,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             ),
             Mode::Realms(screen) => {
                 let info = ScreenInfo::new("realms", lang::get("menu.online"));
-                // `AbstractSelectionList.updateNarration`: the selected entry is a
+                // `AbstractWidget.updateNarration`: the selected entry is a
                 // widget line under the screen title.
                 match screen.narration() {
                     Some(text) => info.element(crate::widgets::ElementType::Title, 1, text),

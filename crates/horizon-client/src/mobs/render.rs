@@ -602,7 +602,7 @@ pub fn body_color(m: &Mob, alpha: f32) -> u32 {
     }
 }
 /// Extra render layers drawn over the body with the same pose. `age` is the
-/// render state's `ageInTicks` (`Mob.age` plus the partial tick).
+/// render state's `ageInTicks` (`Entity.tickCount` plus the partial tick).
 pub fn layers(m: &Mob, age: f32) -> Vec<Layer> {
     use Species as S;
     let mut v = Vec::new();

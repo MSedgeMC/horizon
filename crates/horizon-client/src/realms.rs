@@ -2052,7 +2052,7 @@ impl Screen {
         self.pending_invites_job = client().map(|client| spawn(move || client.pending_invites()));
         // `RealmsDataFetcher.trialAvailabilityTask`: the footer's free-trial button.
         self.trial_job = client().map(|client| spawn(move || client.trial_available()));
-        // `RealmsDataFetcher.liveStatsTask`: the rows' online faces.
+        // `RealmsDataFetcher.onlinePlayersTask`: the rows' online faces.
         self.live_job = client().map(|client| spawn(move || client.live_players()));
         self.state = match client() {
             Some(client) => FetchState::Loading(spawn(move || client.list_worlds())),
@@ -11531,7 +11531,7 @@ impl Screen {
                     }
                 }
                 batch.clip_since(first, 0.0, top, w, bottom);
-                // `AbstractSelectionList.getScrollbarPosition`: rowRight + 6 + 2.
+                // `AbstractSelectionList.scrollBarX`: rowRight + 6 + 2.
                 crate::ui::scrollbar(
                     batch,
                     atlas,

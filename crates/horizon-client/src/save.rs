@@ -3086,7 +3086,7 @@ pub fn fall_back_to_level_dat_old(world: &Path) -> bool {
         && level_dat_issue(world, true).is_none()
         && restore_level_data_from_old(world)
 }
-/// `LevelStorageSource.readLevelDataTagFixed`: level.dat, else level.dat_old.
+/// `LevelStorageSource.readLevelDataTagRaw`: level.dat, else level.dat_old.
 fn read_level_dat(dir: &Path) -> Option<Tag> {
     read_dat(&dir.join("level.dat")).or_else(|| read_dat(&dir.join("level.dat_old")))
 }

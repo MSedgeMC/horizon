@@ -88,7 +88,7 @@ impl Kinetic {
         Some(Self {
             contact_cooldown_ticks: 10,
             delay_ticks: ticks(delay),
-            // `Condition.ofAttackerSpeed`, and `ofRelativeSpeed` for the damage.
+            // `KineticWeapon.Condition.ofAttackerSpeed`, and `ofRelativeSpeed` for the damage.
             dismount: Condition {
                 max_duration_ticks: ticks(dismount.0),
                 min_speed: dismount.1,

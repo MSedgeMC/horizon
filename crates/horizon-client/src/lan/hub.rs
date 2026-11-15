@@ -1383,7 +1383,7 @@ impl Hub {
         }
     }
     /// The name a player's Tab list entry shows in place of theirs
-    /// (`PlayerInfo.displayName`): a mod's list name, else their nickname.
+    /// (`PlayerInfo.getTabListDisplayName`): a mod's list name, else their nickname.
     fn list_name(&self, uuid: u128) -> Option<Tag> {
         self.list_names
             .get(&uuid)
