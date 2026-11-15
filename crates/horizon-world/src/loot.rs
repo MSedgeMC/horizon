@@ -1914,12 +1914,12 @@ impl<R: RandomSource> Context<'_, R> {
                 }
             }
             // SetContainerContents: an empty stack is unchanged. Otherwise
-            // each entry expands to a singleton whose item stack is added, in
-            // order, to the component's slots (ItemContainerContents: the
-            // stream is slots 0, 1, ... with trailing empties trimmed). The
-            // entry weight is not consulted: this is `expand`, not a pool
-            // draw. The block entity item code reads the component back as
-            // its Items.
+            // each entry expands to a singleton whose item stack is split at
+            // its max stack size and added, in order, to the component's
+            // slots (ItemContainerContents: the stream is slots 0, 1, ... with
+            // trailing empties trimmed). The entry weight is not consulted:
+            // this is `expand`, not a pool draw. The block entity item code
+            // reads the component back as its Items.
             "minecraft:set_contents" => {
                 if stack.is_empty() {
                     return stack;
@@ -1935,8 +1935,11 @@ impl<R: RandomSource> Context<'_, R> {
                     let mut choices = Vec::new();
                     self.expand(entry, &mut choices);
                     for choice in &choices {
-                        let mut out =
-                            |_: &mut Context<'_, R>, stack: LootStack| contents.push(stack);
+                        let mut out = |c: &mut Context<'_, R>, stack: LootStack| {
+                            // `LootTable.createStackSplitter`: an oversized
+                            // stack becomes several slots.
+                            c.data.split(stack, &mut contents);
+                        };
                         self.create(choice, &mut out);
                     }
                 }
@@ -1946,6 +1949,7 @@ impl<R: RandomSource> Context<'_, R> {
                     let slots = contents
                         .iter()
                         .enumerate()
+                        .filter(|(_, stack)| !stack.is_empty())
                         .map(|(slot, stack)| {
                             serde_json::json!({"slot": slot, "item": container_item(stack)})
                         })
@@ -2697,10 +2701,10 @@ mod namespace_tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// SetContainerContents: an entry expands to one container slot, in
-    /// order, with the entry's weight ignored; the component is the same
-    /// minecraft:container list block entity items carry. An empty stack is
-    /// returned untouched.
+    /// SetContainerContents: an entry's stack, split at its max size, fills
+    /// the next container slots in order, with the entry's weight ignored;
+    /// the component is the same minecraft:container list block entity items
+    /// carry. An empty stack is returned untouched.
     #[test]
     fn set_contents_writes_the_container_component() {
         let root =
@@ -2711,7 +2715,7 @@ mod namespace_tests {
             "component": "minecraft:container",
             "entries": [
                 {"type": "minecraft:item", "name": "minecraft:diamond", "weight": 1,
-                 "modifier": [{"type": "minecraft:set_count", "count": 3}]},
+                 "modifier": [{"type": "minecraft:set_count", "count": 70}]},
                 {"type": "minecraft:item", "name": "minecraft:apple", "weight": 3,
                  "condition": {"type": "minecraft:random_chance", "chance": 1.0},
                  "modifier": [{"type": "minecraft:set_count", "count": 2}]}
@@ -2741,8 +2745,9 @@ mod namespace_tests {
         assert_eq!(
             component[0].1,
             serde_json::json!([
-                {"slot": 0, "item": {"id": "minecraft:diamond", "count": 3}},
-                {"slot": 1, "item": {"id": "minecraft:apple", "count": 2}}
+                {"slot": 0, "item": {"id": "minecraft:diamond", "count": 64}},
+                {"slot": 1, "item": {"id": "minecraft:diamond", "count": 6}},
+                {"slot": 2, "item": {"id": "minecraft:apple", "count": 2}}
             ])
         );
         // An empty stack keeps no component, even with the same function.
