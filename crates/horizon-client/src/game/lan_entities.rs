@@ -23,7 +23,7 @@ pub(super) fn assign_entity_id(next: &mut u32, id: &mut u32) -> u32 {
 }
 
 impl Game<'_> {
-    /// `Entity.nextEntityId`: the id a new entity takes from the one counter.
+    /// `Level.getNextEntityId`: the id a new entity takes from the one counter.
     pub(super) fn take_entity_id(&mut self) -> u32 {
         self.next_entity += 1;
         self.next_entity

@@ -984,7 +984,7 @@ impl Game<'_> {
         let guest_spawn = std::mem::replace(&mut self.spawn, spawn).map(|s| [s.x, s.y, s.z]);
         let guest_respawn = std::mem::replace(&mut self.respawn_config, respawn.0);
         self.level.spawn = respawn.1;
-        // ServerPlayer.displayClientMessage(_, true): the guest's action bar.
+        // ServerPlayer.sendOverlayMessage: the guest's action bar.
         let guest_message = std::mem::replace(&mut self.message, message);
         let guest_vehicle = std::mem::replace(&mut self.riding, riding);
         self.left = left;
@@ -5663,7 +5663,7 @@ impl Game<'_> {
     }
 
     /// The tick's arm swings for the players around (each guest's to everyone
-    /// else), and `LivingEntity.updateSwingTime` for the guests' bodies here.
+    /// else), and `LivingEntity.SwingState.tick` for the guests' bodies here.
     pub(super) fn lan_swings(&mut self, host: &mut LanHost) {
         let conns: Vec<u32> = host.play.keys().copied().collect();
         for conn in conns {

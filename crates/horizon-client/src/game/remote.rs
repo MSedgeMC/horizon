@@ -6991,7 +6991,7 @@ impl Game<'_> {
             if !m.alive() {
                 m.death_time += 1;
             }
-            // LivingEntity.updateSwingTime.
+            // LivingEntity.SwingState.tick.
             m.anim.attack_anim_o = m.anim.attack_anim;
             horizon_client::mobs::ai::tick_swing(m);
             // Entity.tick: the SteppedInterpolationHandler's step.

@@ -1115,7 +1115,7 @@ fn honey_slide(
         });
     }
 }
-/// LivingEntity.updateSwingTime.
+/// LivingEntity.SwingState.tick.
 pub fn tick_swing(m: &mut Mob) {
     let duration = m.swing_duration();
     if m.ai.swinging {

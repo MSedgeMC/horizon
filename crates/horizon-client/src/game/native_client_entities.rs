@@ -121,7 +121,7 @@ impl Game<'_> {
     }
 
     /// An entity id no entity of this server will take
-    /// (`Entity.nextEntityId`'s counter), for a mod's own packets to a
+    /// (`Level.getNextEntityId`'s counter), for a mod's own packets to a
     /// client. API 519.
     pub(super) fn native_reserve_entity_id(&mut self) -> i32 {
         self.take_entity_id() as i32

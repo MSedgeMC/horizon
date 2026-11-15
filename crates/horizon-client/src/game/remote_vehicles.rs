@@ -404,7 +404,7 @@ impl Game<'_> {
             return Ok(false);
         };
         if let Some(p) = self.player.as_mut() {
-            // The tick a rider takes its seat is a teleport (`Entity.moveTo`,
+            // The tick a rider takes its seat is a teleport (`Entity.snapTo`,
             // which sets the old position too): the camera must not sweep from
             // where the player stood to the cushion, boat or cart. The ticks
             // after it move with the vehicle and interpolate as usual.

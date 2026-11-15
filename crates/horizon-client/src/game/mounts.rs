@@ -579,7 +579,7 @@ impl Game<'_> {
         }
         jump
     }
-    /// Whether the rider's eyes are in water (`Entity.updateFluidOnEyes` then `isEyeInFluid(WATER)`),
+    /// Whether the rider's eyes are in water (`Entity.updateFluidInteraction` then `isEyeInFluid(WATER)`),
     /// and not in a bubble column, as `LivingEntity.baseTick` asks before it lets a rider stay.
     fn rider_eyes_in_water(&self) -> bool {
         let Some([x, y, z]) = self.eye_position() else {
@@ -695,7 +695,7 @@ impl Game<'_> {
         // up while the horse rears.
         let rear = turned(equine::rear_offset(m), m.yaw);
         at = Vec3::new(at.x + rear.x, at.y + rear.y, at.z + rear.z);
-        // The tick a rider takes its seat is a teleport (`Entity.moveTo`), which
+        // The tick a rider takes its seat is a teleport (`Entity.snapTo`), which
         // sets the old position too: the camera must not sweep from where the
         // player stood to the seat. The ticks after it move with the mount and
         // are interpolated as usual.
@@ -939,7 +939,7 @@ impl Game<'_> {
     fn jumps(species: Species) -> bool {
         equine::is_equine(species) || horizon_client::mobs::nautilus::is_nautilus(species)
     }
-    /// `Player.jumpableVehicle`: a saddled mount that jumps (not a pig or a
+    /// `LocalPlayer.jumpableVehicle`: a saddled mount that jumps (not a pig or a
     /// strider, which a saddle only steers).
     pub(super) fn jumpable_mount(&self) -> bool {
         self.mount_index()
