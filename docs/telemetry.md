@@ -24,7 +24,7 @@ Nothing leaves the machine without consent:
 - `outbox::push` keeps an item only if its kind is allowed.
 - `upload::flush` reads the consent again before sending and deletes any waiting item whose kind the player has turned off since, so with everything off it never opens a connection.
 
-`tests/consent_gating.rs` checks this against a local mock server that counts connections.
+`crates/horizon-telemetry/tests/consent_gating.rs` checks this against a local mock server that counts connections.
 
 ## What is sent
 
