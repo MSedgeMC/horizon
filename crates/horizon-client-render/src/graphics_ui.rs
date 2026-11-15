@@ -121,6 +121,7 @@ pub enum H {
     /// Opens the shader pack list (`options_ui::Page::ShaderPacks`).
     ShaderPacks,
     GraphicsApi,
+    AllowSoftwareAdapter,
     TranslucentBatching,
 }
 
@@ -570,6 +571,11 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                             "Vulkan, then DirectX 12 (Windows) or OpenGL (Linux) where it fails. Next start.",
                         ),
                         h(
+                            H::AllowSoftwareAdapter,
+                            None,
+                            "May use WARP or llvmpipe when no GPU adapter answers. Slow. Next start.",
+                        ),
+                        h(
                             H::TranslucentBatching,
                             Saves,
                             "Water and glass in one buffer: fewer draw calls, a bit more VRAM. Next start.",
@@ -645,7 +651,12 @@ pub fn rows() -> Vec<(Page, Vec<(&'static str, Vec<Setting>)>)> {
                 rows.retain(|r| {
                     !matches!(
                         r.item,
-                        Item::Horizon(H::GraphicsApi | H::TranslucentBatching | H::GpuCulling)
+                        Item::Horizon(
+                            H::GraphicsApi
+                                | H::AllowSoftwareAdapter
+                                | H::TranslucentBatching
+                                | H::GpuCulling
+                        )
                     )
                 });
             }
@@ -977,6 +988,9 @@ impl H {
             // A press across the row, as Calibrate...: the list it opens shows the pick.
             H::ShaderPacks => Text::literal(lang::get("Shader Packs...")),
             H::GraphicsApi => labelled("Graphics API", g.api.label()),
+            H::AllowSoftwareAdapter => {
+                labelled("Allow Software Adapter", on_off(g.allow_software_adapter))
+            }
             // Greyed out where the device can't (`Item::blocked`): Off, as it is there, while
             // the saved value waits for a device that can.
             H::TranslucentBatching => labelled(
@@ -1111,6 +1125,7 @@ impl H {
             H::BatteryMode => g.battery = !g.battery,
             H::ShadowCache => g.shadow_cache = !g.shadow_cache,
             H::GraphicsApi => g.api = step(GraphicsApi::choices(), g.api, back),
+            H::AllowSoftwareAdapter => g.allow_software_adapter = !g.allow_software_adapter,
             H::TranslucentBatching => g.translucent_batching = !g.translucent_batching,
             H::Pacing => {
                 g.pacing = match g.pacing {
@@ -1320,6 +1335,7 @@ impl Item {
                         | H::BatteryMode
                         | H::ShadowCache
                         | H::GraphicsApi
+                        | H::AllowSoftwareAdapter
                         | H::TranslucentBatching
                 )
                 | Item::Vanilla(

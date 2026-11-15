@@ -2214,12 +2214,14 @@ const LINEAR_FRAME: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 /// Opens a device on the first of `backend_order`'s backends that gives one.
 /// Offscreen rendering needs no surface, so it can use a GPU the window's
-/// display cannot present from (a headless compositor).
+/// display cannot present from (a headless compositor). `allow_software` is the
+/// Allow Software Adapter setting: every try may take a software adapter too.
 async fn open_device(
     window: &Arc<Window>,
     offscreen: bool,
     api: GraphicsApi,
     needs: surface_setup::DeviceNeeds,
+    allow_software: bool,
 ) -> Result<Opened> {
     let wgpu_backend = std::env::var_os("WGPU_BACKEND").is_some();
     let mut first = None;
@@ -2229,6 +2231,7 @@ async fn open_device(
         // The machine's: the x64 build emulated on a Windows ARM64 PC has its GPU too (#7513).
         horizon_system::machine_arch(),
         wgpu_backend,
+        allow_software,
     ) {
         match open_device_with(window, offscreen, &order, needs, allow_cpu).await {
             Ok(opened) => {
@@ -2254,6 +2257,9 @@ async fn open_device(
 /// The tries `open_device` makes, in turn: the chosen API's backends (`backend_order`) on a
 /// real GPU; when the player chose one API, the other backends `Auto` would try, on a real
 /// GPU; and last the chosen backends with a software adapter (WARP, llvmpipe) allowed.
+/// `allow_software` (the Allow Software Adapter setting) lets every try take a software
+/// adapter, so a player whose only adapter is llvmpipe needs no environment variables; a real
+/// GPU still answers first.
 /// Software rendering takes most of a weak CPU even on the title screen: an Intel HD 2500 has
 /// DirectX 12 only through WARP and its GPU through OpenGL (#5185), and a Fermi GPU has no
 /// Vulkan or DirectX 12 driver but OpenGL (#3978). DirectX 12 never falls back to Vulkan: the
@@ -2263,6 +2269,7 @@ fn device_search(
     os: &str,
     arch: &str,
     wgpu_backend: bool,
+    allow_software: bool,
 ) -> Vec<(Vec<wgpu::Backends>, bool)> {
     let chosen = backend_order(api, os, arch, wgpu_backend);
     let others: Vec<_> = backend_order(GraphicsApi::Auto, os, arch, wgpu_backend)
@@ -2270,11 +2277,14 @@ fn device_search(
         .filter(|b| !chosen.contains(b))
         .filter(|&b| !(api == GraphicsApi::Dx12 && b == wgpu::Backends::VULKAN))
         .collect();
-    let mut tries = vec![(chosen.clone(), false)];
+    let mut tries = vec![(chosen.clone(), allow_software)];
     if !others.is_empty() {
-        tries.push((others, false));
+        tries.push((others, allow_software));
     }
-    tries.push((chosen, true));
+    // The chosen backends again with software allowed, unless every try had it.
+    if !allow_software {
+        tries.push((chosen, true));
+    }
     tries
 }
 /// `open_device` on `order`'s backends in turn, taking an adapter of the CPU type
@@ -2637,7 +2647,14 @@ impl Renderer {
             }
             None => {
                 let _step = crate::spans::startup::step("renderer.open_device");
-                open_device(&window, offscreen, api, request.needs(layers)).await?
+                open_device(
+                    &window,
+                    offscreen,
+                    api,
+                    request.needs(layers),
+                    settings.allow_software_adapter,
+                )
+                .await?
             }
         };
         // Computed once: the sprite arrays, the shaders' constants and the
@@ -12657,7 +12674,7 @@ mod tests {
         use super::{GraphicsApi, device_search};
         use wgpu::Backends;
         let (v, d, g) = (Backends::VULKAN, Backends::DX12, Backends::GL);
-        let search = |api, os, arch| device_search(api, os, arch, false);
+        let search = |api, os, arch| device_search(api, os, arch, false, false);
         // #5185: DirectX 12 chosen on an Intel HD 2500 (WARP only): OpenGL's GPU before WARP.
         assert_eq!(
             search(GraphicsApi::Dx12, "windows", "x86_64"),
@@ -12683,10 +12700,43 @@ mod tests {
         let all = Backends::default();
         for (os, env) in [("windows", true), ("macos", false)] {
             assert_eq!(
-                device_search(GraphicsApi::Vulkan, os, "x86_64", env),
+                device_search(GraphicsApi::Vulkan, os, "x86_64", env, false),
                 [(vec![all], false), (vec![all], true)]
             );
         }
+    }
+    /// #16940: Allow Software Adapter lets every try take a software adapter (WARP,
+    /// llvmpipe), so a machine whose only adapter is software needs no
+    /// WGPU_BACKEND/WGPU_ADAPTER_NAME. Off, a software adapter waits for the last-resort
+    /// try, and a real GPU still wins whenever both can present.
+    #[test]
+    fn the_software_adapter_setting_opens_the_first_try() {
+        use super::{AdapterChoice, GraphicsApi, device_search, pick_adapter};
+        use wgpu::{Backends, DeviceType};
+        let (v, g) = (Backends::VULKAN, Backends::GL);
+        let search = |allow| device_search(GraphicsApi::Vulkan, "linux", "x86_64", false, allow);
+        assert_eq!(
+            search(false),
+            [(vec![v], false), (vec![g], false), (vec![v], true)]
+        );
+        assert_eq!(search(true), [(vec![v], true), (vec![g], true)]);
+        let adapter = |kind| AdapterChoice {
+            kind,
+            presents: true,
+            tried: false,
+        };
+        // Off: an ordinary try rejects the software adapter; the last-resort try still
+        // takes one, where every backend failed.
+        assert_eq!(pick_adapter(&[adapter(DeviceType::Cpu)], false), None);
+        assert_eq!(pick_adapter(&[adapter(DeviceType::Cpu)], true), Some(0));
+        // Both can present: the conformant adapter wins even with software allowed.
+        assert_eq!(
+            pick_adapter(
+                &[adapter(DeviceType::Cpu), adapter(DeviceType::DiscreteGpu)],
+                true
+            ),
+            Some(1)
+        );
     }
     /// The second try at a backend shows the adapters wgpu hides for reporting
     /// no Vulkan conformance version (Mesa's hasvk, which drives Ivy Bridge and
