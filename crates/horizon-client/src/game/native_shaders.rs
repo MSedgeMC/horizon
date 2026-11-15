@@ -72,9 +72,24 @@ pub(super) struct NativeShaders {
     /// The runs of this frame's entity geometry that the pack's `[entity]` stage lights
     /// (`Game::lit_entity`), up to the renderer taking them (`Renderer::take_entity_runs`).
     pub entity_runs: std::cell::RefCell<EntityRuns>,
+    /// While the ray scene has the entity layer: the camera-relative box of its reach this frame
+    /// (`Renderer::ray_entity_reach`), and the models of the entities within it that the camera
+    /// doesn't draw, with their runs (`Game::ray_only`), up to the renderer taking them.
+    pub ray_reach: Option<horizon_client::gfx::Frustum>,
+    pub ray_only: std::cell::RefCell<Vec<horizon_client::mesher::Vertex>>,
+    pub ray_runs: std::cell::RefCell<EntityRuns>,
+    /// Set while an entity of the layer's kinds is culled (`Game::culled_for_rays`): occlusion
+    /// then moves its model to `ray_only` instead of dropping it.
+    pub ray_keeps: std::cell::Cell<bool>,
 }
 
 impl NativeShaders {
+    /// Gives `renderer` the frame's entity runs and its ray-only entities.
+    pub fn hand_over(&mut self, renderer: &mut horizon_client::gfx::Renderer) {
+        renderer.take_entity_runs(self.entity_runs.get_mut());
+        renderer.take_ray_only(self.ray_only.get_mut(), self.ray_runs.get_mut());
+    }
+
     pub fn resolve_path(&mut self, dir: &Path, picked: &str, filesystem: bool) -> PathBuf {
         if self.selection != picked || self.resolved_at.is_none_or(|t| t.elapsed() >= LOOK_EVERY) {
             let resolved = if filesystem {
@@ -121,10 +136,11 @@ impl Game<'_> {
     /// material (a translucent item in a hand, an energy swirl) and unlit overlays (the beam
     /// that heals the dragon, an End portal) stay Horizon's all the same: `EntityBatch` names
     /// only its ordinary quads, and the stage's shader passes the unlit ones on.
-    /// Kept only while the pack in use has the stage.
+    /// Kept only while the pack in use has the stage, or its rays read the entity layer
+    /// (`names_entity_runs`).
     fn lit_run(&self, run: std::ops::Range<usize>, kind: EntityKind) {
         let stage = self.renderer.as_ref();
-        if stage.is_some_and(|r| r.draws_entity_stage()) {
+        if stage.is_some_and(|r| r.names_entity_runs()) {
             self.native_shaders.entity_runs.borrow_mut().push(run, kind);
         }
     }
