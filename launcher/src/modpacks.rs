@@ -672,7 +672,11 @@ mod tests {
         assert!(!load(&work).unwrap().can_play());
         let pack = datapacks::folder(&work).join("void");
         fs::create_dir_all(&pack).unwrap();
-        fs::write(pack.join("pack.mcmeta"), b"{}").unwrap();
+        fs::write(
+            pack.join("pack.mcmeta"),
+            br#"{"pack":{"description":"Void"}}"#,
+        )
+        .unwrap();
         let p = load(&work).unwrap();
         assert!(p.can_play());
         assert_eq!(p.datapacks, 1);

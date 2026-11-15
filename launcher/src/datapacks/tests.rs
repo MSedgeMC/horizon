@@ -137,3 +137,26 @@ fn coverage_says_what_runs() {
     );
     fs::remove_dir_all(&root).unwrap();
 }
+
+/// `datapack::discover_folder`'s `folder_metadata_present` and vanilla's `Pack.readPackMetadata`
+/// (whose fallback codec keeps only `description`): a folder without a `pack.description` is not
+/// a pack either reader takes. Run against the real 26.3 codec: `{"pack":{"description":"ok"}}`
+/// parses without any format field, while `{}`, `{"pack":{}}` and
+/// `{"pack":{"description":null}}` do not.
+#[test]
+fn a_folder_without_a_description_is_not_a_pack() {
+    let root = scratch("folder-description");
+    let world = root.join("saves/W");
+    for (name, meta) in [
+        ("Empty", r#"{}"#),
+        ("NoSection", r#"{"pack":{}}"#),
+        ("Null", r#"{"pack":{"description":null}}"#),
+        ("Mine", r#"{"pack":{"description":"Mine"}}"#),
+    ] {
+        fs::create_dir_all(world.join("datapacks").join(name)).unwrap();
+        fs::write(world.join(format!("datapacks/{name}/pack.mcmeta")), meta).unwrap();
+    }
+    let names: Vec<String> = list(&world).into_iter().map(|p| p.file).collect();
+    assert_eq!(names, ["Mine"]);
+    fs::remove_dir_all(&root).unwrap();
+}

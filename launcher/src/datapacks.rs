@@ -1,7 +1,7 @@
-//! A world's data packs: `<world>/datapacks/`, each a `.zip` or a folder with a `pack.mcmeta`, as
-//! the game discovers them (`datapack::discover`). The game turns on every pack it finds there
-//! that `<world>/datapacks.json` doesn't list as disabled, when the world opens or on `/reload`,
-//! so adding one is copying it in.
+//! A world's data packs: `<world>/datapacks/`, each a `.zip` or a folder with a `pack.mcmeta` that
+//! holds the description the game reads, as the game discovers them (`datapack::discover`). The
+//! game turns on every pack it finds there that `<world>/datapacks.json` doesn't list as disabled,
+//! when the world opens or on `/reload`, so adding one is copying it in.
 use crate::packs::{entry, plain};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -51,6 +51,18 @@ pub fn list(world: &Path) -> Vec<DataPack> {
             }
             let meta: serde_json::Value =
                 serde_json::from_slice(&entry(&path, "pack.mcmeta")?).ok()?;
+            // `Pack.readPackMetadata` takes a pack only when its metadata section holds a
+            // description (the fallback codec keeps just that field), and
+            // `datapack::discover_folder` makes the same check for a folder. A zip is listed on
+            // its `pack.mcmeta` alone, as `discover_folder` lists it.
+            if path.is_dir()
+                && meta
+                    .get("pack")
+                    .and_then(|pack| pack.get("description"))
+                    .is_none_or(serde_json::Value::is_null)
+            {
+                return None;
+            }
             Some(DataPack {
                 enabled: !off.contains(&format!("file/{file}")),
                 description: plain(&meta["pack"]["description"]),
