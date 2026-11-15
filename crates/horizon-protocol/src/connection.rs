@@ -255,7 +255,7 @@ pub struct ConnWriter {
     /// Set on a server for a client of an older release: what is sent is renumbered.
     older_client: Option<Arc<crate::adapter::ClientSession>>,
 }
-/// `InetAddress.getByName` under Java's default `java.net.preferIPv6Addresses=false`: IPv4
+/// Java's IPv4-first name lookup under the default `java.net.preferIPv6Addresses=false`: IPv4
 /// addresses first, whatever order the system resolver gives (macOS lists IPv6 first). Vanilla
 /// connects to that first address only; the rest stay here as fallbacks.
 fn ipv4_first(mut addrs: Vec<SocketAddr>) -> Vec<SocketAddr> {
@@ -427,7 +427,7 @@ impl Connection {
     pub fn older_client(&self) -> Option<crate::adapter::ServerVersion> {
         self.reader.older_client.as_ref().map(|s| s.version)
     }
-    /// `Connection.isMemoryConnection`: through a [`Pipe`] rather than a socket.
+    /// The network `Connection`'s `isMemoryConnection`: through a [`Pipe`] rather than a socket.
     pub fn is_memory(&self) -> bool {
         matches!(self.reader.stream, Stream::Memory(_))
     }
@@ -437,7 +437,7 @@ impl Connection {
         self.reader.threshold = t;
         self.writer.threshold = t;
     }
-    /// Connection.setEncryptionKey: both directions keyed with the shared secret.
+    /// The network `Connection`'s `setEncryptionKey`: both directions keyed with the shared secret.
     pub fn enable_encryption(&mut self, secret: &[u8; 16]) {
         let mut decrypt = Cfb8::new(secret, secret);
         // Bytes already read past the last packet were sent encrypted.
@@ -458,7 +458,7 @@ impl Connection {
     /// Take the stream out, to read and write it elsewhere (a poller's thread,
     /// without blocking): the halves keep the framing, compression and
     /// encryption, and bytes already read past the last packet. What arrives
-    /// goes in through [`ConnReader::read_from`]; [`ConnWriter::frame_into`]
+    /// goes in through the reader's `read_from`; the writer's `frame_into`
     /// makes what is to be sent. Their own reads and writes fail from now on.
     pub fn detach(mut self) -> (Socket, ConnReader, ConnWriter) {
         self.writer.stream = Stream::Detached;
@@ -675,7 +675,7 @@ impl ConnWriter {
         Ok(())
     }
     /// A packet body as this connection's client takes it: renumbered for a client of an older release
-    /// ([`Connection::serve_older`]), `None` when it has no such packet; as it is otherwise.
+    /// (the connection's `serve_older`), `None` when it has no such packet; as it is otherwise.
     pub fn for_client<'a>(&self, body: &'a [u8]) -> Result<Option<std::borrow::Cow<'a, [u8]>>> {
         match &self.older_client {
             None => Ok(Some(std::borrow::Cow::Borrowed(body))),
