@@ -49,6 +49,9 @@ pub struct Death<'a> {
     pub luck: f32,
     /// The entity the mob rides.
     pub vehicle: Option<LootEntity>,
+    /// Entity.getTags of the dying mob: the /tag labels
+    /// minecraft:entity_tags reads.
+    pub this_tags: Vec<String>,
     /// The `doMobLoot` game rule.
     pub mob_drops: bool,
     pub world_seed: i64,
@@ -450,7 +453,8 @@ pub fn die(
 ) -> (Vec<Drop>, bool) {
     let mut out = Vec::new();
     death_state(m);
-    let this = loot_entity(m, d.vehicle.clone());
+    let mut this = loot_entity(m, d.vehicle.clone());
+    this.tags = d.this_tags.clone();
     let mut skulls = false;
     // Creeper.killedEntity: a charged creeper's victim drops its head.
     if let Some(source) = d.damage.as_ref().and_then(|x| x.source.as_ref())
@@ -709,6 +713,7 @@ mod death_loot_table_tests {
             player_killed: false,
             luck: 0.0,
             vehicle: None,
+            this_tags: Vec::new(),
             mob_drops: true,
             world_seed: 0,
         };
@@ -799,6 +804,7 @@ mod slot_tests {
             player_killed,
             luck: 0.0,
             vehicle: None,
+            this_tags: Vec::new(),
             mob_drops: true,
             world_seed: 0,
         };

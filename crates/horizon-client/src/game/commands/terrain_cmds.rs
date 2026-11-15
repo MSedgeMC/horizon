@@ -693,11 +693,14 @@ impl Game<'_> {
                 };
                 // LootCommand.dropKillLoot's THIS_ENTITY is the selected live mob.
                 let target = match t {
-                    Target::Mob(id) => self
-                        .mobs
-                        .iter()
-                        .find(|m| m.id == id)
-                        .map(|m| horizon_client::mobs::drops::loot_entity(m, None)),
+                    Target::Mob(id) => {
+                        let tags = self.tags_of(t);
+                        self.mobs.iter().find(|m| m.id == id).map(|m| {
+                            let mut e = horizon_client::mobs::drops::loot_entity(m, None);
+                            e.tags = tags.clone();
+                            e
+                        })
+                    }
                     _ => None,
                 };
                 let loot = target.as_ref().and_then(|_| {

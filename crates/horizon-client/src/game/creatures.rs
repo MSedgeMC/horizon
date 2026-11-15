@@ -1800,6 +1800,7 @@ impl Game<'_> {
             player_killed,
             luck: 0.0,
             vehicle,
+            this_tags: self.tags_of(super::commands::Target::Mob(m.id)),
             mob_drops: self.ui.rules.bool("mob_drops"),
             world_seed: self.level.seed,
         };
@@ -2005,11 +2006,12 @@ impl Game<'_> {
             &self.options.resources,
             &self.pack_files(),
         );
-        let this = self
-            .mobs
-            .iter()
-            .find(|m| m.id == mob)
-            .map(|m| drops::loot_entity(m, None));
+        let tags = self.tags_of(super::commands::Target::Mob(mob));
+        let this = self.mobs.iter().find(|m| m.id == mob).map(|m| {
+            let mut e = drops::loot_entity(m, None);
+            e.tags = tags.clone();
+            e
+        });
         let stacks = match (loot, this) {
             (Some(loot), Some(this)) if loot.has_table(table) => {
                 let params = EntityLootParams {

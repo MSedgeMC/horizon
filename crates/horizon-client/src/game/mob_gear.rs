@@ -69,14 +69,17 @@ impl Game<'_> {
         ) else {
             return;
         };
+        let tags = self.tags_of(super::commands::Target::Mob(id));
         let Some(m) = self.mobs.iter().find(|m| m.id == id) else {
             return;
         };
         if !loot.has_table(&name) {
             return;
         }
+        let mut this = drops::loot_entity(m, None);
+        this.tags = tags;
         let params = EntityLootParams {
-            this: drops::loot_entity(m, None),
+            this,
             ..EntityLootParams::default()
         };
         let seed = self.level.seed;

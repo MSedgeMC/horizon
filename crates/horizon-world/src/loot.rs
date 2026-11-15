@@ -341,6 +341,9 @@ pub struct LootEntity {
     /// Worn and held items by `EquipmentSlot` name (mainhand, offhand,
     /// feet, legs, chest, head, body, saddle).
     pub equipment: Vec<(String, LootStack)>,
+    /// `Entity.getTags`: the `/tag` labels on the entity, which
+    /// `minecraft:entity_tags` reads.
+    pub tags: Vec<String>,
 }
 impl LootEntity {
     pub fn new(kind: &str) -> Self {
@@ -3064,6 +3067,24 @@ impl LootData {
                     .as_array()
                     .is_some_and(|a| a.iter().any(|x| x.as_str() == Some(&e.kind))),
             },
+            // EntityTagPredicate: `any_of` needs one of its labels, `none_of`
+            // must not see any of its own, and `all_of` needs every one.
+            "minecraft:entity_tags" => {
+                let contains = |list: &Value, want: bool| {
+                    let found = list.as_array().into_iter().flatten().any(|t| {
+                        t.as_str()
+                            .is_some_and(|tag| e.tags.iter().any(|have| have == tag))
+                    });
+                    found == want
+                };
+                (v["any_of"].is_null() || contains(&v["any_of"], true))
+                    && (v["none_of"].is_null() || contains(&v["none_of"], false))
+                    && v["all_of"].as_array().is_none_or(|tags| {
+                        tags.iter()
+                            .filter_map(|t| t.as_str())
+                            .all(|tag| e.tags.iter().any(|have| have == tag))
+                    })
+            }
             "minecraft:flags" => v.as_object().into_iter().flatten().all(|(flag, want)| {
                 let want = want.as_bool().unwrap_or(false);
                 match flag.as_str() {
@@ -3242,5 +3263,60 @@ mod custom_data_predicate_tests {
         assert_eq!(doubled(Some("{h:1}")), ["orange", "light_gray"]);
         assert_eq!(doubled(Some("{entries:[]}")), ["lime", "light_gray"]);
         assert_eq!(doubled(None), ["light_gray"]);
+    }
+}
+
+#[cfg(test)]
+mod entity_tags_predicate_tests {
+    use super::*;
+
+    /// A one-pool table whose stone entry asks for `tags` on `this`.
+    fn table(name: &str, tags: &str) -> LootData {
+        let root = std::env::temp_dir().join(format!("loot-tags-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        fs::create_dir_all(&dir).unwrap();
+        let json = format!(
+            r#"{{"pools":[{{"rolls":1,"entries":[{{"type":"minecraft:item","name":"minecraft:stone",
+                "condition":{{"type":"minecraft:entity_properties","entity":"this","predicate":{{"minecraft:entity_tags":{tags}}}}}}}]}}]}}"#
+        );
+        fs::write(dir.join("test.json"), json).unwrap();
+        fs::write(root.join("items.json"), "{}").unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let _ = fs::remove_dir_all(&root);
+        data
+    }
+
+    fn drops(data: &LootData, this: &LootEntity) -> bool {
+        let params = EntityLootParams {
+            this: this.clone(),
+            ..Default::default()
+        };
+        !data
+            .roll_entity("minecraft:test", &mut LegacyRandom::new(1), &params)
+            .is_empty()
+    }
+
+    /// `EntityTagPredicate` (the `minecraft:entity_tags` entity predicate):
+    /// `any_of` needs one listed label, `all_of` every one, `none_of` none,
+    /// and an empty `any_of` list matches nothing.
+    #[test]
+    fn entity_tags_reads_the_any_all_and_none_lists() {
+        let mut this = LootEntity::new("minecraft:zombie");
+        this.tags = vec!["boss".to_owned(), "raid".to_owned()];
+        assert!(drops(&table("any", r#"{"any_of":["boss","mob"]}"#), &this));
+        assert!(!drops(&table("any-miss", r#"{"any_of":["mob"]}"#), &this));
+        assert!(!drops(&table("empty", r#"{"any_of":[]}"#), &this));
+        assert!(drops(&table("all", r#"{"all_of":["boss","raid"]}"#), &this));
+        assert!(!drops(
+            &table("all-miss", r#"{"all_of":["boss","mob"]}"#),
+            &this
+        ));
+        assert!(drops(&table("none", r#"{"none_of":["mob"]}"#), &this));
+        assert!(!drops(&table("none-hit", r#"{"none_of":["raid"]}"#), &this));
+        assert!(
+            drops(&table("bare", "{}"), &this),
+            "no list: every entity passes"
+        );
     }
 }

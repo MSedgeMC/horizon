@@ -49,9 +49,9 @@ EntityPredicate.combine	inline	crates/horizon-client/src/advancements.rs::entity
 EntityPredicate.Builder.of	skip:java		builder
 EntityPredicate.Builder.equipment	skip:java		builder
 EntitySubPredicate.and	inline	crates/horizon-client/src/advancements.rs::entity	the AND of two sub-predicates; entity() tests every key
-EntityTagPredicate.matches	missing		minor: entity_tags key is not read; no vanilla advancement uses it
-EntityTagPredicate.containsAtLeastOne	missing		minor: helper of entity_tags; not read
-EntityTagPredicate.containsAllOf	missing		minor: helper of entity_tags; not read
+EntityTagPredicate.matches	port	crates/horizon-world/src/loot.rs::LootData::entity_matches	the loot reader minecraft:entity_tags arm: any_of needs one listed label, all_of every one and none_of none; LootEntity.tags is filled from Entity.getTags at death, equipment, gift and /loot kill
+EntityTagPredicate.containsAtLeastOne	inline	crates/horizon-world/src/loot.rs::LootData::entity_matches	the any_of and none_of membership tests inside the minecraft:entity_tags arm
+EntityTagPredicate.containsAllOf	inline	crates/horizon-world/src/loot.rs::LootData::entity_matches	the all_of membership test inside the minecraft:entity_tags arm
 EntityTypePredicate.of	skip:java		builder from an entity type or tag
 EntityTypePredicate.matches	port	crates/horizon-client/src/advancements.rs::id_matches	the type key of entity(): an id or #tag
 FishingHookPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the type_specific/fishing_hook arm: open-water test
