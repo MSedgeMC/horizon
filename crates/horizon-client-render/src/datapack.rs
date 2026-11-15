@@ -615,6 +615,19 @@ fn macro_parameters(line: &str) -> Result<Vec<String>, String> {
     }
     Ok(out)
 }
+/// `CommandFunction.checkCommandLineLength`: a command line over 2,000,000
+/// characters refuses the whole function at load, quoting the first 512.
+fn check_command_line_length(line: &str) -> Result<(), String> {
+    const MAX: usize = 2_000_000;
+    let length = line.encode_utf16().count();
+    if length > MAX {
+        let preview: String = line.chars().take(512).collect();
+        return Err(format!(
+            "Command too long: {length} characters, contents: {preview}..."
+        ));
+    }
+    Ok(())
+}
 /// `CommandFunction.fromLines`: comments, blank lines, `\` continuation and
 /// `$` macro lines. Command syntax is checked by the caller.
 pub fn parse_function(id: &str, text: &str) -> Result<Function, String> {
@@ -633,12 +646,14 @@ pub fn parse_function(id: &str, text: &str) -> Result<Function, String> {
                 }
                 line.pop();
                 line.push_str(raw[i].trim());
+                check_command_line_length(&line)?;
                 if !line.ends_with('\\') {
                     break;
                 }
             }
         }
         i += 1;
+        check_command_line_length(&line)?;
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
@@ -1387,6 +1402,51 @@ mod tests {
         let dollar = &store.functions["t:dollar"];
         assert_eq!(dollar.parameters, ["who"]);
         assert!(store.functions.contains_key("t:plain"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `CommandFunction.checkCommandLineLength`: a line of exactly 2,000,000
+    /// characters loads; one character more drops that file with vanilla's
+    /// message, and the rest of the pack still loads.
+    #[test]
+    fn a_command_line_over_two_million_characters_drops_only_its_file() {
+        let dir = std::env::temp_dir().join(format!("hz-datapack-length-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let pack = dir.join("datapacks/length");
+        let write = |p: &str, t: &str| {
+            let path = pack.join(p);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, t).unwrap();
+        };
+        write(
+            "pack.mcmeta",
+            "{\"pack\":{\"description\":\"Length\",\"pack_format\":1}}",
+        );
+        // "say " plus enough "a"s to reach the limit.
+        let at_limit = format!("say {}", "a".repeat(2_000_000 - 4));
+        assert_eq!(at_limit.encode_utf16().count(), 2_000_000);
+        write("data/t/function/at_limit.mcfunction", &at_limit);
+        write("data/t/function/over.mcfunction", &format!("{at_limit}a"));
+        write("data/t/function/plain.mcfunction", "say plain\n");
+        let packs = discover(&dir);
+        let store = DataStore::load(&[&packs[0]]);
+        assert!(store.functions.contains_key("t:at_limit"));
+        assert!(store.functions.contains_key("t:plain"));
+        assert!(!store.functions.contains_key("t:over"));
+        let preview: String = "say "
+            .chars()
+            .chain(std::iter::repeat('a'))
+            .take(512)
+            .collect();
+        let expected = format!("Command too long: 2000001 characters, contents: {preview}...");
+        assert!(
+            store
+                .errors
+                .iter()
+                .any(|(id, m)| id == "t:over" && m == &expected),
+            "{:?}",
+            store.errors
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

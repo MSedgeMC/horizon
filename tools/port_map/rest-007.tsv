@@ -7,7 +7,7 @@ ContinuationTask.schedule	inline	crates/horizon-client/src/game/commands/execute
 net/minecraft/commands/execution/tasks/ExecuteCommand#execute	port	crates/horizon-client/src/game/commands/execute.rs::Game::run_execute	gap: minor: profiler and tracer.onReturn are not reported; forked errors are silenced in the run branch
 IsolatedCall.execute	inline	crates/horizon-client/src/game/functions.rs::Game::run_function	the new depth and the isolated return slot are set up in run_function; if function reaches it through call_function_ref
 CommandFunction.shouldConcatenateNextLine	inline	crates/horizon-client-render/src/datapack.rs::parse_function	the trailing-backslash join is the continuation loop in parse_function
-CommandFunction.checkCommandLineLength	missing		minor: no 2,000,000-character limit on a command line; a longer line is not refused
+CommandFunction.checkCommandLineLength	port	crates/horizon-client-render/src/datapack.rs::check_command_line_length	lines over 2,000,000 characters refuse the whole function at load with vanilla's "Command too long" message; neighbours still load
 CommandFunction.parseCommand	port	crates/horizon-client/src/game/functions.rs::Game::admit_store	ordinary lines compile at function permission against actual and candidate registries before the file is admitted; macro lines remain deferred
 FunctionBuilder.addCommand	inline	crates/horizon-client-render/src/datapack.rs::parse_function	plain lines are collected in parse_function
 FunctionBuilder.getArgumentIndex	inline	crates/horizon-client-render/src/datapack.rs::parse_function	macro parameter names are collected in order without duplicates; names, not indices
