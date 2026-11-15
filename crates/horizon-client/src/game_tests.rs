@@ -9,6 +9,24 @@ fn weather_follows_the_dimension_type_not_the_id() {
 
 use super::wind::above_the_top;
 use super::*;
+
+/// A redraw pass that gets no swapchain image draws no frame: the counters' next span starts
+/// at the last shown frame, so an empty pass cannot report a frame rate no screen saw (#17095).
+#[test]
+fn a_skipped_redraw_adds_to_the_next_shown_frames_span() {
+    let start = Instant::now();
+    let mut shown = ShownFrames::new(start);
+    let skipped = start + Duration::from_millis(30);
+    assert_eq!(shown.span(skipped), Duration::from_millis(30));
+    let later = skipped + Duration::from_millis(20);
+    // Still no frame shown: the span keeps starting at the last one that reached the screen.
+    assert_eq!(shown.span(later), Duration::from_millis(50));
+    shown.shown(later);
+    assert_eq!(
+        shown.span(later + Duration::from_millis(16)),
+        Duration::from_millis(16)
+    );
+}
 use horizon_client::{
     chunk::{Chunk, LevelShape},
     mobs::Who,

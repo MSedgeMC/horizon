@@ -2109,6 +2109,30 @@ struct TickScratch {
     later: Vec<BlockPos>,
 }
 
+/// The span the frame counters time: from the last frame that reached the screen, not the
+/// last redraw pass. A pass that gets no swapchain image (`Timeout`, `Occluded`, `Outdated`,
+/// `Lost`) draws nothing, so its time belongs to the next shown frame, not a frame of its own.
+#[derive(Debug)]
+struct ShownFrames {
+    last: Instant,
+}
+
+impl ShownFrames {
+    fn new(now: Instant) -> Self {
+        Self { last: now }
+    }
+
+    /// How long the frame starting at `now` took, since the last one that reached the screen.
+    fn span(&self, now: Instant) -> Duration {
+        now.duration_since(self.last)
+    }
+
+    /// A frame reached the screen: the next span starts here.
+    fn shown(&mut self, now: Instant) {
+        self.last = now;
+    }
+}
+
 struct Game<'a> {
     /// Shared with an integrated server; `collision` and `motion` borrow from it.
     res: Arc<Resources>,
@@ -2348,6 +2372,9 @@ struct Game<'a> {
     /// `SpectatorGui`: the menu a spectator opens with the hotbar keys.
     spectator_gui: horizon_client::spectator_menu::SpectatorGui,
     previous: Instant,
+    /// When the last frame that reached the screen began (`ShownFrames`); the frame counters
+    /// and charts time from it, so passes that drew nothing are not counted as frames.
+    shown: ShownFrames,
     /// FramerateLimitTracker.latestInputTime.
     last_input: Instant,
     /// Controllers (Horizon's own).
@@ -11026,6 +11053,9 @@ impl Game<'_> {
                     let elapsed = now.duration_since(self.previous);
                     self.frame_ticks = elapsed.as_secs_f32() * 20.0;
                     self.previous = now;
+                    // What the frame counters time: passes that draw nothing add to the next
+                    // shown frame instead of being counted as frames of their own (#17095).
+                    let drawn_elapsed = self.shown.span(now);
                     self.upload_pace.frame(elapsed);
                     self.studio_fly(elapsed);
                     // Arrow-key camera controls belong to gameplay; chat and
@@ -11126,7 +11156,7 @@ impl Game<'_> {
                             let ms = |d: Duration| d.as_secs_f32() * 1000.0;
                             perf_times = Some((ms(cpu), r.gpu_times.last().copied()));
                             self.frame_graph.record(
-                                ms(elapsed),
+                                ms(drawn_elapsed),
                                 ms(cpu),
                                 r.gpu_times.last().copied(),
                             );
@@ -11142,7 +11172,7 @@ impl Game<'_> {
                                 (&mut self.gpu_culling_auto, &mut self.dynamic_resolution),
                                 &mut self.frame_graph,
                                 r,
-                                (ms(cpu), ms(elapsed)),
+                                (ms(cpu), ms(drawn_elapsed)),
                             );
                             self.frame_stats.record_cpu(ms(cpu));
                             let render = r.last_encode;
@@ -11203,10 +11233,12 @@ impl Game<'_> {
                         let _ = reply.send(value.to_string());
                     }
                     if rendered {
-                        self.frame_stats.record(elapsed.as_secs_f32() * 1000.0);
+                        self.shown.shown(now);
+                        self.frame_stats
+                            .record(drawn_elapsed.as_secs_f32() * 1000.0);
                         if let Some((cpu, gpu)) = perf_times {
                             self.record_perf_frame(
-                                elapsed.as_secs_f32() * 1000.0,
+                                drawn_elapsed.as_secs_f32() * 1000.0,
                                 cpu,
                                 gpu,
                                 &frame_spans,
@@ -11215,7 +11247,9 @@ impl Game<'_> {
                         if horizon_threads::alloc_count::ON {
                             self.record_frame_allocs();
                         }
-                        self.debug_charts.frame_times.log(elapsed.as_nanos() as i64);
+                        self.debug_charts
+                            .frame_times
+                            .log(drawn_elapsed.as_nanos() as i64);
                         if self.frames == 0 {
                             // The launcher times Play to this line (launcher/src/perf.rs).
                             log::info!(
@@ -11227,7 +11261,7 @@ impl Game<'_> {
                             self.perf.title_shown();
                         } else if self.screen == Screen::Playing && self.player.is_some() {
                             self.perf
-                                .frame(elapsed.as_secs_f32() * 1000.0, &frame_spans);
+                                .frame(drawn_elapsed.as_secs_f32() * 1000.0, &frame_spans);
                             if startup::filling() {
                                 let mut fill: Vec<(&'static str, usize)> =
                                     self.streaming.stages().to_vec();
@@ -11481,6 +11515,7 @@ impl<'a> Game<'a> {
             started: now,
             spectator_gui: Default::default(),
             previous: now,
+            shown: ShownFrames::new(now),
             last_input: now,
             pad: Default::default(),
             frames: 0,
