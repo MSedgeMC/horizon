@@ -86,7 +86,7 @@ OptionsSubScreen.onClose	port	crates/horizon-client-render/src/options_ui.rs::Op
 SkinCustomizationScreen.addOptions	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::list_rows	Page::Skin: the seven skin layers and Main Hand as paired options
 SoundOptionsScreen.addOptions	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::list_rows	master and per-source volumes, subtitles, music frequency, sound device; directional audio and the music toast are greyed until something reads them
 SoundOptionsScreen.getAllSoundOptionsExceptMaster	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::list_rows	per-source volume rows (Volume(1..))
-UnsupportedGraphicsWarningScreen	missing		minor: no GPU warn list in Horizon, so the unsupported-graphics warning never appears when Improved Transparency is turned on
+UnsupportedGraphicsWarningScreen	port	crates/horizon-client/src/title.rs::Title::draw_with_items	the startup GPU warning names the renderer and vendor; Continue closes it and Don't show again persists skipGpuWarning
 VideoSettingsScreen.qualityOptions	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::list_rows	Video page quality rows, Texture Filtering and Max Anisotropy included
 VideoSettingsScreen.displayOptions	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::list_rows	framerate, vsync, inactivity FPS, GUI scale, fullscreen, exclusive fullscreen, gamma, graphics backend
 VideoSettingsScreen.preferenceOptions	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::list_rows	autosave indicator, vignette, attack indicator, chunk fade-in

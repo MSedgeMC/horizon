@@ -25,7 +25,8 @@ impl Game<'_> {
         if let Some(title) = &self.title
             && (title.last_server != self.settings.file.string("lastServer")
                 || title.skip_multiplayer_warning
-                    != self.settings.file.bool("skipMultiplayerWarning"))
+                    != self.settings.file.bool("skipMultiplayerWarning")
+                || title.skip_gpu_warning != self.settings.file.bool("skipGpuWarning"))
         {
             self.settings.file.set(
                 "lastServer",
@@ -34,6 +35,10 @@ impl Game<'_> {
             self.settings.file.set(
                 "skipMultiplayerWarning",
                 horizon_client::options_file::V::Bool(title.skip_multiplayer_warning),
+            );
+            self.settings.file.set(
+                "skipGpuWarning",
+                horizon_client::options_file::V::Bool(title.skip_gpu_warning),
             );
             self.settings.save(&Self::options_path());
         }

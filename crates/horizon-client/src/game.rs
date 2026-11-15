@@ -7631,6 +7631,7 @@ impl Game<'_> {
         if let Some(title) = &mut self.title {
             title.last_server = self.settings.file.string("lastServer");
             title.skip_multiplayer_warning = self.settings.file.bool("skipMultiplayerWarning");
+            title.set_skip_gpu_warning(self.settings.file.bool("skipGpuWarning"));
         }
         self.capture(false);
         Ok(())

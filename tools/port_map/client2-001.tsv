@@ -69,10 +69,10 @@ GameRenderer.resetData	inline	crates/horizon-client/src/game.rs::Game::finish_cl
 GameRenderer.projectPointToScreen	skip:other		no callers in vanilla 26.3
 GameRenderer.useImprovedTransparency	port	crates/horizon-client-render/src/gfx.rs::Renderer::draw_frame	the option builds the OIT pass
 GlobalSettingsUniform.update	skip:other		global uniform (window size, time, gamma, glint) written per pass; Horizon sets its own uniforms
-GpuWarnlistManager.getAllWarnings	missing		minor: no GPU driver warnlist; Horizon does not check the driver against known-bad lists
-GpuWarnlistManager.compilePatterns	missing		minor: no GPU driver warnlist patterns
-GpuWarnlistManager.parseJson	missing		minor: no GPU driver warnlist JSON
-GpuWarnlistManager.Preparations.matchAny	missing		minor: no GPU driver warnlist matching
+GpuWarnlistManager.getAllWarnings	port	crates/horizon-client-render/src/gpu_warn.rs::gpu_warning_for	the adapter's renderer and vendor against the built-in software and known-bad renderer list
+GpuWarnlistManager.compilePatterns	inline	crates/horizon-client-render/src/gpu_warn.rs::gpu_warning_for	lowercase substring match, no compiled patterns
+GpuWarnlistManager.parseJson	skip:data		no gpu_warnlist.json: the small known-bad renderer list is a Rust const
+GpuWarnlistManager.Preparations.matchAny	inline	crates/horizon-client-render/src/gpu_warn.rs::gpu_warning_for	the same substring match returns the warning
 LevelEventHandler.playJukeboxSong	port	crates/horizon-client/src/game/jukebox.rs::Game::start_song	song starts and the now-playing overlay is shown
 LevelEventHandler.stopJukeboxSong	port	crates/horizon-client/src/game/jukebox.rs::Game::stop_song	song sound stops for that jukebox
 LevelRenderer.<init>	port	crates/horizon-client-render/src/gfx.rs::Renderer::new	targets, pipelines and buffers built once

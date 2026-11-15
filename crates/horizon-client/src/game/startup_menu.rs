@@ -119,6 +119,7 @@ impl StartupMenu {
             );
             title.last_server = settings.file.string("lastServer");
             title.skip_multiplayer_warning = settings.file.bool("skipMultiplayerWarning");
+            title.set_skip_gpu_warning(settings.file.bool("skipGpuWarning"));
             // Gui.addInitialScreens: the accessibility onboarding comes first.
             if settings.file.bool("onboardAccessibility") {
                 title.start_onboarding();
@@ -522,6 +523,7 @@ impl Loading {
             title.last_server != self.settings.file.string("lastServer")
                 || title.skip_multiplayer_warning
                     != self.settings.file.bool("skipMultiplayerWarning")
+                || title.skip_gpu_warning != self.settings.file.bool("skipGpuWarning")
         }) {
             self.save_menu_settings();
         }
@@ -536,6 +538,10 @@ impl Loading {
             self.settings.file.set(
                 "skipMultiplayerWarning",
                 horizon_client::options_file::V::Bool(title.skip_multiplayer_warning),
+            );
+            self.settings.file.set(
+                "skipGpuWarning",
+                horizon_client::options_file::V::Bool(title.skip_gpu_warning),
             );
         }
         self.settings.save(&Game::options_path());

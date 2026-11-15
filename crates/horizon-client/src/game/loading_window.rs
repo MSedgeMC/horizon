@@ -423,6 +423,7 @@ pub(super) fn start_game<'a>(
             .with_user(|| game.options.player_name());
             title.last_server = game.settings.file.string("lastServer");
             title.skip_multiplayer_warning = game.settings.file.bool("skipMultiplayerWarning");
+            title.set_skip_gpu_warning(game.settings.file.bool("skipGpuWarning"));
             // Gui.addInitialScreens: the accessibility onboarding comes first.
             if game.settings.file.bool("onboardAccessibility") {
                 title.start_onboarding();

@@ -411,6 +411,10 @@ pub struct Title {
     pub last_server: String,
     /// `skipMultiplayerWarning`, synchronized with `options.txt` the same way.
     pub skip_multiplayer_warning: bool,
+    /// `GpuWarnlistManager`: the adapter warning the renderer found at startup.
+    pub gpu_warning: Option<horizon_client_render::gpu_warn::Warning>,
+    /// `skipGpuWarning`: the warning screen's "Don't show again" choice.
+    pub skip_gpu_warning: bool,
     pub saves: PathBuf,
     /// The prepared resource root: the flat preset list and block registry.
     resources: PathBuf,
@@ -427,6 +431,10 @@ pub struct Title {
     message_lines: Cell<usize>,
     /// The SafetyScreen's checkbox as last drawn: x, y, width, height.
     warning_check: Cell<[f32; 4]>,
+    /// Whether the GPU warning is still up this launch.
+    gpu_warning_open: Cell<bool>,
+    /// The GPU warning's Continue and Don't show again buttons as last drawn.
+    gpu_buttons: Cell<[(f32, f32); 2]>,
     /// The bottom notice's `PlainTextButton` as last drawn: x, y, width, height.
     credits_button: Cell<[f32; 4]>,
     /// `Minecraft.allowsMultiplayer()` once the account's attributes are known.
@@ -798,6 +806,21 @@ impl Title {
         }
         self
     }
+    /// Reads `skipGpuWarning` from `options.txt`; a saved choice closes the warning.
+    pub fn set_skip_gpu_warning(&mut self, skip: bool) {
+        self.skip_gpu_warning = skip;
+        if skip {
+            self.gpu_warning_open.set(false);
+        }
+    }
+    /// Whether the GPU warning screen covers the title this frame.
+    fn gpu_warning_visible(&self) -> bool {
+        self.gpu_warning_open.get()
+            && horizon_client_render::gpu_warn::warning_shown(
+                self.gpu_warning.as_ref(),
+                self.skip_gpu_warning,
+            )
+    }
     pub fn new(saves: PathBuf, resources: &Path) -> Self {
         use chrono::Datelike;
         let today = chrono::Local::now();
@@ -814,10 +837,14 @@ impl Title {
             .map_or(0, |size| random.next_int_bound(size).unwrap_or(0) as usize);
         let mode = Mode::Main;
         let now = std::time::Instant::now();
+        let gpu_warning = horizon_client_render::gpu_warn::adapter_warning();
         Self {
             mode,
             last_server: String::new(),
             skip_multiplayer_warning: false,
+            gpu_warning_open: Cell::new(gpu_warning.is_some()),
+            gpu_warning,
+            skip_gpu_warning: false,
             saves,
             resources: resources.to_owned(),
             started: now,
@@ -829,6 +856,7 @@ impl Title {
             realms_create: None,
             message_lines: Cell::new(1),
             warning_check: Cell::new([0.0; 4]),
+            gpu_buttons: Cell::new([(0.0, 0.0); 2]),
             credits_button: Cell::new([0.0; 4]),
             allows_multiplayer: true,
             ban_queue: Default::default(),
@@ -2659,6 +2687,38 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             batch.text(atlas, &text, tx, ty, u32::MAX, false);
             return;
         }
+        if self.gpu_warning_visible() {
+            let warning = self.gpu_warning.as_ref().expect("gpu_warning_visible");
+            crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
+            // `UnsupportedGraphicsWarningScreen`: the adapter it names, Continue and
+            // the "Don't show again" choice that persists `skipGpuWarning`.
+            let title = Text::literal(lang::get_or(
+                "options.graphics.warning.title",
+                "Graphics Card Unsupported",
+            ));
+            let message = Text::literal(format!(
+                "Your graphics card ({}) from {} is not fully compatible with Horizon's renderer. You can still play, but the game may render wrongly or run slowly.",
+                warning.renderer, warning.vendor
+            ));
+            let choice =
+                crate::confirm_screen::Choice::new(&atlas.font, (w, h), &title, &message, 2, 150.0);
+            for (line, x, y) in &choice.lines {
+                batch.text_styled(atlas, line, *x, *y, u32::MAX, true);
+            }
+            let labels = [
+                Text::literal(lang::get_or("options.graphics.warning.accept", "Continue")),
+                Text::literal(lang::get_or(
+                    "options.graphics.warning.checkbox",
+                    "Do not show this message again",
+                )),
+            ];
+            for ((bx, by), label) in choice.buttons.iter().zip(&labels) {
+                let hover = crate::ui::hovered(cursor, *bx, *by, 150.0, 20.0);
+                crate::ui::button(batch, atlas, *bx, *by, 150.0, 20.0, label, true, hover);
+            }
+            self.gpu_buttons.set([choice.buttons[0], choice.buttons[1]]);
+            return;
+        }
         if let Some(screen) = self.confirm_experiments.borrow().as_ref() {
             return screen.draw(batch, atlas, cursor);
         }
@@ -3604,6 +3664,21 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             return (Action::None, false);
         }
         let (w, h) = (size.0.ceil(), size.1.ceil());
+        // The GPU warning takes the press: Continue only closes it, Don't show again
+        // also persists `skipGpuWarning`.
+        if self.gpu_warning_visible() {
+            let [accept, skip] = self.gpu_buttons.get();
+            if crate::ui::hovered((x, y), accept.0, accept.1, 150.0, 20.0) {
+                self.gpu_warning_open.set(false);
+                return (Action::None, true);
+            }
+            if crate::ui::hovered((x, y), skip.0, skip.1, 150.0, 20.0) {
+                self.skip_gpu_warning = true;
+                self.gpu_warning_open.set(false);
+                return (Action::None, true);
+            }
+            return (Action::None, false);
+        }
         // MenuTabBar: a new tab clears the focus and clicks.
         if let Some(tab) = create_world::tab_at(w, (x, y))
             && matches!(self.mode, Mode::Create { .. })

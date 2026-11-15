@@ -960,8 +960,10 @@ impl Game<'_> {
                 );
             }
             let skip = self.settings.file.bool("skipMultiplayerWarning");
+            let skip_gpu = self.settings.file.bool("skipGpuWarning");
             if let Some(title) = &mut self.title {
                 title.skip_multiplayer_warning = skip;
+                title.set_skip_gpu_warning(skip_gpu);
                 title.failed(error);
             }
             self.capture(false);
@@ -1618,6 +1620,7 @@ impl Game<'_> {
             .with_user(|| self.options.player_name());
         title.last_server = self.settings.file.string("lastServer");
         title.skip_multiplayer_warning = self.settings.file.bool("skipMultiplayerWarning");
+        title.set_skip_gpu_warning(self.settings.file.bool("skipGpuWarning"));
         if single_player && reason.is_none() {
             self.title = Some(title);
             self.capture(false);

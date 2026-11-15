@@ -233,6 +233,7 @@ static TABLE: LazyLock<Vec<Def>> = LazyLock::new(|| {
         b("ctrlClickEmulatesRightClick", false),
         def("glDebugVerbosity", PI, V::Int(1)),
         pb("skipMultiplayerWarning", false),
+        pb("skipGpuWarning", false),
         b("hideMatchedNames", true),
         pb("joinedFirstServer", false),
         pb("syncChunkWrites", false),

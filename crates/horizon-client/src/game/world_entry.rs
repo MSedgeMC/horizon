@@ -17,6 +17,9 @@ impl Game<'_> {
                 )
                 .with_user(|| self.options.player_name()),
             );
+            if let Some(title) = &mut self.title {
+                title.set_skip_gpu_warning(self.settings.file.bool("skipGpuWarning"));
+            }
         }
         self.pending_entry = Some(entry);
         log::info!("Horizon: world entry waiting for world resources");
