@@ -225,7 +225,7 @@ impl CombatTracker {
         let marks = (self.pending.len(), self.pending_direct.len());
         self.noted_since.get_or_insert(marks);
     }
-    /// `CombatTracker.getKiller`'s credited attacker: the entity that last
+    /// The credited attacker: the entity that last
     /// hurt the body, within a hundred ticks of the hurt.
     pub(super) fn kill_credit(&self, now: i64) -> Option<u32> {
         let ((id, _), at) = self.last_hurt_by.as_ref()?;

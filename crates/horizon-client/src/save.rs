@@ -6447,7 +6447,7 @@ mod tests {
         assert_eq!(share_out(0, 4, squares, || true), Vec::<usize>::new());
     }
 
-    /// `RegionFile.getVersion` writes a chunk with the version
+    /// A chunk is written with the version
     /// `region-file-compression` selected: `compress_records` asks
     /// `Compression::selected()` for every record it encodes, so a server told
     /// to write lz4, gzip or uncompressed regions does

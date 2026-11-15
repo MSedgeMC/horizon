@@ -41,7 +41,7 @@ pub(super) struct MerchantState {
     /// style, else nothing (the profession's name is the default).
     pub(super) name: Option<Text>,
 }
-/// `Merchant.getDisplayName`: the merchant's custom name (style and all), else
+/// The display name: the merchant's custom name (style and all), else
 /// the profession's or the wandering trader's.
 pub(super) fn merchant_display_name(
     progress: bool,

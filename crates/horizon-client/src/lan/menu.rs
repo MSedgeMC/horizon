@@ -17,7 +17,7 @@ pub trait Rules {
     fn max_stack(&self, item: &str) -> u32;
     /// The armor slot (0 head .. 3 feet) an item can be worn in.
     fn armor_index(&self, item: &str) -> Option<usize>;
-    /// `ItemStack.getEquipmentSlot`: the `minecraft:equippable` component's
+    /// The `minecraft:equippable` component's
     /// slot ("head", "chest", "legs", "feet", "mainhand", "offhand").
     fn equip_slot(&self, item: &str) -> Option<&str> {
         self.items().get(item)?.equip_slot.as_deref()

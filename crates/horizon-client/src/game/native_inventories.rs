@@ -131,7 +131,7 @@ pub(crate) struct NativeInventory {
     pub online: bool,
 }
 
-/// `Level.inventory`'s slot numbers (the file's) for our 41.
+/// The level file's `inventory` slot numbers for our 41.
 fn file_slot(i: usize) -> Option<u8> {
     match i {
         0..36 => Some(i as u8),
