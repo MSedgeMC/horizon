@@ -516,33 +516,46 @@ fn int_bounds(v: &Value, value: i32) -> bool {
     }
 }
 
-/// `MinMaxBounds.Longs.matches` (a number or `{min, max}`).
-fn long_bounds(v: &Value, value: i64) -> bool {
-    match v {
-        Value::Number(_) => int_value(v) == Some(value),
-        Value::Object(o) => {
-            o.get("min").and_then(int_value).is_none_or(|m| value >= m)
-                && o.get("max").and_then(int_value).is_none_or(|m| value <= m)
-        }
-        _ => false,
-    }
-}
-
-/// `TimeCheck.test`: the level's day time, wrapped by `period` when it is
-/// positive, matched against `value`. The level comes from the roll's
-/// place (`NativeLootPlace`); a roll without one has no level to read, so
-/// it does not match. The clock id is not selected: Horizon's level
-/// carries one day time.
+/// `TimeCheck.test`, as far as Horizon can read it: the overworld clock's
+/// day time, wrapped by `period` when it is positive, against a constant
+/// `IntRangePredicate` value (a number, or `{min, max}` with numeric
+/// bounds). 26.3 names a `clock`; Horizon's level carries the overworld
+/// clock only, so another clock does not match. A provider-valued bound,
+/// like a roll with no level, cannot be read and does not match.
 pub fn time_check_matches(condition: &Value, day_time: i64) -> bool {
+    if condition["clock"]
+        .as_str()
+        .is_some_and(|clock| clock != "minecraft:overworld")
+    {
+        return false;
+    }
+    let time = match condition["period"].as_i64() {
+        Some(period) if period > 0 => day_time % period,
+        Some(_) => return false,
+        None => day_time,
+    } as i32;
     let value = &condition["value"];
     if value.is_null() {
         return false;
     }
-    let time = match int_value(&condition["period"]) {
-        Some(period) if period > 0 => day_time.rem_euclid(period),
-        _ => day_time,
-    };
-    long_bounds(value, time)
+    if value.is_object() && value["type"].is_null() {
+        // `IntRangePredicate.Line`: optional numeric bounds; a provider
+        // endpoint is unreadable here rather than unbounded.
+        let bound = |name: &str| match &value[name] {
+            Value::Null => Ok(None),
+            v => v.as_i64().map(Some).ok_or(()),
+        };
+        let (Ok(min), Ok(max)) = (bound("min"), bound("max")) else {
+            return false;
+        };
+        return min.is_none_or(|min| i64::from(time) >= min)
+            && max.is_none_or(|max| i64::from(time) <= max);
+    }
+    if value["type"].is_string() {
+        // `IntRangePredicate.Point` with a provider: unreadable here.
+        return false;
+    }
+    value.as_i64() == Some(i64::from(time))
 }
 
 /// `ListOperation`: the list a `set_*` function's `values` and `mode` ask
@@ -3122,11 +3135,21 @@ mod time_check_tests {
     fn time_check_matches_the_day_time_inside_the_range() {
         let data = table(
             "range",
-            r#"{"type":"minecraft:time_check","period":24000,"value":{"min":1000,"max":2000}}"#,
+            r#"{"type":"minecraft:time_check","clock":"minecraft:overworld","period":24000,"value":{"min":1000,"max":2000}}"#,
         );
         assert!(drops(&data, 1500), "inside the range");
         assert!(!drops(&data, 2500), "outside the range");
         assert!(drops(&data, 25000), "25000 wraps to 1000 with period 24000");
+        let end_clock = table(
+            "clock",
+            r#"{"type":"minecraft:time_check","clock":"minecraft:the_end","value":1500}"#,
+        );
+        assert!(!drops(&end_clock, 1500), "another clock is not read");
+        let provider = table(
+            "provider",
+            r#"{"type":"minecraft:time_check","clock":"minecraft:overworld","value":{"min":{"type":"minecraft:constant","value":1000}}}"#,
+        );
+        assert!(!drops(&provider, 1500), "a provider bound is not read");
     }
 }
 

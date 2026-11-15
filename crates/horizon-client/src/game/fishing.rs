@@ -617,16 +617,24 @@ impl Game<'_> {
                 .as_ref()
                 .and_then(|m| m.loot_table.as_deref())
                 .unwrap_or(FISHING_TABLE);
-            let items = fishing_loot(
-                &loot,
-                table,
-                &mut self.rand_sequences,
-                &mut self.world.random,
-                self.level.seed,
-                luck,
-                biome.as_deref(),
-                hook.open_water,
+            // The catch's loot context is in this level: a time_check there
+            // reads the same clock a broken block's drops do.
+            let place = self.loot_place_at(
+                [hook.position.x, hook.position.y, hook.position.z],
+                None,
             );
+            let items = horizon_world::loot::with_native_loot_place(place, || {
+                fishing_loot(
+                    &loot,
+                    table,
+                    &mut self.rand_sequences,
+                    &mut self.world.random,
+                    self.level.seed,
+                    luck,
+                    biome.as_deref(),
+                    hook.open_water,
+                )
+            });
             let mut caught = Vec::new();
             for stack in items {
                 // FishingHook.retrieve: fish_caught for each catch in #minecraft:fishes.
