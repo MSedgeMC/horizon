@@ -7,13 +7,13 @@ PlayerList.broadcastSystemToAllExceptTeam	port	crates/horizon-client-core/src/sc
 PlayerList.getPlayerNamesArray	skip:server		the GS4 query reply's player list; RCON and query server code; Horizon has no RCON or GS4 query port
 PlayerList.op	inline	crates/horizon-client/src/game/dedicated.rs::Game::console_command	the op arm: list add, reply, and sync_ops (permission level push to the hub)
 PlayerList.deop	inline	crates/horizon-client/src/game/dedicated.rs::Game::console_command	the deop arm: list remove, reply, sync_ops and kick_unlisted_players
-PlayerList.saveAll	port	crates/horizon-client/src/game/dedicated.rs::Game::stop_dedicated	gap: minor: /save-all (save-all arm of console_command) writes the world only; players are saved on leave and when the server stops
+PlayerList.saveAll	port	crates/horizon-client/src/game/autosave.rs::Game::save_game	the save (save-all arm of console_command) saves the world and, on a dedicated server, every placed guest to their own file (PlayerDataStorage.save); the owner is saved with level.dat
 PlayerList.getPlayersWithAddress	inline	crates/horizon-client/src/game/dedicated.rs::Game::console_command	the ban-ip arm filters the guests by address
 PlayerList.getPlayerStats	inline	crates/horizon-client/src/game/lan.rs::Game::load_guest_records	statistics are read when the guest joins, not on first use
 PlayerList.locateStatsFile	port	crates/horizon-client/src/game/stats.rs::locate_player_json	the stats file an older version named after the player is moved to the uuid file; FileUtil.isValidPathSegment refuses a name vanilla would not write, and 26.3 has no name-based advancements file
 PlayerList.getPlayerAdvancements	inline	crates/horizon-client/src/game/lan.rs::Game::load_guest_records	advancements are read when the guest joins, not on first use
 PlayerList.getPlayer	port	crates/horizon-client/src/game/commands/players.rs::Game::target_by_uuid	gap: minor: the uuid lookup also returns entities (selector fallback); the name overload is Game::player_named
-PlayerList.reloadResources	port	crates/horizon-client/src/game/functions/loading.rs::Game::try_reload_datapacks	gap: player: /reload re-reads the datapacks but sends no tags or recipes to connected players and does not reload advancements; the sync data is loaded once per process (game/lan.rs SYNC), so new tags and recipes wait for a restart
+PlayerList.reloadResources	port	crates/horizon-client/src/game/world_entry.rs::Game::reload_world_tables	/reload re-reads the datapacks, reloads the advancement tree and sends the reloaded tags and recipes to the connected players (hub.reload_resources); a failed reload leaves the previous tables live
 ProfileResolver.Cached.fetchByName	port	crates/horizon-client/src/game/dedicated.rs::Game::resolve	name to profile through the user cache, else the profile service (profiles::find_by_name)
 ServerOpList.getUserList	skip:ui		tab-completion names only (DeOpCommands suggestions); the console has no completion
 ServerOpList.add	port	crates/horizon-server-files/src/user_lists.rs::UserList::add	gap: minor: the Opped reply and the permission push are in console_command's op arm
