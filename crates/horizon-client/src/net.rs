@@ -19,7 +19,7 @@ use horizon_protocol::{
 };
 use horizon_world::nbt::{JavaString, Tag};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
     sync::{
         Arc, Mutex,
@@ -975,22 +975,46 @@ fn receive_play(
     resources: &Path,
     recorder: &RecorderSlot,
 ) -> Result<Reason, Reason> {
+    // PacketBundlePacker.decode / BundlerInfo.startPacketBundling: a delimiter
+    // opens a bundle, and the closing one hands every packet between them on
+    // together. Vanilla holds at most 4096 sub-packets.
+    let mut pending: VecDeque<(i32, Vec<u8>, play::Clientbound)> = VecDeque::new();
+    let mut bundling: Option<Vec<(i32, Vec<u8>, play::Clientbound)>> = None;
     loop {
-        let (id, payload) = reader
-            .recv()
-            .map_err(|e| Reason::plain(connection_lost(e, lang)))?;
-        let packet = match play::Clientbound::decode(id, &payload) {
-            Ok(p) => p,
-            Err(err) => {
-                let name = horizon_protocol::ids::name(
-                    horizon_protocol::State::Play,
-                    horizon_protocol::Direction::Clientbound,
-                    id,
-                )
-                .unwrap_or("?");
-                let _ = send.send(Event::DecodeError(format!("{name}: {err}")));
+        let (id, payload, packet) = if let Some(packet) = pending.pop_front() {
+            packet
+        } else {
+            let (id, payload) = reader
+                .recv()
+                .map_err(|e| Reason::plain(connection_lost(e, lang)))?;
+            let packet = match play::Clientbound::decode(id, &payload) {
+                Ok(p) => p,
+                Err(err) => {
+                    let name = horizon_protocol::ids::name(
+                        horizon_protocol::State::Play,
+                        horizon_protocol::Direction::Clientbound,
+                        id,
+                    )
+                    .unwrap_or("?");
+                    let _ = send.send(Event::DecodeError(format!("{name}: {err}")));
+                    continue;
+                }
+            };
+            if matches!(&packet, play::Clientbound::BundleDelimiter(_)) {
+                match bundling.take() {
+                    Some(bundle) => pending.extend(bundle),
+                    None => bundling = Some(Vec::new()),
+                }
                 continue;
             }
+            if let Some(bundle) = bundling.as_mut() {
+                if bundle.len() >= 4096 {
+                    return Err(Reason::plain("Too many packets in a bundle"));
+                }
+                bundle.push((id, payload, packet));
+                continue;
+            }
+            (id, payload, packet)
         };
         if let Some(rec) = recorder.lock().unwrap().as_ref()
             && rec.is_active()
@@ -1004,7 +1028,6 @@ fn receive_play(
         };
         match packet {
             play::Clientbound::KeepAlive(k) => reply(play::Serverbound::KeepAlive(k)),
-            play::Clientbound::BundleDelimiter(_) => {}
             play::Clientbound::ResourcePackPush(p) => {
                 let _ = send.send(Event::PackPush(p));
             }
@@ -2419,5 +2442,49 @@ mod tests {
         assert!(reg.entries[2].data.is_none());
 
         let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn a_bundle_is_dispatched_only_when_its_closing_delimiter_arrives() {
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(writer)));
+        let (send, events) = channel();
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &AtomicBool::new(false),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                Path::new("."),
+                &Arc::new(Mutex::new(None)),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        let ping = |id| play::Clientbound::Ping(cfg::Ping { id }).encode();
+        server.send(&delimiter).unwrap();
+        server.send(&ping(7)).unwrap();
+        server.send(&ping(8)).unwrap();
+        // PacketBundlePacker holds the sub-packets until the closing delimiter.
+        assert!(
+            events.recv_timeout(Duration::from_millis(200)).is_err(),
+            "a bundled packet was handled before the bundle closed"
+        );
+        server.send(&delimiter).unwrap();
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::Packet(p) if *p == play::Clientbound::Ping(cfg::Ping { id: 7 })
+        ));
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(5)).unwrap(),
+            Event::Packet(p) if *p == play::Clientbound::Ping(cfg::Ping { id: 8 })
+        ));
+        writer.lock().unwrap().take().unwrap().shutdown();
+        assert!(thread.join().unwrap().is_err());
     }
 }
