@@ -2941,6 +2941,8 @@ mod namespace_tests {
                 {"slot": 2, "item": {"id": "minecraft:brick"}}
             ]))
         );
+        let _ = fs::remove_dir_all(&root);
+    }
 
     /// `SetWritableBookPagesFunction`: the function's pages go through its
     /// `ListOperation` over the writable book content an earlier function
