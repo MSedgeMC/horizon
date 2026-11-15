@@ -31,8 +31,8 @@ Wolf.createAttributes	skip:data		attribute values come from data tables
 Wolf.defineSynchedData	port	crates/horizon-client/src/game/lan.rs::mob_meta	flags, variant and anger metadata sent to clients
 Wolf.addAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_to_nbt	CollarColor written
 Wolf.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	CollarColor, sound_variant and anger read; live command writes initialize the wolf remaining anger at the current level clock
-Wolf.finalizeSpawn	port	crates/horizon-client/src/mobs/finalize.rs::Ctx::finalize	gap: minor: sound variant is stored but no sound uses it (see getSoundSet)
-Wolf.getAmbientSound	port	crates/horizon-client/src/mobs/ai.rs::ambient_sound	gap: minor: angry is taken as having a target, not the anger timer
+Wolf.finalizeSpawn	port	crates/horizon-client/src/mobs/finalize.rs::Ctx::finalize	the sound variant is stored and `variant_sound` reads it for the wolf's growl, pant and whine
+Wolf.getAmbientSound	port	crates/horizon-client/src/mobs/ai.rs::ambient_sound	angry reads the persistent anger timer (`tame::angry`) and plays the variant's growl, else a calm wolf plays its variant's pant or whine
 Wolf.die	port	crates/horizon-client/src/mobs/tame.rs::die	`drops::die` asks it first: isWet/isShaking and both shake animations are cleared
 Wolf.getHeadRollAngle	port	crates/horizon-client/src/mobs/tame.rs::anim	
 Wolf.applyTamingSideEffects	port	crates/horizon-client/src/mobs/tame.rs::set_tame	
@@ -88,11 +88,11 @@ WitherBoss.createAttributes	skip:data		attribute values come from data tables
 WitherBoss.isPowered	port	crates/horizon-client/src/mobs/wither.rs::powered	
 ArmorStand.refreshDimensions	skip:other		no cached dimensions: bounds are computed from position, small and marker
 ArmorStand.defineSynchedData	port	crates/horizon-client/src/game/lan_entities.rs::Game::lan_object_states	flag and pose values sent to clients; defaults are the DEFAULT_POSE table
-ArmorStand.canUseSlot	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	hand slots gated by show_arms; gap: minor: body and saddle are never offered and disabled bits are not read
+ArmorStand.canUseSlot	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	hand slots are gated by show_arms, a disabled slot refuses the click and an empty hand falls back to the main hand; body and saddle are not offered
 ArmorStand.pushEntities	port	crates/horizon-client/src/game/armor_stands.rs::Game::push_rideable_minecarts	a plain rideable minecart whose box meets the stand's and is within `distanceToSqr` 0.2 is shoved; the stand takes a quarter of the push, and a marker, no-gravity or riding stand does not shove
 ArmorStand.interact	port	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	
 ArmorStand.getClickedSlot	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	click height picks feet, chest, legs, head or offhand
-ArmorStand.isDisabled	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	gap: minor: disabled-slot bits are not read; hands gated by show_arms only
+ArmorStand.isDisabled	inline	crates/horizon-client/src/game/armor_stands.rs::Game::interact_armor_stand	the disabled-slot bit refuses a held item's click and makes an empty hand take from the main hand (`is_disabled`, `swap_locked`)
 ArmorStand.handleEntityEvent	inline	crates/horizon-client/src/game/armor_stands.rs::Game::attack_armor_stand	event 32 becomes the wobble timer and the hit sound
 ArmorStand.showBreakingParticles	port	crates/horizon-client/src/game/armor_stands.rs::Game::show_breaking_particles	ticked in #3514; `ArmorStand.showBreakingParticles` is cited at crates/horizon-client/src/game/armor_stands.rs:616
 ArmorStand.causeDamage	port	crates/horizon-client/src/entities.rs::ArmorStand::environment_tick	gap: minor: fire damage only (4 per second burning, 0.15 per contact); hit and explosion paths are elsewhere
