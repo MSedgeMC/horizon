@@ -5,6 +5,9 @@
 mod anger_tests;
 #[cfg(test)]
 mod completion_tests;
+#[cfg(test)]
+#[path = "fire_base_tick_tests.rs"]
+mod fire_base_tick_tests;
 mod display;
 mod passenger_graph;
 use passenger_graph::take_passengers;
@@ -66,6 +69,30 @@ pub(super) fn write_static_entity_fields(tag: &mut Tag) {
             fields.insert(key.into(), value);
         }
     }
+}
+
+/// The fire step of `Entity.baseTick` for an entity whose live state Horizon
+/// keeps in its loaded compound (an evoker fang, an eye of ender, a potion
+/// cloud): a fire-immune type clears a positive timer (`clearFire` keeps only
+/// a negative countdown), and the other kinds lose one tick while burning.
+/// `Fire` is saved as a short, so the countdown narrows as
+/// `Entity.saveWithoutId` does.
+pub(super) fn tick_loaded_fire(tag: &mut Tag, fire_immune: bool) -> bool {
+    let Tag::Compound(fields) = tag else {
+        return false;
+    };
+    let current = horizon_client::save::number(fields.get(&"Fire".into()))
+        .map_or(0, |ticks| ticks as i32);
+    let next = if fire_immune {
+        current.min(0)
+    } else {
+        (current - 1).max(0)
+    };
+    if current <= 0 || next == current {
+        return false;
+    }
+    fields.insert("Fire".into(), Tag::Short(next as i16));
+    true
 }
 
 #[derive(Clone, Debug)]
@@ -1611,6 +1638,14 @@ impl Game<'_> {
             {
                 *fire = Tag::Short(0);
             }
+        }
+    }
+    /// The fire step of `Entity.baseTick` for a kind whose live state Horizon
+    /// keeps as its loaded compound: a fire-immune type clears `Fire`, and
+    /// the other kinds count down while burning.
+    pub(super) fn tick_saved_entity_fire(&mut self, id: u32, fire_immune: bool) {
+        if let Some(raw) = self.persist.raw.get_mut(&id) {
+            tick_loaded_fire(raw, fire_immune);
         }
     }
     /// The compound an entity was loaded with (and commands have edited).

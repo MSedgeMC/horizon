@@ -135,6 +135,8 @@ impl Game<'_> {
         horizon_threads::work::clear_work();
         let mut list = std::mem::take(&mut self.fangs.list);
         list.retain_mut(|f| {
+            // Entity.baseTick: EvokerFangs.tick calls super.tick first.
+            self.tick_saved_entity_fire(f.id, false);
             f.warmup = f.warmup.wrapping_sub(1);
             if f.warmup >= 0 {
                 return true;

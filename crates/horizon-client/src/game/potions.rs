@@ -1442,6 +1442,18 @@ impl Game<'_> {
     /// `AreaEffectCloud.tick` for the lingering potions' clouds: the client
     /// tick's particles, then the server tick.
     fn tick_potion_clouds(&mut self) {
+        let ticking = self.entity_ticking_area();
+        // Entity.baseTick: AreaEffectCloud.tick calls super.tick, and the type is
+        // fire immune, so a loaded Fire clears on the cloud first tick.
+        let cloud_ids: Vec<u32> = self
+            .breath_clouds
+            .iter()
+            .filter(|c| ticking(c.at[0].floor() as i32, c.at[2].floor() as i32))
+            .map(|c| c.id)
+            .collect();
+        for id in cloud_ids {
+            self.tick_saved_entity_fire(id, true);
+        }
         if self.breath_clouds.iter().all(|c| c.potion.is_none()) {
             return;
         }
@@ -1452,7 +1464,6 @@ impl Game<'_> {
             .collect();
         let mut clouds = std::mem::take(&mut self.breath_clouds);
         // ServerLevel.tick: only entities in entity-ticking chunks tick.
-        let ticking = self.entity_ticking_area();
         clouds.retain_mut(|c| {
             c.potion.is_none()
                 || !ticking(c.at[0].floor() as i32, c.at[2].floor() as i32)

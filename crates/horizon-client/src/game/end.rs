@@ -323,6 +323,20 @@ impl Game<'_> {
     /// their motion and shatter on tick 81, dropping nothing.
     pub(super) fn tick_summoned_eyes(&mut self) {
         let ticking = self.entity_ticking_area();
+        // Entity.baseTick: EyeOfEnder.tick calls super.tick, and the type is not
+        // fire immune, so a loaded Fire counts down on every tick the eye takes.
+        let eyes: Vec<u32> = self
+            .others
+            .iter()
+            .filter(|o| {
+                o.eye.is_some()
+                    && ticking(o.position.x.floor() as i32, o.position.z.floor() as i32)
+            })
+            .map(|o| o.id)
+            .collect();
+        for id in eyes {
+            self.tick_saved_entity_fire(id, false);
+        }
         let mut shattered = Vec::new();
         self.others.retain_mut(|o| {
             let Some(eye) = o.eye.as_mut() else {
