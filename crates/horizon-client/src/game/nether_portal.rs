@@ -693,6 +693,19 @@ impl Game<'_> {
                 }
             }
         });
+        // `Entity.handlePortal` ticks every entity's countdown, not only the
+        // kinds `entity_lists!` walks. Keep the off-list states across the
+        // passes that do not tick them, and take one tick off in the pass the
+        // listed kinds use.
+        for (id, x, z) in self.off_list_portal_entities() {
+            if !tracked.contains_key(&id) {
+                continue;
+            }
+            present.insert(id);
+            if !vehicles && !after_move && entity_ticking(x, z) {
+                ids.push((id, false, ENTITY_DELAY));
+            }
+        }
         self.portals.before = before;
         self.portals.entities.retain(|id, _| present.contains(id));
         // SulfurCube.tickFuse runs before Entity.handlePortal. A cube removed
@@ -739,19 +752,42 @@ impl Game<'_> {
     /// `Entity.load`: the saved `PortalCooldown` (an entity that just came
     /// through stands in its exit portal for 300 ticks without going back).
     pub(super) fn restore_portal_cooldown(&mut self, id: u32, tag: &Tag) {
-        if let Some(cooldown) = tag
-            .get("PortalCooldown")
-            .and_then(horizon_client::nbt_path::int_value)
-            && cooldown != 0
-        {
-            self.portals.entities.insert(
-                id,
-                PortalState {
-                    cooldown,
-                    process: None,
-                },
-            );
+        let state = PortalState::from_saved(tag);
+        if state.cooldown != 0 {
+            self.portals.entities.insert(id, state);
         }
+    }
+    /// The portal-cooldown holders whose kinds `entity_lists!` does not walk:
+    /// potion clouds, evoker fangs, End crystals and eyes of ender.
+    /// `Entity.handlePortal` runs `processPortalCooldown` for them too.
+    fn off_list_portal_entities(&self) -> Vec<(u32, i32, i32)> {
+        let mut out = Vec::new();
+        out.extend(
+            self.breath_clouds
+                .iter()
+                .map(|c| (c.id, c.at[0].floor() as i32, c.at[2].floor() as i32)),
+        );
+        out.extend(
+            self.fangs
+                .list
+                .iter()
+                .map(|f| (f.id, f.pos[0].floor() as i32, f.pos[2].floor() as i32)),
+        );
+        out.extend(self.crystals.iter().map(|c| {
+            (
+                c.id,
+                c.position.x.floor() as i32,
+                c.position.z.floor() as i32,
+            )
+        }));
+        out.extend(self.others.iter().filter(|o| o.eye.is_some()).map(|o| {
+            (
+                o.id,
+                o.position.x.floor() as i32,
+                o.position.z.floor() as i32,
+            )
+        }));
+        out
     }
     /// The live entity's `getDimensionChangingDelay`; unknown ids use Entity's default.
     pub(super) fn entity_portal_delay(&self, id: u32) -> i32 {

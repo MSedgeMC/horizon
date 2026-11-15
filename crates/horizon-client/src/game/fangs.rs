@@ -62,14 +62,18 @@ impl Game<'_> {
         });
     }
     pub(super) fn fangs_to_nbt(&self, f: &Fangs, uuid: [i32; 4]) -> horizon_world::nbt::Tag {
-        horizon_client::entity_nbt::evoker_fangs_to_nbt(
+        let mut tag = horizon_client::entity_nbt::evoker_fangs_to_nbt(
             Vec3::new(f.pos[0], f.pos[1], f.pos[2]),
             f.yaw,
             f.warmup,
             self.persist.uuids.get(&f.owner).copied(),
             uuid,
             self.persist.raw.get(&f.id),
-        )
+        );
+        // Fangs are outside `entity_lists!`: the portal state's countdown is
+        // the live `PortalCooldown`, not the loaded compound's.
+        self.save_portal_cooldown(f.id, &mut tag);
+        tag
     }
     pub(super) fn loaded_fangs_owner(&self, tag: &horizon_world::nbt::Tag) -> u32 {
         match tag.get("Owner") {

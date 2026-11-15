@@ -1038,6 +1038,9 @@ impl Game<'_> {
             // entity counter.
             self.next_entity += 1;
             c.id = self.next_entity;
+            // `Entity.load` reads the saved portal cooldown too: a crystal
+            // loaded on one counts it down and writes the live value.
+            self.restore_portal_cooldown(c.id, &tag);
             self.remember_tags(c.id, &tag);
             self.remember_uuid(c.id, uuid, &tag);
             self.crystals.push(c);
@@ -1375,7 +1378,13 @@ impl Game<'_> {
         {
             entity_nbt::fill_common_defaults(&mut tag);
         }
-        with_raw(tag, None) // Entity.saveWithoutId's flags, as booleans.
+        let mut tag = with_raw(tag, None); // Entity.saveWithoutId's flags, as booleans.
+        // An eye of ender is outside `entity_lists!`: the portal state's
+        // countdown is its live `PortalCooldown`, not the loaded one.
+        if o.eye.is_some() {
+            self.save_portal_cooldown(o.id, &mut tag);
+        }
+        tag
     }
     /// The root of a stack of riders (`Entity.getRootVehicle`).
     fn mob_root(&self, mut i: usize) -> usize {
@@ -1779,10 +1788,9 @@ impl Game<'_> {
             if keys.contains(&chunk_of(c.position)) {
                 let raw = anon_raw(&self.persist, "minecraft:end_crystal", c.position);
                 let uuid = saved_uuid(&self.persist, c.id);
-                out.entry(chunk_of(c.position)).or_default().push(with_raw(
-                    c.to_nbt(uuid, raw.as_ref()),
-                    self.persist.raw.get(&c.id),
-                ));
+                let mut tag = with_raw(c.to_nbt(uuid, raw.as_ref()), self.persist.raw.get(&c.id));
+                self.save_portal_cooldown(c.id, &mut tag);
+                out.entry(chunk_of(c.position)).or_default().push(tag);
             }
         }
         for s in &self.ominous_spawners {
@@ -1869,7 +1877,8 @@ impl Game<'_> {
                 .get(&c.id)
                 .copied()
                 .unwrap_or_else(random_uuid);
-            let tag = super::potions::potion_cloud_to_nbt(c, uuid, self.persist.raw.get(&c.id));
+            let mut tag = super::potions::potion_cloud_to_nbt(c, uuid, self.persist.raw.get(&c.id));
+            self.save_portal_cooldown(c.id, &mut tag);
             out.entry(chunk_of(at)).or_default().push(tag);
         }
         for o in &self.others {
@@ -2310,7 +2319,8 @@ impl Game<'_> {
         let (id, at) = (self.tridents[i].id, self.tridents[i].position);
         keys.contains(&chunk_of(at)).then(|| {
             let (uuid, reg) = (self.uuid_for(id), self.pack.assets.registry);
-            let tag = self.tridents[i].to_nbt(uuid, reg, self.persist.raw.get(&id));
+            let mut tag = self.tridents[i].to_nbt(uuid, reg, self.persist.raw.get(&id));
+            self.save_portal_cooldown(id, &mut tag);
             (chunk_of(at), tag)
         })
     }
@@ -2364,7 +2374,8 @@ impl Game<'_> {
         let a = &self.armor_stands[i];
         keys.contains(&chunk_of(a.position)).then(|| {
             let uuid = self.saved_uuid_or_random(a.id);
-            let tag = entity_nbt::armor_stand_to_nbt(a, uuid, self.persist.raw.get(&a.id));
+            let mut tag = entity_nbt::armor_stand_to_nbt(a, uuid, self.persist.raw.get(&a.id));
+            self.save_portal_cooldown(a.id, &mut tag);
             (chunk_of(a.position), tag)
         })
     }

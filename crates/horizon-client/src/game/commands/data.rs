@@ -158,7 +158,9 @@ impl Game<'_> {
             Target::Stand(id) => {
                 let uuid = self.uuid_for(id);
                 let a = self.armor_stands.iter().find(|a| a.id == id)?;
-                entity_nbt::armor_stand_to_nbt(a, uuid, self.persist.raw.get(&id))
+                let mut tag = entity_nbt::armor_stand_to_nbt(a, uuid, self.persist.raw.get(&id));
+                self.save_portal_cooldown(id, &mut tag);
+                tag
             }
             Target::Frame(id) => {
                 let uuid = self.uuid_for(id);
@@ -251,7 +253,9 @@ impl Game<'_> {
                 let raw = self.persist_anon("minecraft:end_crystal", c.position);
                 let uuid = self.persist.uuids.get(&id).copied();
                 let tag = c.to_nbt(uuid.unwrap_or_else(random_uuid), raw);
-                crate::game::persist::with_raw(tag, self.persist.raw.get(&id))
+                let mut tag = crate::game::persist::with_raw(tag, self.persist.raw.get(&id));
+                self.save_portal_cooldown(id, &mut tag);
+                tag
             }
             Target::Dragon(id) => {
                 let d = self.dragon.as_ref().filter(|d| d.id == id)?;
@@ -287,7 +291,11 @@ impl Game<'_> {
                     f.rotation,
                     uuid,
                 );
-                crate::game::persist::with_raw(tag, raw)
+                let mut tag = crate::game::persist::with_raw(tag, raw);
+                // `FallingBlockEntity.tick` ticks its portal state every tick:
+                // the loaded compound's value is stale.
+                horizon_client::nether_portal::put_portal_cooldown(&mut tag, f.portal.cooldown);
+                tag
             }
             Target::Rocket(id) => {
                 let uuid = self.uuid_for(id);
@@ -352,12 +360,15 @@ impl Game<'_> {
                         c.remove(&"potion_duration_scale".into());
                     }
                 }
+                self.save_portal_cooldown(id, &mut tag);
                 tag
             }
             Target::Trident(id) => {
                 let uuid = self.uuid_for(id);
                 let t = self.tridents.iter().find(|t| t.id == id)?;
-                t.to_nbt(uuid, self.pack.assets.registry, self.persist.raw.get(&id))
+                let mut tag = t.to_nbt(uuid, self.pack.assets.registry, self.persist.raw.get(&id));
+                self.save_portal_cooldown(id, &mut tag);
+                tag
             }
             Target::Spawner(id) => {
                 let s = self.ominous_spawners.iter().find(|s| s.id == id)?;

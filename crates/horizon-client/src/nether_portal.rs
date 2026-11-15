@@ -58,6 +58,17 @@ pub fn put_portal_cooldown(tag: &mut horizon_world::nbt::Tag, cooldown: i32) {
     }
 }
 impl PortalState {
+    /// `Entity.load`: the saved `PortalCooldown`, if any. The portal process
+    /// is the live one and is not part of the compound.
+    pub fn from_saved(tag: &horizon_world::nbt::Tag) -> Self {
+        Self {
+            cooldown: tag
+                .get("PortalCooldown")
+                .and_then(horizon_client::nbt_path::int_value)
+                .unwrap_or(0),
+            process: None,
+        }
+    }
     /// `Entity.setAsInsidePortal` for a nether portal block at `pos`.
     pub fn set_inside(&mut self, pos: BlockPos, delay: i32) {
         if self.cooldown > 0 {
@@ -161,6 +172,38 @@ mod tests {
             tag.get("PortalCooldown"),
             Some(&horizon_world::nbt::Tag::Int(3))
         );
+    }
+
+    #[test]
+    fn a_saved_portal_cooldown_is_kept_and_counts_down_once_a_tick() {
+        // A trident and an armor stand summoned with `PortalCooldown:250`:
+        // `Entity.load` keeps it, `Entity.saveWithoutId` writes it back and
+        // `Entity.handlePortal`'s `processPortalCooldown` takes one off a tick.
+        for kind in ["minecraft:trident", "minecraft:armor_stand"] {
+            let mut tag = horizon_world::nbt::Tag::compound([
+                ("id", horizon_world::nbt::Tag::String(kind.into())),
+                ("PortalCooldown", horizon_world::nbt::Tag::Int(250)),
+            ]);
+            let mut entities = HashMap::new();
+            entities.insert(7, PortalState::from_saved(&tag));
+            assert_eq!(portal_cooldown(&entities, 7), 250, "{kind}: load keeps it");
+            put_portal_cooldown(&mut tag, portal_cooldown(&entities, 7));
+            assert_eq!(
+                tag.get("PortalCooldown"),
+                Some(&horizon_world::nbt::Tag::Int(250)),
+                "{kind}: save keeps it"
+            );
+            entities
+                .get_mut(&7)
+                .expect("the entity is tracked")
+                .handle(false, 0, ENTITY_DELAY);
+            put_portal_cooldown(&mut tag, portal_cooldown(&entities, 7));
+            assert_eq!(
+                tag.get("PortalCooldown"),
+                Some(&horizon_world::nbt::Tag::Int(249)),
+                "{kind}: one tick down"
+            );
+        }
     }
 
     #[test]
