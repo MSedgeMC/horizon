@@ -1342,6 +1342,39 @@ fn scrolled_world_list_draws_inside_the_list_and_drags_its_scroller() {
     assert!(!batch.vertices.is_empty());
 }
 
+/// `TabNavigationBar.setFocused` and `nextFocusPath`: the tab row is the screen's
+/// first widget, so Tab wraps from the last button onto it and the next Tab enters
+/// the name field; Shift+Tab walks the same order backwards.
+#[test]
+fn tab_reaches_the_create_world_tab_row() {
+    let mut f = Fixture::new();
+    f.click("Singleplayer");
+    let size = (480.0, 262.0);
+    assert!(matches!(f.title.mode, Mode::Create { .. }));
+    let buttons = f
+        .title
+        .buttons(size.0, size.1)
+        .iter()
+        .filter(|b| b.enabled)
+        .count();
+    for _ in 0..=buttons {
+        f.title.tab_dir(false, size);
+    }
+    assert_eq!(f.title.focused_button, Some(create_world::TAB_ROW));
+    // Forward, the row leaves for the name field; backwards for the last button.
+    f.title.tab_dir(false, size);
+    assert_eq!(f.title.focused_button, None);
+    assert!(matches!(&f.title.mode, Mode::Create { focus: 0, .. }));
+    f.title.tab_dir(true, size);
+    assert_eq!(f.title.focused_button, Some(create_world::TAB_ROW));
+    f.title.tab_dir(true, size);
+    assert!(
+        f.title
+            .focused_button
+            .is_some_and(|id| id != create_world::TAB_ROW)
+    );
+}
+
 #[test]
 fn create_world_tabs_follow_vanilla_and_their_choices_reach_the_action() {
     let mut f = Fixture::new();

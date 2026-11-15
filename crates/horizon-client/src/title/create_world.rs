@@ -18,6 +18,9 @@ const TABS: [&str; 3] = [
 ];
 /// Difficulty ids, in the cycle button's order.
 pub const DIFFICULTIES: [&str; 4] = ["peaceful", "easy", "normal", "hard"];
+/// The id the keyboard focus takes while the tab row has it
+/// (`TabNavigationBar.setFocused`). The screen's buttons start at 20.
+pub(super) const TAB_ROW: u8 = 0;
 
 /// WorldCreationUiState beyond the name and seed.
 #[derive(Clone, Debug, PartialEq)]
@@ -633,6 +636,7 @@ impl Title {
         let right = x0 + tw * TABS.len() as f32;
         // TabNavigationBar: the tab under the mouse, else the open one, each a
         // GridLayoutTab with no extra narration. The screen adds it first.
+        let tab_row_focused = self.focused_button == Some(TAB_ROW);
         crate::widgets::narratable(|| {
             use crate::widgets::{ListKind, Narratable, Row};
             let tab = |i: usize| {
@@ -647,6 +651,7 @@ impl Title {
                 Some(tab(o.tab)),
                 [x0, 0.0, right - x0, TAB_BAR],
             )
+            .focused(tab_row_focused)
             .key(crate::widgets::key_of(&"create_world/tabs"))
             .order(-2)
         });
@@ -669,7 +674,9 @@ impl Title {
             let label = Text::translate(key, &[]);
             crate::widgets::record(&label.plain(), [x, 0.0, tw, TAB_BAR], true);
             crate::widgets::target_as([x, 0.0, tw, TAB_BAR], crate::widgets::Kind::Tab(selected));
-            let sprite = match (selected, ui::hovered(cursor, x, 0.0, tw, TAB_BAR)) {
+            let hovered =
+                ui::hovered(cursor, x, 0.0, tw, TAB_BAR) || (tab_row_focused && selected);
+            let sprite = match (selected, hovered) {
                 (true, true) => "gui/sprites/widget/tab_selected_highlighted",
                 (true, false) => "gui/sprites/widget/tab_selected",
                 (false, true) => "gui/sprites/widget/tab_highlighted",

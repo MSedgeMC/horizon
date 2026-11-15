@@ -4440,10 +4440,21 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             }
             Mode::Create { focus, options, .. } => {
                 let field_id = if options.tab == 1 { 1 } else { 0 };
-                if *focus != 2 {
-                    *focus = 2;
+                if self.focused_button == Some(create_world::TAB_ROW) {
+                    // The tab row is the screen's first widget: Tab leaves it for the
+                    // open tab's name field, Shift+Tab for the last button
+                    // (`TabNavigationBar.nextFocusPath`).
                     self.focused_button = if reverse {
                         enabled.last().copied()
+                    } else {
+                        None
+                    };
+                    *focus = if reverse { 2 } else { field_id };
+                } else if *focus != 2 {
+                    // Shift+Tab from a field steps back onto the tab row.
+                    *focus = 2;
+                    self.focused_button = if reverse {
+                        Some(create_world::TAB_ROW)
                     } else {
                         enabled.first().copied()
                     };
@@ -4453,6 +4464,9 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                             self.focused_button = Some(enabled[pos + 1]);
                         } else if reverse && pos > 0 {
                             self.focused_button = Some(enabled[pos - 1]);
+                        } else if !reverse {
+                            // Past the last button the focus wraps to the tab row.
+                            self.focused_button = Some(create_world::TAB_ROW);
                         } else {
                             self.focused_button = None;
                             *focus = field_id;
@@ -4462,7 +4476,7 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
                         *focus = field_id;
                     }
                 } else {
-                    *focus = field_id;
+                    self.focused_button = Some(create_world::TAB_ROW);
                 }
             }
             Mode::Edit { focused, .. } => {

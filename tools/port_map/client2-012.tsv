@@ -27,9 +27,9 @@ TabManager.setTabArea	skip:ui		tab area layout; create world computes the tab ro
 TabManager.setCurrentTab	port	crates/horizon-client/src/title.rs::Title::click	a click on a tab sets options.tab
 TabNavigationBar.arrangeElements	skip:ui		layout of the tab row
 TabNavigationBar.isMouseOver	port	crates/horizon-client/src/title/create_world.rs::tab_at	pointer over a tab
-TabNavigationBar.setFocused	missing		minor: the tab row cannot take keyboard focus
-TabNavigationBar.nextFocusPath	missing		minor: the Tab key never reaches the tab row
-TabNavigationBar.narrationPriority	inline	crates/horizon-client/src/screen_narrator.rs::Ctx::priority	the tab row is a tabs list recorded by create_world.rs::Title::draw_create; a hovered tab is Hovered, an unfocused, unhovered one None, and the row takes no keyboard focus so Focused is never reached
+TabNavigationBar.setFocused	port	crates/horizon-client/src/title.rs::Title::tab_dir	the Create New World tab row takes the keyboard focus (create_world::TAB_ROW) and narrates and highlights its open tab while it has it; gap: minor: the Realms configuration and world-creation tab rows do not
+TabNavigationBar.nextFocusPath	port	crates/horizon-client/src/title.rs::Title::tab_dir	Tab wraps from the last button onto the Create New World tab row and the next Tab enters the open tab field, Shift+Tab walking back the same order; gap: minor: only the Create New World row
+TabNavigationBar.narrationPriority	inline	crates/horizon-client/src/screen_narrator.rs::Ctx::priority	the tab row is a tabs list recorded by create_world.rs::Title::draw_create; a hovered tab is Hovered and the row is Focused while create_world::TAB_ROW holds the keyboard focus
 TabNavigationBar.updateWidgetNarration	port	crates/horizon-client/src/screen_narrator.rs::narrate	the tabs list's narration: gui.narrate.tab of the tab under the mouse else the open one, plus narration.tab_navigation.usage while the row has focus
 TabNavigationBar.narrateListElementPosition	inline	crates/horizon-client/src/screen_narrator.rs::narrate	narrator.position.tab with the tab's index and the tab count, in the same branch
 TabNavigationBar.extractWidgetRenderState	port	crates/horizon-client/src/title/create_world.rs::Title::draw_create	tab row drawn in draw_create
