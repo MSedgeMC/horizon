@@ -133,7 +133,7 @@ SideChainPartBlock.SideChainNeighbor.disconnectFromRight	port	crates/horizon-wor
 SideChainPartBlock.SideChainNeighbor.disconnectFromLeft	port	crates/horizon-world/src/level/shelf.rs::Part::disconnected_from_the_left	
 SignBlock.updateShape	port	crates/horizon-world/src/level/shapes.rs::Sim::update_shape_class	waterlogged water tick
 SignBlock.getFluidState	port	crates/horizon-world/src/registry_fluid.rs::RegistryFluidWorld::fluid_state	waterlogged state from block data
-SignBlock.otherPlayerIsEditingSign	missing		unsure: minor: no check that another player is editing the sign; sign_edit.rs tracks sign_editing per connection only
+SignBlock.otherPlayerIsEditingSign	port	crates/horizon-client/src/game/sign_edit.rs::other_player_is_editing_sign	the stored editor uuid against the acting player: an empty-hand open and dye, ink sac or honeycomb use are refused while another player holds the sign editor
 SignBlock.setPlacedBy	port	crates/horizon-client/src/game/use_hand.rs::Game::use_hand	gap: minor: the sign editor opens after a sign is placed; no allowed-editor player is stored
 SnifferEggBlock.onPlace	port	crates/horizon-world/src/level/hooks.rs::Sim::on_place	sniffer egg arm: moss boost, place event and the hatch timer
 SnowLayerBlock.isPathfindable	skip:data		path types come from the per-state path data (mobs/path.rs)
