@@ -101,7 +101,7 @@ ApplyBonusCount.UniformBonusCount.calculateNewCount	inline	crates/horizon-items/
 ApplyExplosionDecay.run	port	crates/horizon-items/src/items.rs::LootContext::modifiers	explosion_decay arm
 CopyBlockState.run	port	crates/horizon-items/src/items.rs::LootContext::modifiers	copy_state arm; copies the listed properties
 CopyBlockState.Builder	skip:java		builder (build, copy)
-CopyComponentsFunction.run	port	crates/horizon-client/src/game/spill.rs::Pending::record	gap: minor: copies only what spill.rs keeps for block entities (shulker, banner, names, heads, bees)
+CopyComponentsFunction.run	port	crates/horizon-client/src/game/spill.rs::Pending::record	copies the components spill.rs keeps for block entities (shulker, banner, names, heads, bees, copper golem statue names); decorated pot sherds are Pending::pot
 CopyComponentsFunction.Builder	skip:java		builder (build, exclude, include)
 CopyCustomDataFunction.run	missing		minor: no vanilla loot table or item modifier uses copy_custom_data
 CopyCustomDataFunction.copyData	skip:java		builder factory
