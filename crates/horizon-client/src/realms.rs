@@ -9910,8 +9910,9 @@ impl Screen {
                     total,
                     scroll.amount,
                 );
-                // `AbstractSelectionList.extractListItems`: what the list draws is clipped to
-                // its rectangle, so text never leaves the border.
+                // `AbstractSelectionList.extractWidgetRenderState` scissors the list items
+                // (`enableScissor` around `extractListItems`) to its rectangle, so text
+                // never leaves the border.
                 let first = batch.vertices.len();
                 let mut y = top - scroll.amount;
                 let mut rects: Vec<[f32; 4]> = Vec::new();
