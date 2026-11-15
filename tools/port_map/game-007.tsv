@@ -19,9 +19,9 @@ SteppedInterpolationHandler.InterpolationData.addStep	port	crates/horizon-world/
 SteppedInterpolationHandler.InterpolationData.addSteps	port	crates/horizon-world/src/stepped_interpolation.rs::add_steps	
 SteppedInterpolationHandler.InterpolationData.getInterpolationTicks	inline	crates/horizon-world/src/stepped_interpolation.rs::add_steps	the sum of the steps' ticks
 SteppedInterpolationHandler.InterpolationData.getNewPositionAndRotation	port	crates/horizon-world/src/stepped_interpolation.rs::new_position	
-SteppedInterpolationTracker.addStep	missing		minor: a LAN host never builds stepped paths; lan/entity.rs always sends a linear position, so guests interpolate each move over the update interval instead of replaying the host's step timing
-SteppedInterpolationTracker.updateTracking	missing		minor: same, the host keeps no tracked steps
-SteppedInterpolationTracker.getPositionPath	missing		minor: same, only PositionPath::Linear is sent
+SteppedInterpolationTracker.addStep	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::add_step	a bounced position (`sync_position`) becomes a step with the ticks since the last one, when any passed
+SteppedInterpolationTracker.updateTracking	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::send_changes	sendChanges counts the ticks since the last step and marks a bounce (`sync_position`) at once
+SteppedInterpolationTracker.getPositionPath	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::send_changes	a stepped path when any step was tracked, else a linear one; the tracked steps are cleared after the path is sent
 SulfurCubeArchetype.AttributeEntry.add	skip:data		archetype attribute modifiers are constants in mobs/sulfur_cube.rs ARCHETYPES
 SulfurCubeArchetype.AttributeEntry.multiply	skip:data		same table
 SulfurCubeArchetypes.bootstrap	skip:data		the 12 archetypes are the ARCHETYPES table in mobs/sulfur_cube.rs
@@ -77,7 +77,7 @@ AttributeMap.assignAllValues	missing		minor: the player is rebuilt from default 
 AttributeMap.assignBaseValues	missing		minor: base values changed by /attribute (max_health, speed) reset on respawn because the player's attributes are rebuilt
 AttributeMap.assignPermanentModifiers	missing		minor: permanent modifiers added by /attribute are lost on respawn out of the End
 AttributeMap.resetBaseValue	port	crates/horizon-world/src/attribute_map.rs::reset_base	live.rs reset_base for the player
-AttributeMap.apply	inline	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	gap: minor: of a mob's saved attributes only max_health, movement_speed, attack_damage, jump_strength bases and the follow range bonus are read; other bases and permanent modifiers are dropped, and a player's saved attributes are kept raw in player_extra but not applied on load
+AttributeMap.apply	inline	crates/horizon-client/src/entity_nbt.rs::mob_from_nbt	the bases the store models are read, and `saved_attributes::read_attribute_modifiers` applies every saved permanent modifier of those attributes (`AttributeInstance.apply`); unknown ids and a player's raw attributes are not applied
 AttributeSupplier.getAttributeInstance	port	crates/horizon-world/src/attributes/entity.rs::instance	EntityAttributes::instance
 AttributeSupplier.createInstance	port	crates/horizon-world/src/attributes/entity.rs::create	Catalog::create builds the entity's attributes from the type's default bases
 AttributeSupplier.Builder.create	skip:data		defaults come from the attribute catalog export (Catalog::from_json)
