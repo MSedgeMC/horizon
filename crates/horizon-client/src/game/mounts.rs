@@ -939,7 +939,7 @@ impl Game<'_> {
     fn jumps(species: Species) -> bool {
         equine::is_equine(species) || horizon_client::mobs::nautilus::is_nautilus(species)
     }
-    /// `LocalPlayer.jumpableVehicle`: a saddled mount that jumps (not a pig or a
+    /// `Player.jumpableVehicle`: a saddled mount that jumps (not a pig or a
     /// strider, which a saddle only steers).
     pub(super) fn jumpable_mount(&self) -> bool {
         self.mount_index()
