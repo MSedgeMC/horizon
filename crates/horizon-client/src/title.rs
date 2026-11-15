@@ -157,6 +157,8 @@ enum WorldToast {
     Failed(String),
     /// `SystemToast.onWorldAccessFailure`: the folder of a world that couldn't be locked.
     AccessFailure(String),
+    /// `SystemToast.onFileDropFailure`: how many dropped paths were not data packs.
+    FileDropFailure(usize),
 }
 impl WorldToast {
     fn text(&self) -> (String, String) {
@@ -176,6 +178,14 @@ impl WorldToast {
             Self::AccessFailure(folder) => (
                 lang::get_or("selectWorld.access_failure", "Failed to access world"),
                 folder.clone(),
+            ),
+            Self::FileDropFailure(count) => (
+                lang::get_or("gui.fileDropFailure.title", "File drop failed"),
+                translate(
+                    "gui.fileDropFailure.detail",
+                    "Couldn't add %s files",
+                    &[count],
+                ),
             ),
         }
     }
@@ -1064,21 +1074,33 @@ impl Title {
     /// the Create New World screen's data packs (the screen's watcher lists
     /// it within a second).
     pub fn drop_file(&mut self, path: std::path::PathBuf) {
-        let Mode::Create { options, .. } = &mut self.mode else {
-            return;
+        let dir = {
+            let Mode::Create { options, .. } = &mut self.mode else {
+                return;
+            };
+            if options.pack_dir.is_none() {
+                options.pack_dir = crate::datapack::temp_folder().ok();
+            }
+            options.pack_dir.clone()
         };
-        if options.pack_dir.is_none() {
-            options.pack_dir = crate::datapack::temp_folder().ok();
-        }
-        let Some(dir) = options.pack_dir.clone() else {
+        let Some(dir) = dir else {
+            self.failed_file_drop(&path);
             return;
         };
         if !crate::datapack::copy_pack(&path, &dir) {
-            log::warn!(
-                "Horizon: {} is not a data pack that could be copied",
-                path.display()
-            );
+            self.failed_file_drop(&path);
         }
+    }
+    /// `SystemToast.onFileDropFailure`: the drop could not join the data packs.
+    fn failed_file_drop(&mut self, path: &std::path::Path) {
+        log::warn!(
+            "Horizon: {} is not a data pack that could be copied",
+            path.display()
+        );
+        self.toast = Some((
+            crate::toasts::Slide::default(),
+            WorldToast::FileDropFailure(1),
+        ));
     }
     /// The world's data pack selection, for the game to reoffer.
     pub fn data_packs(&self) -> Vec<String> {
@@ -5041,6 +5063,38 @@ fn caret_field<'a>(
 #[cfg(test)]
 mod classic_tests {
     use super::*;
+
+    /// `SystemToast.onFileDropFailure`: a drop that is not a data pack (a text
+    /// file, not a zip or a folder with pack.mcmeta) leaves the create screen
+    /// alone and raises the failure toast, with the count of files it could
+    /// not add.
+    #[test]
+    fn a_drop_that_is_not_a_data_pack_raises_the_failure_toast() {
+        let mut title = Title::new(
+            PathBuf::new(),
+            Path::new("/nonexistent/horizon-test-resources"),
+        );
+        let mut options = WorldOptions::default();
+        options.pack_dir = Some(std::env::temp_dir());
+        title.mode = Mode::Create {
+            name: "New World".into(),
+            seed: String::new(),
+            creative: false,
+            focus: 0,
+            options,
+        };
+        let path = std::env::temp_dir().join("horizon-not-a-data-pack.txt");
+        std::fs::write(&path, b"not a data pack").unwrap();
+        title.drop_file(path.clone());
+        let _ = std::fs::remove_file(&path);
+        let Some((_, WorldToast::FileDropFailure(count))) = &title.toast else {
+            panic!("the failed drop raises a toast");
+        };
+        assert_eq!(*count, 1);
+        let (line, message) = title.toast.as_ref().unwrap().1.text();
+        assert!(!line.is_empty());
+        assert!(message.contains('1'), "{message}");
+    }
 
     /// Tab is how a keyboard player reaches the world list: from the search
     /// box it hands focus to the list (where the arrow keys pick a row and

@@ -62,7 +62,7 @@ SystemToast.height	inline	crates/horizon-client/src/toasts.rs::background	the to
 SystemToast.extractRenderState	port	crates/horizon-client/src/toasts.rs::SystemToast::draw	gap: minor: one line per title and message, no wrapping
 SystemToast.extractTextLines	inline	crates/horizon-client/src/toasts.rs::SystemToast::draw	text lines drawn in draw
 SystemToast.recalculateWidth	inline	crates/horizon-client/src/toasts.rs::SystemToast::draw	width from the widest line, at least 160, plus 30
-SystemToast.onFileDropFailure	missing		gap: minor: a dropped file that is not a data pack is only logged (title.rs::Title::drop_file); no failure toast
+SystemToast.onFileDropFailure	port	crates/horizon-client/src/title.rs::Title::drop_file	the title's system toast carries gui.fileDropFailure.title and the dropped count; a file that is not a zip or pack folder asks for it
 SystemToast.onChunkLoadFailure	port	crates/horizon-client/src/chunk_io.rs::load_failure_toast	the chunk.toast.loadFailure toast with its check-log line
 SystemToast.onChunkSaveFailure	port	crates/horizon-client/src/chunk_io.rs::save_failure_toast	the chunk.toast.saveFailure toast with its check-log line
 ToastManager.findFreeSlotsIndex	port	crates/horizon-client/src/game/advancements.rs::Game::draw_toasts	gap: minor: one 32 px slot per toast; no search for consecutive slots
