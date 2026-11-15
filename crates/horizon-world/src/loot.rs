@@ -1913,6 +1913,73 @@ impl<R: RandomSource> Context<'_, R> {
                     stack.components.push((id.clone(), value.clone()));
                 }
             }
+            // SetAttributesFunction: `replace` starts from an empty component
+            // (the codec's default), then each modifier draws one of its slot
+            // groups (`Util.getRandom`, which draws even for one) and its
+            // amount, in that order. `ItemAttributeModifiers.withModifierAdded`
+            // drops an entry with the same attribute and id, whatever its slot,
+            // before appending the new one.
+            "minecraft:set_attributes" => {
+                let id = "minecraft:attribute_modifiers";
+                let mut entries = stack
+                    .components
+                    .iter()
+                    .find(|(k, _)| k == id)
+                    .and_then(|(_, v)| v.as_array().cloned())
+                    .unwrap_or_default();
+                if f["replace"].as_bool().unwrap_or(true) {
+                    entries.clear();
+                }
+                for modifier in f["modifiers"].as_array().into_iter().flatten() {
+                    let (Some(attribute), Some(modifier_id)) =
+                        (modifier["attribute"].as_str(), modifier["id"].as_str())
+                    else {
+                        continue;
+                    };
+                    // `slot` is vanilla's compact list: one name or several.
+                    let slots: Vec<&str> = match &modifier["slot"] {
+                        Value::String(slot) => vec![slot.as_str()],
+                        Value::Array(slots) => slots.iter().filter_map(Value::as_str).collect(),
+                        _ => Vec::new(),
+                    };
+                    let slot = if slots.is_empty() {
+                        "any"
+                    } else {
+                        slots[self.random.next_int_bound(slots.len() as i32).unwrap_or(0) as usize]
+                    };
+                    let amount = self.float(&modifier["amount"]);
+                    let mut entry = serde_json::Map::new();
+                    entry.insert(
+                        "type".to_owned(),
+                        Value::from(crate::datafix::dynamic::namespaced(attribute)),
+                    );
+                    entry.insert(
+                        "id".to_owned(),
+                        Value::from(crate::datafix::dynamic::namespaced(modifier_id)),
+                    );
+                    entry.insert("amount".to_owned(), Value::from(f64::from(amount)));
+                    entry.insert(
+                        "operation".to_owned(),
+                        Value::from(modifier["operation"].as_str().unwrap_or("add_value")),
+                    );
+                    if slot != "any" {
+                        entry.insert("slot".to_owned(), Value::from(slot));
+                    }
+                    let same = |entry: &Value| {
+                        crate::datafix::dynamic::namespaced(entry["type"].as_str().unwrap_or(""))
+                            == crate::datafix::dynamic::namespaced(attribute)
+                            && crate::datafix::dynamic::namespaced(
+                                entry["id"].as_str().unwrap_or(""),
+                            ) == crate::datafix::dynamic::namespaced(modifier_id)
+                    };
+                    entries.retain(|e| !same(e));
+                    entries.push(Value::Object(entry));
+                }
+                stack.components.retain(|(k, _)| k != id);
+                stack
+                    .components
+                    .push((id.to_owned(), Value::Array(entries)));
+            }
             // A mod's own kind: the hook changes the stack.
             k if k.contains(':') && !k.starts_with("minecraft:") => {
                 native_loot_function(k, f, &self.native_ctx(), &mut stack);
@@ -2587,6 +2654,88 @@ mod namespace_tests {
                 "pages": [{"raw": "page two"}],
             })
         );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// `SetAttributesFunction`: `replace` starts from an empty component, a
+    /// later modifier with the same attribute and id replaces the earlier one
+    /// whatever its slot, and each slot and amount is drawn from its provider.
+    #[test]
+    fn set_attributes_writes_the_modifier_component() {
+        let root =
+            std::env::temp_dir().join(format!("horizon-loot-attributes-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let table = r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:diamond_sword",
+            "modifier": [
+                {"type": "minecraft:set_attributes", "modifiers": [
+                    {"id": "minecraft:base_attack_damage", "attribute": "minecraft:attack_damage", "operation": "add_value", "amount": 2.5, "slot": "mainhand"},
+                    {"id": "minecraft:sprint_reach", "attribute": "minecraft:block_interaction_range", "operation": "add_multiplied_total", "amount": {"type": "minecraft:uniform", "min": 1.0, "max": 3.0}, "slot": ["mainhand", "offhand"]}
+                ]},
+                {"type": "minecraft:set_attributes", "replace": false, "modifiers": [
+                    {"id": "minecraft:base_attack_damage", "attribute": "minecraft:attack_damage", "operation": "add_multiplied_base", "amount": 0.5, "slot": "chest"}
+                ]}
+            ]}]}]}"#;
+        let files = [
+            ("items.json", r#"{"minecraft:diamond_sword": {}}"#),
+            ("data/minecraft/loot_table/chests/attributes.json", table),
+        ];
+        for (name, text) in files {
+            let path = root.join(name);
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, text).unwrap();
+        }
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/attributes", 11, 27, None);
+        let sword = filled.iter().flatten().next().expect("a sword");
+        let component: Vec<_> = sword
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:attribute_modifiers")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", sword.components);
+        let entries = component[0].1.as_array().expect("a modifier list");
+        assert_eq!(entries.len(), 2, "{entries:?}");
+        // The later base_attack_damage replaced the first, whatever its slot.
+        let base = entries
+            .iter()
+            .find(|m| m["id"] == "minecraft:base_attack_damage")
+            .expect("the base attack modifier");
+        assert_eq!(base["type"].as_str(), Some("minecraft:attack_damage"));
+        assert_eq!(base["operation"].as_str(), Some("add_multiplied_base"));
+        assert_eq!(base["amount"].as_f64(), Some(0.5));
+        assert_eq!(base["slot"].as_str(), Some("chest"));
+        // The reach modifier's slot and amount came from their providers.
+        let reach = entries
+            .iter()
+            .find(|m| m["id"] == "minecraft:sprint_reach")
+            .expect("the reach modifier");
+        assert_eq!(
+            reach["type"].as_str(),
+            Some("minecraft:block_interaction_range")
+        );
+        assert_eq!(reach["operation"].as_str(), Some("add_multiplied_total"));
+        assert!(matches!(
+            reach["slot"].as_str(),
+            Some("mainhand" | "offhand")
+        ));
+        assert!((1.0..=3.0).contains(&reach["amount"].as_f64().unwrap()));
+        // An empty `modifiers` list still writes the (empty) component.
+        fs::write(
+            root.join("data/minecraft/loot_table/chests/attributes.json"),
+            r#"{"pools": [{"rolls": 1, "entries": [{"type": "minecraft:item", "name": "minecraft:diamond_sword",
+                "modifier": [{"type": "minecraft:set_attributes", "modifiers": []}]}]}]}"#,
+        )
+        .unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE).unwrap();
+        let filled = data.fill("minecraft:chests/attributes", 11, 27, None);
+        let sword = filled.iter().flatten().next().expect("a sword");
+        let component: Vec<_> = sword
+            .components
+            .iter()
+            .filter(|(k, _)| k == "minecraft:attribute_modifiers")
+            .collect();
+        assert_eq!(component.len(), 1, "{:?}", sword.components);
+        assert_eq!(component[0].1, serde_json::json!([]));
         let _ = fs::remove_dir_all(&root);
     }
 

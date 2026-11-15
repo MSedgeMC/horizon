@@ -29,7 +29,7 @@ DeathProtection.applyEffects	port	crates/horizon-client/src/game/totem.rs::Game:
 GrowableMutableContainer.replaceSlotItems	inline	crates/horizon-items/src/bundle.rs::Contents::try_insert	gap: minor: the loop that adds slots while items remain is not ported; bundles insert one stack at a time
 ItemAttributeModifiers.compute	inline	crates/horizon-world/src/attributes/mod.rs::Instance::value	item modifiers are added to the attribute instance and summed by operation; slot filtering is in the equipment code
 ItemAttributeModifiers.forEach	inline	crates/horizon-client/src/item_tooltip.rs::attribute_lines	tooltip lines per slot group
-ItemAttributeModifiers.withModifierAdded	missing		minor: the loot set_attributes function (SetAttributesFunction) is not ported; no loot path adds a modifier to a stack
+ItemAttributeModifiers.withModifierAdded	inline	crates/horizon-world/src/loot.rs::Context::run	the set_attributes arm drops an entry with the same attribute and id before appending the new one, whatever its slot
 ItemAttributeModifiers.Builder.add	skip:java		
 ItemAttributeModifiers.Entry.matches	inline	crates/horizon-world/src/attributes/mod.rs::Instance::add_or_replace_permanent	modifier identity by id within one attribute
 OminousBottleAmplifier.addToTooltip	port	crates/horizon-client/src/item_tooltip.rs::ominous_bottle_line	the Bad Omen line of an ominous bottle, listed in the stack tooltip (stack_tooltip_lines)

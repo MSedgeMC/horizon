@@ -120,7 +120,7 @@ LootItemConditionalFunction.commonFields	skip:java		codec fields
 LootItemFunction.decorate	port	crates/horizon-world/src/loot.rs::Context::modify	function applied to a drop
 ModifyContainerContents.run	missing		minor: no vanilla loot table uses modify_contents
 SequenceFunction.compose	port	crates/horizon-world/src/loot.rs::Context::run	sequence arm
-SetAttributesFunction	missing		minor: set_attributes is not ported; no vanilla loot table uses it
+SetAttributesFunction	port	crates/horizon-world/src/loot.rs::Context::run	the set_attributes arm: replace starts from an empty component, then each modifier draws its slot and amount and replaces an entry with the same attribute and id
 SetAttributesFunction.ModifierBuilder.build	skip:java		builder
 SetBannerPatternFunction.run	port	crates/horizon-world/src/loot.rs::Context::run	the set_banner_pattern arm: the table's layers replace the component's list, or with append follow it; `crates/horizon-items/src/item_data.rs::StackData::set_loot_component` dresses the banner from the component
 SetBannerPatternFunction.Builder	skip:java		builder
