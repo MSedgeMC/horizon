@@ -90,7 +90,7 @@ impl Rotation {
     pub fn get_rotated(self, other: Self) -> Self {
         Self::ALL[(self as usize + other as usize) % 4]
     }
-    /// `Rotation.name()`, as structure pieces save it.
+    /// `Rotation.getSerializedName()`, as structure pieces save it.
     pub fn saved_name(self) -> &'static str {
         match self {
             Self::None => "NONE",
@@ -107,7 +107,7 @@ pub enum Mirror {
     FrontBack,
 }
 impl Mirror {
-    /// `Mirror.name()`, as structure pieces save it.
+    /// `Mirror.getSerializedName()`, as structure pieces save it.
     pub fn saved_name(self) -> &'static str {
         match self {
             Self::None => "NONE",

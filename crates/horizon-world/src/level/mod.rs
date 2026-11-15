@@ -1298,7 +1298,7 @@ impl Behaviours {
         let block = self.block(sim.state(pos));
         sim.update_neighbour_for_output_signal(pos, block);
     }
-    /// `Level.scheduleTick(pos, block, delay)` for the block at `pos`.
+    /// `ScheduledTickAccess.scheduleTick(pos, block, delay)` for the block at `pos`.
     pub fn schedule_tick<L: LevelAccess + ?Sized>(
         &self,
         level: &mut L,
