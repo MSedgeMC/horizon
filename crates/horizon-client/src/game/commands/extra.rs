@@ -1313,7 +1313,7 @@ impl Game<'_> {
             }
         }
     }
-    /// `ServerPlayer.closeContainer` for every target of `/dialog clear`.
+    /// `DialogCommand.clearDialog` for every target of `/dialog clear`.
     fn clear_dialog_to(&mut self, targets: &[Target]) {
         let packet = C::ClearDialog(Empty);
         for &t in targets {

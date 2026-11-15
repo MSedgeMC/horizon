@@ -3531,7 +3531,7 @@ impl Game<'_> {
             return hit;
         }
         let (origin, dir) = self.aim()?;
-        // Minecraft.pick: the block ray runs out to the larger of the two interaction ranges; filterHitResult then drops a hit past the block's.
+        // LocalPlayer.pick: the block ray runs out to the larger of the two interaction ranges; filterHitResult then drops a hit past the block's.
         self.clip_ray(origin, dir, self.block_reach.max(self.entity_reach))
             .filter(|hit| {
                 let distance: [f64; 3] = std::array::from_fn(|i| hit.point[i] - origin[i]);
@@ -3539,7 +3539,7 @@ impl Game<'_> {
             })
     }
     /// The same traversal without `filterHitResult`: the block hit that
-    /// bounds the entity ray in `Minecraft.pick`, out to the larger
+    /// bounds the entity ray in `LocalPlayer.pick`, out to the larger
     /// interaction range — a wall between the two still hides the entity.
     fn pick_unfiltered(&self) -> Option<Hit> {
         if let Some(hit) = self.forced_hit {
