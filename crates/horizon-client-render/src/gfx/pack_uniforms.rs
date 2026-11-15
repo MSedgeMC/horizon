@@ -265,6 +265,9 @@ pub const NAMES: &[&str] = &[
     "frameTimeCounter",
     "viewWidth",
     "viewHeight",
+    "screenSize",
+    "fsrScreenSize",
+    "fsrRenderScale",
     "aspectRatio",
     "near",
     "far",
@@ -950,6 +953,11 @@ impl FrameUniforms {
                 "frameTimeCounter" => Value::f(&[seconds]),
                 "viewWidth" => Value::f(&[size[0] as f32]),
                 "viewHeight" => Value::f(&[size[1] as f32]),
+                // A pack's own upscaler (#16757): the size its programs draw into, and no
+                // inner scale, since the engine renders the world at `window / upscaling`
+                // and stretches its copy itself.
+                "screenSize" | "fsrScreenSize" => Value::f(&[size[0] as f32, size[1] as f32]),
+                "fsrRenderScale" => Value::f(&[1.0]),
                 "aspectRatio" => Value::f(&[aspect]),
                 "near" => Value::f(&[0.05]),
                 // The chunk render distance, not the distant terrain's reach.
@@ -1135,7 +1143,7 @@ fn components(name: &str) -> usize {
         | "fogColor"
         | "skyColor"
         | "endFlashPosition" => 3,
-        "eyeBrightness" | "eyeBrightnessSmooth" | "atlasSize" => 2,
+        "eyeBrightness" | "eyeBrightnessSmooth" | "atlasSize" | "screenSize" | "fsrScreenSize" => 2,
         "entityColor" => 4,
         // Horizon's own vec4s, a dynamic light and half a boat's water patch box; their counts
         // are ints.
@@ -2636,6 +2644,18 @@ pub(super) mod initial_history_tests {
                 float(current).map(f32::to_bits)
             );
         }
+    }
+
+    /// #16757: a pack's own temporal upscaler reads the size its programs draw into and a
+    /// scale of 1, since the engine renders the world smaller and stretches its copy itself.
+    #[test]
+    fn an_up_scaler_reads_the_pack_draw_size_with_no_inner_scale() {
+        let hud = HudBatch::new([1280, 720]);
+        let mut u = FrameUniforms::default();
+        u.update(&frame(&hud), &PackInputs::default(), [640, 360]);
+        assert_eq!(float(&u, "screenSize")[..2], [640.0, 360.0]);
+        assert_eq!(float(&u, "fsrScreenSize")[..2], [640.0, 360.0]);
+        assert_eq!(float(&u, "fsrRenderScale")[0], 1.0);
     }
 
     /// Iris 1.11.7 (probe pack): `ambientLight` is the dimension type's (0.1 in the Nether,
