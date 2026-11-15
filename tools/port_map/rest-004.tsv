@@ -118,14 +118,14 @@ LocalPlayer.sendChanges	port	crates/horizon-client/src/game/remote.rs::Game::rem
 LocalPlayer.getCurrentMood	inline	crates/horizon-client/src/ambience.rs::Ambience::tick_biome	gap: minor: moodiness is built here; no getter is exposed
 LocalPlayer.sendIsSprintingIfNeeded	inline	crates/horizon-client/src/game/remote.rs::Game::remote_send_state	sprint start and stop commands
 LocalPlayer.closeContainer	port	crates/horizon-client/src/game/remote.rs::Game::remote_close_container	
-LocalPlayer.isSuppressingSlidingDownLadder	port	crates/horizon-client/src/motion.rs::MotionWorld::suppressing_ladder_slide	gap: minor: sneak only; vanilla also requires not flying
+LocalPlayer.isSuppressingSlidingDownLadder	port	crates/horizon-client/src/motion.rs::MotionWorld::suppressing_ladder_slide	sneak, and not the local player while flying
 LocalPlayer.canSpawnSprintParticle	port	crates/horizon-client/src/game/client_ambient.rs::Game::sprint_dust	gap: minor: the test there is Entity.canSpawnSprintParticle's (sprinting, not spectator, not crouching, alive, out of water and lava) without the !abilities.flying LocalPlayer adds
 LocalPlayer.sendRidingJump	port	crates/horizon-client/src/game/remote_vehicles.rs::riding_jump	START_RIDING_JUMP carrying the jump scale
 LocalPlayer.removeRecipeHighlight	port	crates/horizon-client/src/recipe_book.rs::Settings::remove_highlight	gap: minor: the seen-recipe packet is not sent, so the server keeps the highlight
 LocalPlayer.moveTowardsClosestSpace	port	crates/horizon-client/src/game.rs::Game::closest_space_nudge	the four body corners, 0.1 towards the nearest free side on its axis, a later corner overwriting an earlier one
 LocalPlayer.suffocatesAt	inline	crates/horizon-client/src/game.rs::closest_space_nudge	the suffocates_at closure tests a full collision cube that is also a full render cube, over the body's Y span
 LocalPlayer.setExperienceDisplayStartTickToTickCount	inline	crates/horizon-client/src/game/locator_bar.rs::Game::track_experience_display	
-LocalPlayer.handleEntityEvent	port	crates/horizon-client/src/game/remote.rs::Game::handle_packet	gap: minor: only the permission events 24 to 28 of the local player
+LocalPlayer.handleEntityEvent	port	crates/horizon-client/src/game/remote.rs::Game::handle_packet	the arms Horizon has: firework explosion, fang, boat, TNT-cart fuse 70, arrow puff 0, spear hit 2, reduced debug info 22/23, permissions 24 to 28 and ravager roar 69; other events are ignored
 LocalPlayer.startUsingItem	port	crates/horizon-client/src/game/use_hand.rs::Game::use_hand	
 LocalPlayer.isSlowDueToUsingItem	port	crates/horizon-client/src/game.rs::Game::sync_player_body	the used item's UseEffects.canSprint reaches sprint's slow_item, which stops a sprint starting and ends one
 LocalPlayer.onSyncedDataUpdated	inline	crates/horizon-client/src/game/music.rs::Game::tick_sound_engine	starting to glide starts the elytra flying sound; the living flags are local state on this side
@@ -134,7 +134,7 @@ LocalPlayer.openTextEdit	port	crates/horizon-client/src/game/sign_edit.rs::Game:
 LocalPlayer.modifyInputSpeedForSquareMovement	port	crates/horizon-client-input/src/input.rs::square_movement	
 LocalPlayer.distanceToUnitSquare	inline	crates/horizon-client-input/src/input.rs::square_movement	
 LocalPlayer.resetPos	inline	crates/horizon-client/src/game/screens.rs::Game::respawn_player	gap: minor: no free-height search, pose, rotation or velocity reset
-LocalPlayer.shouldStopRunSprinting	port	crates/horizon-client/src/sprint.rs::Conditions::should_stop	gap: player: minor_horizontal_collision is always false, so wall slides stop the sprint
+LocalPlayer.shouldStopRunSprinting	port	crates/horizon-client/src/sprint.rs::Conditions::should_stop	minor_horizontal_collision comes from the move's minor collision (Entity.minorHorizontalCollision), so a wall slide keeps the sprint
 LocalPlayer.shouldStopSwimSprinting	port	crates/horizon-client/src/sprint.rs::Conditions::should_stop	
 LocalPlayer.tickDeath	missing		minor: unsure: the dead local player is not removed after 20 ticks; the death screen flow covers it
 LocalPlayer.rideTick	port	crates/horizon-client/src/game/remote_vehicles.rs::Game::remote_ride	the keys are latched into the boat's input and the seat follows its turn
