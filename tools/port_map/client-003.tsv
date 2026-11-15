@@ -1,5 +1,5 @@
 ServerData.write	port	crates/horizon-protocol/src/servers.rs::ServerEntry::to_tag	writes name, ip, icon, acceptTextures and acceptedCodeOfConduct when it is not 0
-ServerData.read	port	crates/horizon-protocol/src/servers.rs::ServerEntry::from_tag	acceptedCodeOfConduct is read as its int hash (0 when absent or not an int), with the name, ip, icon and acceptTextures
+ServerData.read	port	crates/horizon-protocol/src/servers.rs::ServerEntry::from_tag	acceptedCodeOfConduct is read as its int hash (0 when absent or not an int), with the name, ip and icon; acceptTextures is Codec.BOOL over any numeric tag (its double value is not zero) and hidden is CompoundTag.getBooleanOr (the numeric tag byte value), not only a byte
 ServerData.copyNameIconFrom	inline	crates/horizon-client/src/multiplayer.rs::Screen::click	the Edit save writes name, ip and pack setting and keeps the icon
 ServerData.copyFrom	inline	crates/horizon-client/src/multiplayer.rs::Screen::click	Edit opens the form pre-filled from the entry (name, ip, pack setting)
 ServerData.validateIcon	port	crates/horizon-client/src/multiplayer.rs::valid_icon	keeps any PNG up to 1024x1024 in servers.dat; FaviconTexture.upload's 64x64 is icon_pixels, used for drawing only

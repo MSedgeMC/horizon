@@ -5,6 +5,34 @@
 use horizon_world::nbt::{self, JavaString, NamedTag, Tag};
 use std::path::Path;
 
+/// NbtOps.getBooleanValue for Codec.BOOL: any numeric tag is true when its
+/// double value is not zero (so a float, int or long is a boolean too).
+fn truthy(tag: &Tag) -> Option<bool> {
+    let value = match tag {
+        Tag::Byte(v) => f64::from(*v),
+        Tag::Short(v) => f64::from(*v),
+        Tag::Int(v) => f64::from(*v),
+        Tag::Long(v) => *v as f64,
+        Tag::Float(bits) => f64::from(f32::from_bits(*bits)),
+        Tag::Double(bits) => f64::from_bits(*bits),
+        _ => return None,
+    };
+    Some(value != 0.0)
+}
+/// NumericTag.byteValue: a short, int or long truncates to a byte, a float
+/// or double floors and masks it to 0xFF first.
+fn byte_value(tag: &Tag) -> Option<i8> {
+    Some(match tag {
+        Tag::Byte(v) => *v,
+        Tag::Short(v) => *v as i8,
+        Tag::Int(v) => *v as i8,
+        Tag::Long(v) => *v as i8,
+        Tag::Float(bits) => (f32::from_bits(*bits).floor() as i64 & 0xFF) as u8 as i8,
+        Tag::Double(bits) => (f64::from_bits(*bits).floor() as i64 & 0xFF) as u8 as i8,
+        _ => return None,
+    })
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct ServerEntry {
     pub name: String,
@@ -55,10 +83,7 @@ impl ServerEntry {
             name: string("name").unwrap_or_default(),
             ip: string("ip")?,
             icon: string("icon"),
-            accept_textures: match tag.get("acceptTextures") {
-                Some(Tag::Byte(b)) => Some(*b != 0),
-                _ => None,
-            },
+            accept_textures: tag.get("acceptTextures").and_then(truthy),
             accepted_code_of_conduct: match tag.get("acceptedCodeOfConduct") {
                 Some(Tag::Int(hash)) => *hash,
                 _ => 0,
@@ -93,14 +118,8 @@ pub fn load_all(path: &Path) -> (Vec<ServerEntry>, Vec<ServerEntry>) {
             let Some(entry) = ServerEntry::from_tag(t) else {
                 continue;
             };
-            // CompoundTag.getBooleanOr("hidden", false): any number but zero.
-            let is_hidden = match t.get("hidden") {
-                Some(Tag::Byte(b)) => *b != 0,
-                Some(Tag::Short(n)) => *n as i8 != 0,
-                Some(Tag::Int(n)) => *n as i8 != 0,
-                Some(Tag::Long(n)) => *n as i8 != 0,
-                _ => false,
-            };
+            // CompoundTag.getBooleanOr("hidden", false): the tag's byte value.
+            let is_hidden = t.get("hidden").and_then(byte_value).is_some_and(|b| b != 0);
             if is_hidden {
                 hidden.push(entry);
             } else {
@@ -343,6 +362,61 @@ mod tests {
         std::fs::write(&path, b"not nbt").unwrap();
         assert!(prepend(&path, &ServerEntry::new("Top", "c.example")).is_err());
         assert_eq!(std::fs::read(&path).unwrap(), b"not nbt");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn servers_dat_booleans_take_any_numeric_tag() {
+        let dir = std::env::temp_dir().join(format!("horizon-numeric-bool-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("servers.dat");
+        let entry = |name: &str, ip: &str, accept: Tag, hidden: Option<Tag>| {
+            let mut fields = vec![
+                ("name", Tag::String(JavaString::from(name))),
+                ("ip", Tag::String(JavaString::from(ip))),
+                ("acceptTextures", accept),
+            ];
+            if let Some(hidden) = hidden {
+                fields.push(("hidden", hidden));
+            }
+            Tag::compound(fields)
+        };
+        let root = NamedTag {
+            name: JavaString::from(""),
+            tag: Tag::compound([(
+                "servers",
+                Tag::List(vec![
+                    entry("int on", "a.example", Tag::Int(1), None),
+                    entry(
+                        "float off",
+                        "b.example",
+                        Tag::Float(0.0f32.to_bits()),
+                        Some(Tag::Float(2.5f32.to_bits())),
+                    ),
+                    entry(
+                        "double on",
+                        "c.example",
+                        Tag::Double(3.5f64.to_bits()),
+                        None,
+                    ),
+                    entry(
+                        "string",
+                        "d.example",
+                        Tag::String(JavaString::from("x")),
+                        None,
+                    ),
+                ]),
+            )]),
+        };
+        write(&path, &root).unwrap();
+        let (shown, hidden) = load_all(&path);
+        let names = |list: &[ServerEntry]| list.iter().map(|e| e.name.clone()).collect::<Vec<_>>();
+        assert_eq!(names(&shown), ["int on", "double on", "string"]);
+        assert_eq!(names(&hidden), ["float off"]);
+        assert_eq!(shown[0].accept_textures, Some(true));
+        assert_eq!(shown[1].accept_textures, Some(true));
+        assert_eq!(shown[2].accept_textures, None);
+        assert_eq!(hidden[0].accept_textures, Some(false));
         std::fs::remove_dir_all(dir).unwrap();
     }
 
