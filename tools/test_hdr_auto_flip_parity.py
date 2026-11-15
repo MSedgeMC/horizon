@@ -5,8 +5,7 @@ One game runs offscreen on the float frame (HORIZON_HDR_OUTPUT=pq) with HDR on A
 HORIZON_STILL=1. No HDR display is needed: HORIZON_HDR_DISPLAY names a file that says what the system reports for the
 display, `on` or `off`, which the game reads every two seconds as it reads the system. The file starts at `on`, turns
 `off`, then `on` again, and the scenes are shot in each state. A second game starts with the file at `off`. A third
-flips as the first under the example pack (golden_hour) with flat draws on (HORIZON_FLAT_DRAWS=1),
-where a Horizon pack lays solid terrain out wide instead of compact (`packed_layout`).
+flips as the first under the example pack (golden_hour) with flat draws on (HORIZON_FLAT_DRAWS=1).
 
 It fails unless:
 - HDR output follows the file: the shots have their -hdr.png while it says `on`, and none while it says `off`;
@@ -14,15 +13,14 @@ It fails unless:
 - no section was meshed again by either flip (`meshed_sections` of horizon-ctl status), and as many stay resident;
 - the pictures after on -> off -> on are the first ones, pixel for pixel, the -hdr.png too;
 - the pictures while `off` are those of the game that started at `off`;
-- under the pack, the same, but against no game started at `off`; and the pack ran: solid terrain is laid out wide,
-  and its pictures differ from the first game's.
+- under the pack, the same, but against no game started at `off`; and the pack ran: its log says so, and its
+  pictures differ from the first game's.
 
 Horizon's own feature: there is no vanilla oracle, and the pictures compared are all this build's.
 
   test_hdr_auto_flip_parity.py [--bin-dir DIR] [--resources DIR] [-j N]
 """
 import argparse
-import json
 import os
 import shutil
 import sys
@@ -93,8 +91,6 @@ def session(name, bin_dir, out, env_base, args, flips, pack=None):
                 counts.append(flip(game, display, to))
             for scene in SCENES:
                 identity.shoot_named(game, out, f'{name}.{n}', scene)
-        lab.write_json(out / f'{name}.layout.json', {'packed_layout': game.ctl('status')['renderer']['packed_layout'],
-                                                     'flat': game.ctl('section-draws')['flat']})
         (out / f'{name}.log').write_text(str(game.ctl('logs', '--lines', '4000', check=False)), encoding='utf-8')
     finally:
         game.quit()
@@ -130,14 +126,12 @@ def checks(out, name, counts):
 
 
 def pack_ran(out):
-    """That the pack drew: solid terrain laid out wide, as for a Horizon pack, and pictures unlike the first game's."""
+    """That the pack drew: the game loaded it, and pictures unlike the first game's. The layout is no tell: since
+    Horizon's own packs read the compact arena records (#16142, #16248, #16257) it stays compact under this one."""
     problems = []
-    layout = json.loads((out / 'pack.layout.json').read_text())
-    # Without flat draws (lavapipe) solid terrain is wide with or without a pack, so only the pictures tell.
-    if not layout['flat']:
-        print('pack: no flat draws on this device: the wide layout is not checked, only the pictures')
-    elif layout['packed_layout'][0]:
-        problems.append('pack: solid terrain stayed compact: no Horizon pack ran')
+    log = (out / 'pack.log').read_text(encoding='utf-8')
+    if f'shader pack {PACK}' not in log:
+        problems.append(f'pack: {PACK} did not load: no Horizon pack ran')
     for n in range(3):
         for scene in SCENES:
             for suffix in ('.png', '-hdr.png'):
