@@ -6485,6 +6485,10 @@ pub fn apply_item_components(m: &mut Mob, stack: &crate::items::ItemStack) {
         crate::mobs::Species::Llama | crate::mobs::Species::TraderLlama => {
             (Some("minecraft:llama/variant"), None)
         }
+        // Parrot and Rabbit.applyImplicitComponents: `setVariant` from the
+        // component alone, so a spawn egg carrying one hatches that variant.
+        crate::mobs::Species::Parrot => (Some("minecraft:parrot/variant"), None),
+        crate::mobs::Species::Rabbit => (Some("minecraft:rabbit/variant"), None),
         _ => (None, None),
     };
     if let Some(name) = variant.and_then(|id| text(components.other(id))) {
@@ -7690,6 +7694,62 @@ mod item_component_tests {
         let mut nautilus = spawn("minecraft:zombie_nautilus", 4);
         apply_item_components(&mut nautilus, &egg);
         assert_eq!(nautilus.extra.variant, 1, "minecraft:warm, not temperate");
+    }
+
+    /// `Parrot.applyImplicitComponents` and
+    /// `Rabbit.applyImplicitComponents`: the variant component alone decides
+    /// the mob (`setVariant` from the egg), and the mob reports it back. The
+    /// rabbit's `evil` id is 99, not a variant index.
+    #[test]
+    fn a_parrot_or_rabbit_spawn_egg_picks_its_variant_component() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../.local/horizon-client")
+            .join(horizon_core::VANILLA_VERSION);
+        if !root.join("items.json").exists() {
+            return;
+        }
+        let data = crate::mobs::MobTypes::load(&root).unwrap();
+        let spawn = |kind: &str, id: u32| {
+            Mob::new(
+                id,
+                Arc::new(data.types[kind].clone()),
+                Vec3::new(0.0, 4.0, 0.0),
+                0.0,
+            )
+        };
+        // A parrot's finalizeSpawn rolls one of the five variants; gray is 4.
+        let mut parrot = spawn("minecraft:parrot", 1);
+        parrot.extra.variant = 0;
+        let mut egg = crate::items::ItemStack::new("minecraft:parrot_spawn_egg", 1);
+        egg.data_mut()
+            .set_other("minecraft:parrot/variant", Some(string("minecraft:gray")));
+        apply_item_components(&mut parrot, &egg);
+        assert_eq!(
+            parrot.extra.variant, 4,
+            "gray, not the red_blue it started as"
+        );
+        assert_eq!(
+            crate::mobs::finalize::variant_component(&parrot),
+            Some(("minecraft:parrot/variant", "minecraft:gray".to_owned()))
+        );
+        // A rabbit the spawn left brown; `evil` is the killer bunny's id.
+        let mut rabbit = spawn("minecraft:rabbit", 2);
+        rabbit.extra.variant = 0;
+        let mut egg = crate::items::ItemStack::new("minecraft:rabbit_spawn_egg", 1);
+        egg.data_mut()
+            .set_other("minecraft:rabbit/variant", Some(string("minecraft:evil")));
+        apply_item_components(&mut rabbit, &egg);
+        assert_eq!(rabbit.extra.variant, 99);
+        assert_eq!(
+            crate::mobs::finalize::variant_component(&rabbit),
+            Some(("minecraft:rabbit/variant", "minecraft:evil".to_owned()))
+        );
+        // A normal rabbit variant maps to its own enum id, not its position
+        // among the six contiguous names alone.
+        egg.data_mut()
+            .set_other("minecraft:rabbit/variant", Some(string("minecraft:white")));
+        apply_item_components(&mut rabbit, &egg);
+        assert_eq!(rabbit.extra.variant, 1);
     }
 
     /// `Fox.applyImplicitComponent` and `Frog.applyImplicitComponent`: the

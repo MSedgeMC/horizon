@@ -63,8 +63,8 @@ Parrot.isFlapping	port	crates/horizon-client/src/mobs/parrot.rs::process_flappin
 Parrot.onFlap	port	crates/horizon-client/src/mobs/parrot.rs::process_flapping	the wing-beat sound at 0.15 and nextFlap
 Parrot.hurtServer	port	crates/horizon-client/src/mobs/tame.rs::stand_when_hurt	
 Parrot.getVoicePitch	port	crates/horizon-client/src/mobs.rs::voice_pitch	getPitch(random): 1.0 +- 0.2 with no baby bump, where LivingEntity raises a baby to 1.5
-Parrot.get	skip:other		reads the variant as a data component for predicates; Horizon has no entity component view
-Parrot.applyImplicitComponent	missing		minor: a spawn egg's parrot_variant component is not applied (only bucketed mobs read item components)
+Parrot.get	port	crates/horizon-client/src/mobs/finalize.rs::variant_component	the parrot/variant component, from extra.variant
+Parrot.applyImplicitComponent	port	crates/horizon-client/src/entity_nbt.rs::apply_item_components	the `minecraft:parrot/variant` name of a spawn egg sets the variant (GRAY over the finalizeSpawn roll), and `variant_component` reports it
 Parrot.defineSynchedData	skip:other		synched variant id; Horizon keeps it in extra.variant (remote_mob_data.rs reads index 20)
 Parrot.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::read_variant	Variant clamped to 0 to 4, red and blue when absent
 Parrot.getLeashOffset	port	crates/horizon-client/src/mobs/leash.rs::leash_offset	half of the eye height, the default width/2 forwards
@@ -108,8 +108,8 @@ Rabbit.readAdditionalSaveData	port	crates/horizon-client/src/entity_nbt.rs::mob_
 Rabbit.playAttackSound	port	crates/horizon-client/src/mobs/rabbit.rs::attack_sound	only the killer bunny: `entity.rabbit.attack` at volume 1 and a pitch drawn from its own random (not the baby voice pitch)
 Rabbit.getBreedOffspring	port	crates/horizon-client/src/game/creatures.rs::Game::breed	gap: minor: the baby always takes the first parent's coat; vanilla takes either parent's and one time in 20 rolls a biome coat
 Rabbit.setVariant	inline	crates/horizon-client/src/mobs/finalize.rs::Ctx::finalize	gap: player: variant 99 (killer bunny, from /summon or a save) only changes the texture: no armour 8, no plus 5 attack, no melee or target goals, no Killer Bunny name
-Rabbit.get	skip:other		reads the variant as a data component for predicates; Horizon has no entity component view
-Rabbit.applyImplicitComponent	missing		minor: a spawn egg's rabbit variant component is not applied (only bucketed mobs read item components)
+Rabbit.get	port	crates/horizon-client/src/mobs/finalize.rs::variant_component	the rabbit/variant component, from extra.variant (99 is evil)
+Rabbit.applyImplicitComponent	port	crates/horizon-client/src/entity_nbt.rs::apply_item_components	the `minecraft:rabbit/variant` name of a spawn egg sets the variant, including the killer bunny's out-of-range id 99 (EVIL)
 Rabbit.finalizeSpawn	port	crates/horizon-client/src/mobs/finalize.rs::Ctx::finalize	variant by biome, shared across a group
 Rabbit.getRandomRabbitVariant	inline	crates/horizon-client/src/mobs/finalize.rs::Ctx::finalize	white and white splotched in snowy biomes, gold in deserts, else brown, salt or black
 Rabbit.checkRabbitSpawnRules	port	crates/horizon-client/src/mobs/spawn_rules.rs::check_spawn_rules	S::Rabbit arm: rabbits_spawnable_on below and bright enough

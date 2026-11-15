@@ -2410,6 +2410,15 @@ pub fn variant_index(s: Species, name: &str) -> u8 {
         Species::Llama | Species::TraderLlama => {
             super::llama::VARIANTS.iter().position(|v| *v == name)
         }
+        // Parrot.Variant and Rabbit.Variant: the names a `.../variant`
+        // component carries. The rabbit's `evil` is id 99, not an index.
+        Species::Parrot => ["red_blue", "blue", "green", "yellow_blue", "gray"]
+            .iter()
+            .position(|v| *v == name),
+        Species::Rabbit => ["brown", "white", "black", "white_splotched", "gold", "salt"]
+            .iter()
+            .position(|v| *v == name)
+            .or((name == "evil").then_some(99)),
         _ => ["temperate", "warm", "cold"]
             .iter()
             .position(|v| *v == name),
@@ -2434,6 +2443,8 @@ pub fn species_variant_component(s: Species, variant: u8) -> Option<(&'static st
         Species::ZombieNautilus => "minecraft:zombie_nautilus/variant",
         Species::Horse => "minecraft:horse/variant",
         Species::Llama | Species::TraderLlama => "minecraft:llama/variant",
+        Species::Parrot => "minecraft:parrot/variant",
+        Species::Rabbit => "minecraft:rabbit/variant",
         _ => return None,
     };
     Some((component, format!("minecraft:{}", variant_name(s, variant))))
@@ -2524,6 +2535,21 @@ pub fn variant_name(s: Species, index: u8) -> &'static str {
         Species::Llama | Species::TraderLlama => {
             super::llama::VARIANTS.get(i).copied().unwrap_or("creamy")
         }
+        Species::Parrot => ["red_blue", "blue", "green", "yellow_blue", "gray"]
+            .get(i)
+            .copied()
+            .unwrap_or("red_blue"),
+        // `Rabbit.Variant.EVIL` is id 99, outside the six contiguous ids.
+        Species::Rabbit => match i {
+            0 => "brown",
+            1 => "white",
+            2 => "black",
+            3 => "white_splotched",
+            4 => "gold",
+            5 => "salt",
+            99 => "evil",
+            _ => "brown",
+        },
         _ => ["temperate", "warm", "cold"]
             .get(i)
             .copied()
