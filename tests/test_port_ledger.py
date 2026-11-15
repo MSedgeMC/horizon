@@ -79,34 +79,60 @@ class PortLedgerJarOnlyTests(unittest.TestCase):
 
 
 class PortLedgerStaleScanTests(unittest.TestCase):
-    """A citation is stale only when its own vanilla class exists but the method does not."""
+    """A citation is stale only when its own vanilla class and all its supertypes lack the method."""
 
     SOURCES = {
-        "net/minecraft/test/SimplexNoise.java": """package net.minecraft.test;
-public class SimplexNoise {
-   public double get(final double x, final double y) { return 0.0; }
-}
-""",
+        "net/minecraft/test/SimplexNoise.java":
+            "package net.minecraft.test;\n"
+            "public class SimplexNoise { public double get(double x, double y) { return 0.0; } }\n",
+        "net/minecraft/test/AbstractScrollArea.java":
+            "package net.minecraft.test;\n"
+            "public abstract class AbstractScrollArea { public void updateScrolling() {} }\n",
+        "net/minecraft/test/AbstractSelectionList.java":
+            "package net.minecraft.test;\n"
+            "public abstract class AbstractSelectionList<E extends AbstractSelectionList.Entry<E>>\n"
+            "   extends AbstractScrollArea { public static class Entry<E> {} }\n",
+        "net/minecraft/test/Base.java":
+            "package net.minecraft.test;\npublic class Base { public void inherited() {} }\n",
+        "net/minecraft/test/Middle.java":
+            "package net.minecraft.test;\npublic class Middle extends Base { }\n",
+        "net/minecraft/test/Leaf.java":
+            "package net.minecraft.test;\npublic class Leaf extends Middle { }\n",
+        "net/minecraft/test/QualifiedLeaf.java":
+            "package net.minecraft.test;\npublic class QualifiedLeaf extends net.minecraft.test.Base { }\n",
+        "net/minecraft/test/Level.java":
+            "package net.minecraft.test;\npublic abstract class Level implements LevelAccessor, AutoCloseable { }\n",
+        "net/minecraft/test/LevelAccessor.java":
+            "package net.minecraft.test;\n"
+            "public interface LevelAccessor extends CollisionGetter, EntityGetter { }\n",
+        "net/minecraft/test/CollisionGetter.java":
+            "package net.minecraft.test;\n"
+            "public interface CollisionGetter { default void getBlockCollisions() {} }\n",
+        "net/minecraft/test/EntityGetter.java":
+            "package net.minecraft.test;\n"
+            "public interface EntityGetter { default void getEntitiesOfClass() {} }\n",
         "net/minecraft/world/level/gameevent/vibrations/VibrationSystem.java":
-            """package net.minecraft.world.level.gameevent.vibrations;
-public interface VibrationSystem {
-   class Listener {
-      boolean present() { return false; }
-   }
-}
-""",
+            "package net.minecraft.world.level.gameevent.vibrations;\n"
+            "public interface VibrationSystem { class Listener { boolean present() { return false; } } }\n",
+        **{f"net/minecraft/test/Chain{depth}.java":
+            f"package net.minecraft.test;\npublic class Chain{depth}"
+            + (f" extends Chain{depth + 1}" if depth < 14 else "")
+            + (" { public void deep() {} }\n" if depth == 14 else " { }\n")
+            for depth in range(15)},
     }
-    RUST = """/// Math.max for the bounds.
-fn a() {}
-/// Ranges.margins for the viewport.
-fn b() {}
-/// SimplexNoise.getValue, which 1.21 had; 26.3 spells it get.
-fn c() {}
-/// VibrationSystem.Listener.isOccluded for the allay.
-fn d() {}
-/// VibrationSystem.Listener.present does exist.
-fn e() {}
-"""
+    RUST = (
+        "/// Math.max for the bounds.\nfn a() {}\n"
+        "/// Ranges.margins for the viewport.\nfn b() {}\n"
+        "/// SimplexNoise.getValue, which 1.21 had; 26.3 spells it get.\nfn c() {}\n"
+        "/// VibrationSystem.Listener.isOccluded for the allay.\nfn d() {}\n"
+        "/// VibrationSystem.Listener.present does exist.\nfn e() {}\n"
+        "/// AbstractSelectionList.updateScrolling, through the generic superclass.\nfn f() {}\n"
+        "/// Leaf.inherited, from Base through Middle.\nfn g() {}\n"
+        "/// Level.getBlockCollisions, through LevelAccessor to CollisionGetter.\nfn h() {}\n"
+        "/// Level.getEntitiesOfClass, through the second superinterface.\nfn i() {}\n"
+        "/// QualifiedLeaf.inherited, through a fully qualified superclass.\nfn j() {}\n"
+        "/// Chain0.deep, from the deepest supertype in a long chain.\nfn k() {}\n"
+    )
 
     def test_only_a_known_vanilla_class_makes_a_citation_stale(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -126,8 +152,8 @@ fn e() {}
                     mock.patch.object(port_ledger, "rust_files", return_value=["crates/example/src/lib.rs"]):
                 result = port_ledger.build([str(sources)], [], 1)
                 stale = {g["cite"] for g in result["gaps"] if g["kind"] == "stale"}
-                # Math (JDK) and Ranges (Horizon) are not vanilla classes, so no rename is implied;
-                # SimplexNoise.getValue and the nested VibrationSystem.Listener.isOccluded are real.
+                # Math (JDK) and Ranges (Horizon) are not vanilla classes, and every inherited method
+                # is found through its supertypes; only the rename and the nested-class miss are stale.
                 self.assertEqual(stale, {"SimplexNoise.getValue", "VibrationSystem.Listener.isOccluded"})
 
 
