@@ -6925,7 +6925,7 @@ impl Game<'_> {
                 continue;
             }
             m.previous = m.position;
-            // `Entity.deltaMovementOnPreviousTick`: the elytra's flight yaw
+            // `ClientAvatarState.deltaMovementOnPreviousTick`: the elytra's flight yaw
             // lerps from it, so another player's model does not snap when a
             // new tick's velocity arrives.
             m.extra.previous_velocity = m.velocity;
@@ -7344,7 +7344,7 @@ impl Game<'_> {
                 weight: s.weight,
             }));
     }
-    /// `Consumable.onConsumeTick` for another player using a consumable: the
+    /// `Consumable.shouldEmitParticlesAndSounds` for another player using a consumable: the
     /// crumbs at their mouth every 4 ticks once 21.875% of its use has passed
     /// (`shouldEmitParticlesAndSounds`; the sounds come from the server).
     fn remote_player_eating(

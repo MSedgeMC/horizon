@@ -1512,7 +1512,7 @@ pub(super) fn entity_light_block(position: Vec3, crouching: bool, eye_height: f6
 /// (`Entity.xo`, `yo`, `zo`) and new positions, each 0.125 lower while
 /// crouching. The model is the player itself in vanilla, so
 /// `EntityRenderer.extractRenderState` lerps it from the same old position
-/// `Camera.setup` does, however far it moved: at Levitation 255 (12.75 blocks
+/// `Camera.update` does, however far it moved: at Levitation 255 (12.75 blocks
 /// a tick) the body keeps up with the camera. A teleport or respawn resets
 /// the old position, and the model jumps with it.
 fn player_model_positions(

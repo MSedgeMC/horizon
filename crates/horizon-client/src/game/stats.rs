@@ -116,7 +116,7 @@ impl Stats {
             })
             .collect()
     }
-    /// `ServerStatsCounter.parseLocal`: the counters of a stats file.
+    /// `ServerStatsCounter.parse`: the counters of a stats file.
     pub(super) fn read(path: &Path) -> Self {
         let json = std::fs::read_to_string(path)
             .ok()
@@ -237,7 +237,7 @@ impl Game<'_> {
             &self.options.player_name(),
         ))
     }
-    /// `ServerStatsCounter.parseLocal`.
+    /// `ServerStatsCounter.parse`.
     pub(super) fn load_stats(&mut self) {
         if self.stats.loaded || self.remote.is_some() || self.no_player_here() {
             return;

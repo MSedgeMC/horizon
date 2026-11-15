@@ -1758,7 +1758,7 @@ impl Game<'_> {
         }
         Ok(())
     }
-    /// `PlayerAdvancements.load` and `ServerStatsCounter.parseLocal` of a
+    /// `PlayerAdvancements.load` and `ServerStatsCounter.parse` of a
     /// network player who joined; every statistic goes out on the first
     /// request (`PlayerList.placeNewPlayer`'s `markAllDirty`).
     fn load_guest_records(&mut self, host: &mut LanHost, conn: u32) {

@@ -115,7 +115,7 @@ impl Game<'_> {
                 respawn_anchor::AnchorUse::Pass => anchor_passed = true,
                 respawn_anchor::AnchorUse::Other => {}
             }
-            // HangingSignBlock.useItemOn, on a ceiling sign's underside or a
+            // SignBlock.useItemOn, on a ceiling sign's underside or a
             // wall sign's edge: the hanging sign in hand chains a new sign
             // there, so the block's own use is skipped, unless the side the
             // player faces has click commands to run
