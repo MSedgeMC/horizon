@@ -279,7 +279,7 @@ impl Game<'_> {
         let Some(s) = self.items().songs.get(song).cloned() else {
             return;
         };
-        // LevelRenderer.playJukeboxSong: SimpleSoundInstance.forJukeboxSong.
+        // LevelEventHandler.playJukeboxSong: SimpleSoundInstance.forJukeboxSong.
         let id = self.audio.play_jukebox_song(&s.sound, pos);
         self.jukebox_sounds.insert((pos[0], pos[1], pos[2]), id);
         let description =
@@ -489,7 +489,7 @@ fn jukebox_song_name(
 }
 /// Whether a jukebox song keeps playing: until it ends, and, in a level that
 /// plays its own jukeboxes, while that jukebox plays. A server's client
-/// stops it at level event 1011 (`LevelRenderer.playingJukeboxSongs`).
+/// stops it at level event 1011 (`LevelEventHandler.playingJukeboxSongs`).
 fn keeps_song(active: bool, server_client: bool, jukebox_playing: bool) -> bool {
     active && (server_client || jukebox_playing)
 }

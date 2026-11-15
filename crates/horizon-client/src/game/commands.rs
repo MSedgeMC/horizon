@@ -3646,7 +3646,7 @@ impl Game<'_> {
         };
         // SetWorldSpawnCommand uses RespawnData.of before storing or comparing.
         let rot = [wrap_degrees(rot[0]), rot[1].clamp(-90.0, 90.0)];
-        // LevelData.setRespawnData: the world's spawn (level.dat `spawn`).
+        // ServerLevel.setRespawnData: the world's spawn (level.dat `spawn`).
         let previous_point = self.world_spawn_position().map(|v| v.floor() as i32);
         let old = self.level.world_spawn.replace(pos);
         let old_angle = self.level.world_spawn_angle;

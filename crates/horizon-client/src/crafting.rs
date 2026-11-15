@@ -1,6 +1,6 @@
 //! Crafting and cooking recipes from the pinned data pack: shaped patterns
 //! (`ShapedRecipePattern.matches`), shapeless recipes (a bipartite match of
-//! ingredients to stacks, as `StackedContents.canCraft`), the special and
+//! ingredients to stacks, as `StackedItemContents.canCraft`), the special and
 //! transmuting crafting recipes (`CustomRecipe` and friends), and
 //! furnace-type cooking lookups.
 use crate::{
@@ -1393,7 +1393,7 @@ fn shrink(pattern: &[Vec<char>]) -> Vec<Vec<char>> {
         _ => Vec::new(),
     }
 }
-/// A perfect matching of the ingredients to distinct stacks (`StackedContents.canCraft`).
+/// A perfect matching of the ingredients to distinct stacks (`StackedItemContents.canCraft`).
 fn matches_all(ingredients: &[Ingredient], stacks: &[&ItemStack]) -> bool {
     fn augment(
         i: usize,
