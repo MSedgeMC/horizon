@@ -2719,6 +2719,8 @@ mod namespace_tests {
             component[0].1,
             serde_json::json!({"loot_table": "minecraft:chests/simple_dungeon"})
         );
+        let _ = fs::remove_dir_all(&root);
+    }
 
     /// `SetWritableBookPagesFunction`: the function's pages go through its
     /// `ListOperation` over the writable book content an earlier function
