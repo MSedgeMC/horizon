@@ -140,7 +140,7 @@ impl StructureAdaptation {
     pub fn radius(&self) -> i32 {
         self.adaptation.radius()
     }
-    /// EnhancedBeardifierHelper.forStructuresInChunk for one start: its
+    /// Beardifier.forStructuresInChunk for one start: its
     /// kernel pieces and junctions near `chunk`, and the box they reach.
     pub fn collect(
         &self,

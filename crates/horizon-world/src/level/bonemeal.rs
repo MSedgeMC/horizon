@@ -106,7 +106,7 @@ fn next_int_between<R: RandomSource>(random: &mut R, min: i32, max: i32) -> i32 
 }
 
 impl Behaviours {
-    /// `/place feature`: `ConfiguredFeature.place` at `pos` with the level
+    /// `/place feature`: `Feature.place` at `pos` with the level
     /// random. `None` when the feature is unknown or cannot run.
     pub fn place_feature<L: LevelAccess + ?Sized>(
         &self,

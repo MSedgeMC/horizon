@@ -686,7 +686,7 @@ impl StructureRegistry {
         if set.rings.as_ref().is_some_and(|r| !r.allows(x, z)) {
             return false;
         }
-        // AdvancedRandomSpread.isPlacementChunk, in blocks from the chunk's corner.
+        // AbstractSpreadingStructurePlacement.isPlacementChunk, in blocks from the chunk's corner.
         if let Some(d) = set.min_distance {
             let (bx, bz) = (i64::from(x) * 16, i64::from(z) * 16);
             if bx * bx + bz * bz < d * d {

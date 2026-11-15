@@ -42,7 +42,7 @@ fn resource(message: impl Into<String>) -> GeneratorError {
     GeneratorError::Resource(message.into())
 }
 
-/// `ConfiguredFeature.getFeatures`: nested configured-feature references of a
+/// `PlacedFeature.getFeatures`: nested configured-feature references of a
 /// feature JSON, depth first (each reference followed by its own children).
 fn nested_features(
     json: &Value,
@@ -275,7 +275,7 @@ impl LiveFeatures {
             })
             .clone()
     }
-    /// `ConfiguredFeature.place`. Unknown or unsupported features and
+    /// `Feature.place`. Unknown or unsupported features and
     /// execution errors report failure.
     pub fn place_configured<W: FeatureWorld + PlacementContext>(
         &self,
