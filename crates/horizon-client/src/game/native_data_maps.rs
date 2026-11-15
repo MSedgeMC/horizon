@@ -197,10 +197,10 @@ impl Game<'_> {
         let key = (registry.to_owned(), type_id.to_owned());
         self.world_tables.as_ref()?.data_maps.maps.get(&key)
     }
-    /// `Holder.value()`: the value the data pack and mod files gave
-    /// `entry` (`minecraft:coal`) in data map `type_id` for `registry`
-    /// (`minecraft:item`, `minecraft:block`), as the JSON the file held. None
-    /// when the entry has none, the type isn't registered for that registry
+    /// The value the data pack and mod files gave `entry` (`minecraft:coal`)
+    /// in data map `type_id` for `registry` (`minecraft:item`,
+    /// `minecraft:block`), as the JSON the file held. None when the entry has
+    /// none, the type isn't registered for that registry
     /// (`native_data_map_types`), or this isn't a server whose tables hold
     /// files.
     pub(in crate::game) fn native_data_map(
