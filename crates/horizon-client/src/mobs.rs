@@ -2773,6 +2773,11 @@ pub struct PlayerView {
     pub sneaking: bool,
     /// `Entity.isSwimming`.
     pub swimming: bool,
+    /// `Entity.isInWater()`: the player's own water contact (`wasTouchingWater`),
+    /// not the fluid of the block it stands on.
+    pub in_water: bool,
+    /// `Entity.isInPowderSnow`.
+    pub in_powder_snow: bool,
     pub look: [f64; 3],
     pub main_hand: Option<Arc<str>>,
     pub off_hand: Option<Arc<str>>,

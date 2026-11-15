@@ -433,6 +433,8 @@ impl Game<'_> {
             creative: self.creative || self.spectator(),
             sneaking: self.keys.held(Action::Sneak),
             swimming: p.swimming,
+            in_water: p.fluids.was_touching_water,
+            in_powder_snow: p.in_powder_snow,
             look: view_vector(self.yaw, self.pitch),
             main_hand: self.held().map(|s| s.item.clone()),
             off_hand: self.offhand.as_ref().map(|s| s.item.clone()),

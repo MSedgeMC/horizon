@@ -572,6 +572,8 @@ mod tests {
             creative,
             sneaking: false,
             swimming: false,
+            in_water: false,
+            in_powder_snow: false,
             look: [0.0; 3],
             main_hand: None,
             off_hand: None,

@@ -1037,6 +1037,8 @@ pub(crate) fn test_player(position: Vec3) -> super::PlayerView {
         creative: false,
         sneaking: false,
         swimming: false,
+        in_water: false,
+        in_powder_snow: false,
         look: [0.0; 3],
         main_hand: None,
         off_hand: None,

@@ -550,6 +550,8 @@ mod golem_touch_tests {
                 creative: false,
                 sneaking: false,
                 swimming: false,
+                in_water: false,
+                in_powder_snow: false,
                 look: [0.0, 0.0, 1.0],
                 main_hand: None,
                 off_hand: None,

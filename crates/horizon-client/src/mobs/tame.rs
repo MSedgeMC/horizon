@@ -127,18 +127,16 @@ impl Goal for LandOnOwnersShoulder {
         0
     }
     fn can_use(&mut self, m: &mut Mob, cx: &mut Cx) -> bool {
-        let Some((at, _, spectator)) = owner(m, cx.w) else {
+        let Some(owner) = owner_view(m, cx.w) else {
             return false;
         };
-        let (x, y, z) = (
-            at.x.floor() as i32,
-            at.y.floor() as i32,
-            at.z.floor() as i32,
-        );
         // ShoulderRidingEntity.canSitOnShoulder: rideCooldownCounter > 100.
-        !spectator
-            && cx.w.fluid(x, y, z) != crate::blocks::Fluid::Water
-            && cx.w.block_name(x, y, z) != "minecraft:powder_snow"
+        // The water and powder-snow tests are the owner's own contact
+        // (`isInWater`, `isInPowderSnow`), not the fluid of the block its feet
+        // are over: a dry owner above shallow water is still landable.
+        !owner.spectator
+            && !owner.in_water
+            && !owner.in_powder_snow
             && !m.extra.sitting
             && m.age > 100
     }
@@ -2187,10 +2185,15 @@ mod tests {
                 world.set(3, 64, 0, water).unwrap();
             },
             |w, _| {
-                for wet in [false, true] {
+                // A dry owner above the shallow water at x = 3, one whose box
+                // is in water, and one in powder snow.
+                for (in_water, in_powder_snow, x) in
+                    [(false, false, 3.5), (true, false, 0.5), (false, true, 0.5)]
+                {
                     let mut world = w.clone();
-                    let x = if wet { 3.5 } else { 0.5 };
-                    let p = test_player(Vec3::new(x, 64.0, 0.5));
+                    let mut p = test_player(Vec3::new(x, 64.0, 0.5));
+                    p.in_water = in_water;
+                    p.in_powder_snow = in_powder_snow;
                     world.player = Some(p.clone());
                     let mut kind = (*kind()).clone();
                     kind.species = Species::Parrot;
@@ -2217,8 +2220,8 @@ mod tests {
         }
         assert_eq!(
             outcomes,
-            vec![true, false],
-            "a dry owner can be landed on; one in water cannot"
+            vec![true, false, false],
+            "a dry owner above shallow water can be landed on; one in water or powder snow cannot"
         );
     }
     #[test]
