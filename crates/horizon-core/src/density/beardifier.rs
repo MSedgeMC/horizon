@@ -343,8 +343,8 @@ mod tests {
     }
 
     /// YUNG's carved top (kernel 24, distance 24, carve above, nothing
-    /// below) around a 5-block cube, values worked out from
-    /// the 26.3 `TerrainAdjustment` switch in `Beardifier`.
+    /// below) around a 5-block cube, values worked out from the structure
+    /// library's `EnhancedTerrainAdaptation.computeDensityFactor`.
     #[test]
     fn kernel_pieces_carve_above_the_floor_only() {
         let kernel = Arc::new(TerrainKernel::new(24, 24, -1, 0));

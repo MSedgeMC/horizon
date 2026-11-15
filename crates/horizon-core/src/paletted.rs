@@ -413,7 +413,7 @@ impl PalettedContainer {
             }
         }
     }
-    /// `LinearPalette.idFor`, growing the container when the palette is full.
+    /// `Palette.idFor`, growing the container when the palette is full.
     fn id_for(&mut self, value: u32) -> usize {
         match &mut self.palette {
             Palette::Single(v) if *v == value => 0,
