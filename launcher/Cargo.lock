@@ -2912,6 +2912,7 @@ dependencies = [
  "horizon-perf-format",
  "horizon-prepare",
  "horizon-protocol",
+ "horizon-server-files",
  "horizon-system",
  "horizon-world",
 ]
@@ -2964,6 +2965,19 @@ version = "0.1.0"
 dependencies = [
  "base64 0.22.1",
  "ring",
+]
+
+[[package]]
+name = "horizon-server-files"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "getrandom 0.3.4",
+ "horizon-core",
+ "horizon-protocol",
+ "horizon-world",
+ "log",
+ "ureq",
 ]
 
 [[package]]

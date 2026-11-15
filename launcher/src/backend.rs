@@ -2962,9 +2962,15 @@ pub fn server_command(tag: &str, folder: &Path) -> Command {
     cmd
 }
 
+/// Whether eula.txt says `eula=true`: read with `Properties.load` (ISO-8859-1) and
+/// `Boolean.parseBoolean`, as `net.minecraft.server.Eula.readFile` reads it.
 pub fn eula_agreed(folder: &Path) -> bool {
-    fs::read_to_string(folder.join("eula.txt"))
-        .is_ok_and(|s| s.lines().any(|l| l.trim() == "eula=true"))
+    use horizon_platform::server_files::java_properties::Properties;
+    fs::read(folder.join("eula.txt"))
+        .ok()
+        .and_then(|bytes| Properties::load_latin1(&bytes).ok())
+        .and_then(|p| p.get("eula").map(|v| v.eq_ignore_ascii_case("true")))
+        .unwrap_or(false)
 }
 
 /// Writes eula.txt as vanilla's server expects it, once the player agreed in the launcher.
@@ -7204,5 +7210,45 @@ pub fn {f}("
             envs.get(OsStr::new("PIPEWIRE_PROPS")),
             Some(&Some(OsStr::new("kept")))
         );
+    }
+
+    /// `net.minecraft.server.Eula.readFile`: `Properties.load` (ISO-8859-1) then
+    /// `Boolean.parseBoolean(getProperty("eula", "false"))`.
+    #[test]
+    fn an_agreed_eula_is_read_as_vanilla_reads_it() {
+        let folder = std::env::temp_dir().join(format!("horizon-eula-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&folder);
+        fs::create_dir_all(&folder).unwrap();
+        let write = |text: &str| fs::write(folder.join("eula.txt"), text).unwrap();
+        for agreed in [
+            "eula=true\n",
+            "eula = true\n",
+            "eula:true\n",
+            "eula=TRUE\n",
+            "  eula=true\n",
+            "eula=\\u0074rue\n",
+            "eula = true\r\n",
+        ] {
+            write(agreed);
+            assert!(
+                eula_agreed(&folder),
+                "{agreed:?} is an agreement in vanilla"
+            );
+        }
+        for refused in [
+            "eula=false\n",
+            "eula=true \n",
+            "eula=true # x\n",
+            "# eula=true\n",
+            "eula\n",
+        ] {
+            write(refused);
+            assert!(
+                !eula_agreed(&folder),
+                "{refused:?} is no agreement in vanilla"
+            );
+        }
+        assert!(!eula_agreed(&folder.join("missing")));
+        fs::remove_dir_all(folder).unwrap();
     }
 }

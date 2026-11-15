@@ -46,7 +46,7 @@ clap_complete = "4"
 horizon-theme = { path = "../crates/horizon-theme" }
 # The engine, through the platform's public API (docs/layers.md): the pinned version, No AI, the preparer,
 # level.dat and servers.dat (the worlds and server lists of instances), and the official server's SRV record.
-horizon-platform = { path = "../crates/horizon-platform", features = ["prepare", "protocol", "world"] }
+horizon-platform = { path = "../crates/horizon-platform", features = ["prepare", "protocol", "server-files", "world"] }
 horizon-cosmetics = { path = "../crates/horizon-cosmetics" }
 glam = "0.30"
 # `horizon-launcher mcp`: the Model Context Protocol, shared with horizon-ctl and horizon-server.
