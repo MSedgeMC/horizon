@@ -28,7 +28,7 @@ ChatComponent.DrawingFocusedGraphicsAccess.handleMessage	port	crates/horizon-cli
 ChatComponent.DrawingFocusedGraphicsAccess.isMouseOver	inline	crates/horizon-client-render/src/chat.rs::Chat::focused_tags	the cursor test of the tag bar and its icons, folded into the tag lookup
 ChatComponent.DrawingFocusedGraphicsAccess.handleTagIcon	port	crates/horizon-client-render/src/chat.rs::Chat::focused_tags	the modified-message tags under the cursor: the tooltip of the bar or icon, and the icons of the message the cursor is over
 ChatComponent.DrawingFocusedGraphicsAccess.showTooltip	port	crates/horizon-client/src/game/chat.rs::Game::draw_chat_screen	gap: minor: every indicator shows the systemSinglePlayer text as its tooltip
-Checkbox.adjustWidth	inline	crates/horizon-client/src/dialog_screen.rs::input	a boolean input is 17 + 4 + the label's width wide (Control::Boolean), so the box grows to fit its message
+Checkbox.adjustWidth	port	crates/horizon-client/src/dialog_screen.rs::input	gap: minor: width not capped, label not wrapped
 Checkbox.overflowsRowLimit	missing		minor: no tooltip for a label that wraps past two rows; Horizon dialog labels never wrap
 Checkbox.onPress	port	crates/horizon-client/src/game/dialogs.rs::Game::dialog_click	toggles the boolean input value (dialogs.rs:448)
 Checkbox.updateWidgetNarration	inline	crates/horizon-client/src/screen_narrator.rs::narrate	narrate's checkbox arm: gui.narrate.button(message), then narration.checkbox.usage.{focused,hovered}.{check,uncheck} while the widget is active
