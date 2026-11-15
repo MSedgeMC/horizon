@@ -168,7 +168,7 @@ impl SteppedInterpolation {
         };
         Start::Interpolating
     }
-    /// `cancel` (`SteppedInterpolationHandler.InterpolationData.reset`).
+    /// `cancel` (`InterpolationData.reset`).
     pub fn cancel(&mut self) {
         self.remaining.clear();
         self.remaining_ticks = 0.0;
@@ -190,12 +190,12 @@ impl SteppedInterpolation {
         self.advance(1.0);
         Some(at)
     }
-    /// `SteppedInterpolationHandler.InterpolationData.addStep`.
+    /// `InterpolationData.addStep`.
     fn add_step(&mut self, step: PosRot, ticks: i32) {
         self.remaining.push_back((step, ticks));
         self.remaining_ticks += ticks as f32;
     }
-    /// `SteppedInterpolationHandler.InterpolationData.addSteps`: a stepped path's steps take their own
+    /// `InterpolationData.addSteps`: a stepped path's steps take their own
     /// ticks, turning by the share of the path each one ends.
     fn add_steps(&mut self, path: &Path, yaw: f32, pitch: f32) {
         match path {
@@ -237,7 +237,7 @@ impl SteppedInterpolation {
             }
         }
     }
-    /// `SteppedInterpolationHandler.InterpolationData.getNewPositionAndRotation`.
+    /// `InterpolationData.getNewPositionAndRotation`.
     fn new_position(&mut self) -> PosRot {
         while let Some(&(step, ticks)) = self.remaining.front() {
             if self.current_step_ticks < ticks as f32 {
@@ -256,7 +256,7 @@ impl SteppedInterpolation {
         }
         self.target
     }
-    /// `SteppedInterpolationHandler.InterpolationData.advance`: faster while more than one update's
+    /// `InterpolationData.advance`: faster while more than one update's
     /// worth of steps waits.
     fn advance(&mut self, ticks: f32) {
         let steps = self.steps as f32;
