@@ -77,10 +77,10 @@ Interval.lerpFiniteBounds	port	crates/horizon-core/src/density/interval.rs::Inte
 Interval.lerpInfiniteBounds	inline	crates/horizon-core/src/density/interval.rs::Interval::lerp_values	the infinite-bound branch is folded into lerp_values
 Interval.equals	port	crates/horizon-core/src/density/interval.rs::Interval::eq	gap: minor: two NaI intervals compare equal here; vanilla compares NaN bounds, so they differ unless same object
 Interval.toString	skip:debug		debug text of a range; Horizon has no Display for Interval
-net/minecraft/util/Keyframe#codec	port	crates/horizon-client/src/patrol.rs::GameplayAttributes::load	gap: minor: only boolean keyframe values are read
-KeyframeTrack.mapCodec	port	crates/horizon-client/src/patrol.rs::GameplayAttributes::load	gap: minor: the ease field is not read; boolean tracks are never eased
-KeyframeTrack.validateKeyframes	missing		minor: no check that keyframes are ordered or that more than two share a tick; load only skips an empty track
-KeyframeTrack.validatePeriod	missing		minor: no check that keyframe ticks lie in 0..period on load
+net/minecraft/util/Keyframe#codec	port	crates/horizon-world/src/environment_timeline.rs::Track::parse	each keyframe's ticks and value, the value typed by the track's attribute; patrol.rs reads its own boolean tracks
+KeyframeTrack.mapCodec	port	crates/horizon-world/src/environment_timeline.rs::Track::parse	ease is read as the track's easing (Easing::parse), linear by default; the modifier is override by default
+KeyframeTrack.validateKeyframes	port	crates/horizon-world/src/environment_timeline.rs::Track::parse	tracks must be ordered by ticks and hold at most two keyframes on one tick; an empty track is refused
+KeyframeTrack.validatePeriod	port	crates/horizon-world/src/environment_timeline.rs::Track::validate_period	every keyframe tick must lie in [0; period]; Timeline::parse calls it for each track
 KeyframeTrack.Builder.addKeyframe	skip:java		builder; Horizon builds keyframe lists from JSON
 KeyframeTrack.Builder.build	skip:java		builder; Horizon builds keyframe lists from JSON
 KeyframeTrackSampler.bakeSegments	inline	crates/horizon-client/src/patrol.rs::BoolTrack::sample	gap: minor: no periodic wrap segment; with a period and a first keyframe after tick 0, ticks before it read keyframes[0] instead of the last keyframe
