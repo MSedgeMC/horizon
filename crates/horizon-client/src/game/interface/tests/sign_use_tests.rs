@@ -1,0 +1,222 @@
+//! `SignBlock.useWithoutItem`: the click it passes goes on to the item
+//! (`ServerPlayerGameMode.useItemOn`'s `useWithoutItem` then `ItemStack.useOn`),
+//! so an adventure player's `can_place_on` block places against the sign.
+use horizon_client::{
+    command::args::GameMode,
+    containers::BlockEntity,
+    items::ItemStack,
+    mobs::Who,
+    signs::{SavedLine, SignData},
+};
+use horizon_core::nbt::Tag;
+
+type Posted = (&'static str, [f64; 3], Option<Who>);
+
+/// A server's game with nobody playing, or `None` without prepared resources.
+fn game<'a>(
+    resources: &'a mut Option<std::sync::Arc<crate::game::Resources>>,
+) -> Option<crate::game::Game<'a>> {
+    std::env::var_os("HORIZON_TEST_RESOURCES")?;
+    let mut game = crate::game::game_tests::tests::server_game(resources);
+    game.build_registries();
+    game.set_allow_commands(true);
+    game.player = None;
+    Some(game)
+}
+
+/// `stack` with a `can_place_on` component naming `block`.
+fn held(name: &str, count: u32, block: &str) -> ItemStack {
+    let mut stack = ItemStack::new(name, count);
+    stack.data_mut().other.push((
+        "minecraft:can_place_on".into(),
+        Tag::compound([("blocks", Tag::List(vec![Tag::String(block.into())]))]),
+    ));
+    stack
+}
+
+/// An adventure player (`mayBuild` false) clicks the south side of the sign
+/// at [2, 4, 3] with `stack` in hand, as `Minecraft.startUseItem` does; the
+/// game events the click posted.
+fn click_sign(game: &mut crate::game::Game<'_>, sign: SignData, stack: ItemStack) -> Vec<Posted> {
+    click_sign_as(game, sign, stack, GameMode::Adventure)
+}
+
+/// The same click by a player in `mode`.
+fn click_sign_as(
+    game: &mut crate::game::Game<'_>,
+    sign: SignData,
+    stack: ItemStack,
+    mode: GameMode,
+) -> Vec<Posted> {
+    let registry = game.pack.assets.registry;
+    let sign_state = registry.default_state("minecraft:oak_sign").unwrap();
+    game.world.set(2, 4, 3, sign_state).unwrap();
+    game.world.set(2, 4, 4, game.res.facts().air).unwrap();
+    game.world
+        .block_entities
+        .insert((2, 4, 3), BlockEntity::Sign(sign));
+    game.set_mode(mode);
+    *game.held_mut() = Some(stack);
+    crate::game::sculk::TEST_POSTED_EVENTS.with(|events| *events.borrow_mut() = Some(Vec::new()));
+    let hit = crate::game::Hit {
+        pos: [2, 4, 3],
+        face: [0, 0, 1],
+        point: [2.5, 4.5, 3.9],
+        inside: false,
+    };
+    game.with_player_actor(|g| g.use_hand(Some(&hit))).unwrap();
+    crate::game::sculk::TEST_POSTED_EVENTS.with(|events| events.borrow_mut().take().unwrap())
+}
+
+/// `SignBlock.useWithoutItem` answers PASS for a sign with no click action to
+/// run, that is not waxed and that a player who may not build aims at, so
+/// ServerPlayerGameMode.useItemOn goes on to `ItemStack.useOn`: a
+/// `can_place_on` block naming the sign places against it.
+#[test]
+fn an_adventure_click_on_a_sign_places_a_can_place_on_block() {
+    let mut resources = None;
+    let Some(mut game) = game(&mut resources) else {
+        return;
+    };
+    let planks = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:oak_planks")
+        .unwrap();
+
+    let events = click_sign(
+        &mut game,
+        SignData::default(),
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+    );
+    assert_eq!(game.world.block(2, 4, 4), planks, "placed against the sign");
+    assert_eq!(game.held().map(|s| s.count), Some(1), "one plank is used");
+    assert_eq!(
+        events,
+        vec![("minecraft:block_place", [2.5, 4.5, 4.5], Some(Who::Player))]
+    );
+
+    // `can_place_on` names another block: nothing places and nothing is used.
+    let events = click_sign(
+        &mut game,
+        SignData::default(),
+        held("minecraft:oak_planks", 2, "minecraft:stone"),
+    );
+    assert_ne!(game.world.block(2, 4, 4), planks, "nothing places");
+    assert_eq!(game.held().map(|s| s.count), Some(2), "nothing is used");
+    assert!(events.is_empty(), "{events:?}");
+}
+
+/// The signs whose `useWithoutItem` consumes the click keep it, so the
+/// `can_place_on` block is never placed: a waxed sign (its failed-interaction
+/// sound) and a sign whose side runs a click command.
+#[test]
+fn a_waxed_sign_or_a_click_command_keeps_the_adventure_click() {
+    let mut resources = None;
+    let Some(mut game) = game(&mut resources) else {
+        return;
+    };
+    let planks = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:oak_planks")
+        .unwrap();
+    let stone = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:stone")
+        .unwrap();
+
+    let waxed = SignData {
+        waxed: true,
+        ..SignData::default()
+    };
+    click_sign(
+        &mut game,
+        waxed,
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+    );
+    assert_ne!(game.world.block(2, 4, 4), planks, "a waxed sign keeps it");
+    assert_eq!(game.held().map(|s| s.count), Some(2), "nothing is used");
+
+    // A `run_command` line runs, and the click ends there.
+    let mut command = SignData {
+        allow_op_features: true,
+        ..SignData::default()
+    };
+    command.front.click[0] = Some(Tag::compound([
+        ("action", Tag::String("run_command".into())),
+        (
+            "command",
+            Tag::String("setblock 5 4 3 minecraft:stone".into()),
+        ),
+    ]));
+    let events = click_sign(
+        &mut game,
+        command,
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+    );
+    assert_eq!(game.world.block(5, 4, 3), stone, "the click command ran");
+    assert_ne!(game.world.block(2, 4, 4), planks, "the command keeps it");
+    assert_eq!(game.held().map(|s| s.count), Some(2), "nothing is used");
+    assert!(
+        !events.iter().any(|e| e.0 == "minecraft:block_place"),
+        "{events:?}"
+    );
+}
+
+/// `SignBlock.otherPlayerIsEditingSign` and `SignText.hasEditableText`: a sign
+/// this player cannot rewrite answers PASS, so a builder held block places
+/// against it instead of being swallowed by the sign.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_sign_this_player_cannot_edit_keeps_the_click_for_the_item() {
+    let Some(mut game) = game() else {
+        return;
+    };
+    let planks = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:oak_planks")
+        .unwrap();
+
+    // Another player editor holds the sign: its UUID is not the actor UUID.
+    let mut edited = SignData::default();
+    edited.allowed_editor = Some(0x5100_0000_0000_000b);
+    click_sign_as(
+        &mut game,
+        edited,
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+        GameMode::Survival,
+    );
+    assert_eq!(
+        game.world.block(2, 4, 4),
+        planks,
+        "another player editor kept a builder click"
+    );
+    assert_eq!(game.held().map(|s| s.count), Some(1), "one plank is used");
+
+    // The side has a translatable line, so `hasEditableText` answers false.
+    let mut styled = SignData::default();
+    styled.front.lines[0] = "Stick".into();
+    styled.front.saved[0] = Some(SavedLine {
+        text: "Stick".into(),
+        component: Tag::compound([("translate", Tag::String("item.minecraft.stick".into()))]),
+    });
+    click_sign_as(
+        &mut game,
+        styled,
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+        GameMode::Survival,
+    );
+    assert_eq!(
+        game.world.block(2, 4, 4),
+        planks,
+        "a non-editable side kept a builder click"
+    );
+    assert_eq!(game.held().map(|s| s.count), Some(1), "one plank is used");
+}
