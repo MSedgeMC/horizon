@@ -2349,10 +2349,7 @@ mod tests {
         let mut burning = bullet();
         burning.fire_ticks = 300;
         let (keep, hit) = burning.tick(&air);
-        assert!(
-            !keep,
-            "the first tick's fire damage destroys the bullet"
-        );
+        assert!(!keep, "the first tick's fire damage destroys the bullet");
         assert_eq!(hit, Hit::None);
         assert!(burning.fire_destroyed);
 
