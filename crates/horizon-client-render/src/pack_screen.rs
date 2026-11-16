@@ -876,6 +876,7 @@ impl PackScreen {
                 // The callback: back to the pack screen (repositioned), then select.
                 self.confirm = None;
                 self.reposition(m);
+                self.set_focus(Focus::Search);
                 if i == 0 {
                     match c.action {
                         ConfirmAction::Import(paths) => return Action::Import(paths),
@@ -917,6 +918,7 @@ impl PackScreen {
     pub fn cancel_confirm(&mut self, m: &Measure) -> bool {
         if self.confirm.take().is_some() {
             self.reposition(m);
+            self.set_focus(Focus::Search);
             return true;
         }
         false
@@ -1992,6 +1994,34 @@ mod icon_tests {
             );
             assert_eq!(&patch.rgba[..], &icon[..]);
         }
+    }
+
+    /// The confirmation's callback closes with `setScreen(this)` in vanilla,
+    /// and `PackSelectionScreen.init` focuses the search box again.
+    #[test]
+    fn closing_the_confirmation_returns_the_keyboard_to_the_search_box() {
+        let atlas =
+            crate::hud::HudAtlas::build(std::path::Path::new("/nonexistent/horizon-test-assets"))
+                .unwrap();
+        let m = Measure(&atlas.font);
+        let mut screen = PackScreen::new(
+            &m,
+            tr("resourcePack.title"),
+            480,
+            270,
+            false,
+            vec![pack("file/Old", None)],
+            &[],
+        );
+        screen.confirm = Some(Confirm {
+            action: ConfirmAction::Select("file/Old".into()),
+            title: Text::literal("Confirm"),
+            message: Text::literal("Too old"),
+        });
+        screen.set_focus(Focus::None);
+        assert!(!screen.search_focused());
+        assert!(screen.cancel_confirm(&m));
+        assert!(screen.search_focused());
     }
 }
 
