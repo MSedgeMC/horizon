@@ -3,7 +3,7 @@
 use crate::{
     Result,
     buf::{
-        Bool, Byte, Codec, Ident, Int, List, Long, Nbt, Opt, Reader, Str, StrN, UByte, Uuid,
+        Bool, Byte, Codec, Ident, Int, List, ListN, Long, Nbt, Opt, Reader, Str, StrN, UByte, Uuid,
         VarInt, Writer,
     },
     packet, packet_enum,
@@ -46,6 +46,19 @@ packet!(
 );
 packet!(KnownPack { namespace: String => Str, id: String => Str, version: String => Str });
 packet!(SelectKnownPacks { packs: Vec<KnownPack> => List<KnownPack> });
+/// ServerboundSelectKnownPacks applies `ByteBufCodecs.list(64)`. The clientbound packet has no
+/// limit (`ByteBufCodecs.list()`), so only the serverbound direction caps the list.
+pub struct ServerboundKnownPacks;
+impl Codec<SelectKnownPacks> for ServerboundKnownPacks {
+    fn read(r: &mut Reader) -> Result<SelectKnownPacks> {
+        Ok(SelectKnownPacks {
+            packs: ListN::<KnownPack, 64>::read(r)?,
+        })
+    }
+    fn write(v: &SelectKnownPacks, w: &mut Writer) {
+        SelectKnownPacks::write(v, w);
+    }
+}
 packet!(CodeOfConduct { text: String => Str });
 
 /// ServerLinks.UntrustedEntry's `type` (Either<KnownLinkType, Component>): a
@@ -137,7 +150,7 @@ packet_enum!(Clientbound, crate::ids::configuration::clientbound {
     Transfer(Transfer) = TRANSFER,
     UpdateEnabledFeatures(UpdateEnabledFeatures) = UPDATE_ENABLED_FEATURES,
     UpdateTags(UpdateTags) = UPDATE_TAGS,
-    SelectKnownPacks(SelectKnownPacks) = SELECT_KNOWN_PACKS,
+    SelectKnownPacks(SelectKnownPacks) = SELECT_KNOWN_PACKS => ServerboundKnownPacks,
     ClearDialog(Empty) = CLEAR_DIALOG,
     ServerLinks(ServerLinks) = SERVER_LINKS,
     ShowDialog(ShowDialog) = SHOW_DIALOG,
@@ -218,7 +231,7 @@ packet_enum!(Serverbound, crate::ids::configuration::serverbound {
     KeepAlive(KeepAlive) = KEEP_ALIVE,
     Pong(Ping) = PONG,
     ResourcePack(ResourcePackResponse) = RESOURCE_PACK,
-    SelectKnownPacks(SelectKnownPacks) = SELECT_KNOWN_PACKS,
+    SelectKnownPacks(SelectKnownPacks) = SELECT_KNOWN_PACKS => ServerboundKnownPacks,
     AcceptCodeOfConduct(Empty) = ACCEPT_CODE_OF_CONDUCT,
     CustomClickAction(CustomClickAction) = CUSTOM_CLICK_ACTION,
 });
@@ -412,5 +425,36 @@ mod tests {
         let mut w = Writer::new();
         ClickPayload::write(&Some(Tag::Byte(1)), &mut w);
         assert_eq!(w.data, [2, 1, 1]);
+    }
+
+    #[test]
+    fn a_serverbound_known_packs_list_holds_at_most_64() {
+        // ServerboundSelectKnownPacks applies ByteBufCodecs.list(64); the clientbound packet
+        // does not cap its list, so the same 65 packs still decode for that direction.
+        let packs = |n: usize| {
+            let mut w = Writer::new();
+            w.varint(n as i32);
+            for _ in 0..n {
+                w.string("minecraft");
+                w.string("core");
+                w.string("26.3");
+            }
+            w.data
+        };
+        let serverbound = |data: &[u8]| {
+            Serverbound::decode(
+                crate::ids::configuration::serverbound::SELECT_KNOWN_PACKS,
+                data,
+            )
+        };
+        assert!(serverbound(&packs(64)).is_ok());
+        assert!(serverbound(&packs(65)).is_err());
+        assert!(
+            Clientbound::decode(
+                crate::ids::configuration::clientbound::SELECT_KNOWN_PACKS,
+                &packs(65),
+            )
+            .is_ok()
+        );
     }
 }
