@@ -504,12 +504,12 @@ impl Containers<'_> {
             },
             Kind::Furnace => match slot {
                 2 => false,
+                // `AbstractFurnaceBlockEntity.canPlaceItem`: the fuel stack's
+                // own `cooking_fuel` component counts, a removal patch hides
+                // the item's default one.
                 1 => {
                     &*stack.item == "minecraft:bucket"
-                        || self
-                            .items
-                            .get(&stack.item)
-                            .is_some_and(|i| i.fuel.is_some())
+                        || crate::providers::cooking_fuel(self.items, stack).is_some()
                 }
                 _ => true,
             },

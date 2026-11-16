@@ -147,20 +147,37 @@ impl Providers {
             floats: HashMap::new(),
         }
     }
+    /// A fuel's burn time in ticks: its stack's `cooking_fuel` component (the
+    /// data pack's int provider resolved), else the item's default; zero when
+    /// it is no fuel.
     pub fn burn_time(&self, items: &Items, stack: &ItemStack, fast: bool) -> i32 {
-        items
-            .get(&stack.item)
-            .and_then(|i| i.fuel.as_ref())
-            .map_or(0, |(time, _)| Self::eval(time, fast, &self.ints, 0) as i32)
+        cooking_fuel(items, stack)
+            .map_or(0, |(time, _)| Self::eval(&time, fast, &self.ints, 0) as i32)
     }
+    /// A fuel's speed multiplier: its stack's `cooking_fuel` component (the
+    /// data pack's float provider resolved), else the item's default.
     pub fn speed(&self, items: &Items, stack: &ItemStack, fast: bool) -> f32 {
-        items
-            .get(&stack.item)
-            .and_then(|i| i.fuel.as_ref())
-            .map_or(1.0, |(_, speed)| {
-                Self::eval(speed, fast, &self.floats, 0) as f32
-            })
+        cooking_fuel(items, stack).map_or(1.0, |(_, speed)| {
+            Self::eval(&speed, fast, &self.floats, 0) as f32
+        })
     }
+}
+
+/// `ItemStack.get(DataComponents.COOKING_FUEL)`: the stack's burn-time and
+/// speed-multiplier providers, a removal patch hiding the item's default.
+pub fn cooking_fuel(items: &Items, stack: &ItemStack) -> Option<(Value, Value)> {
+    if let Some(data) = stack.data() {
+        if data.other("!minecraft:cooking_fuel").is_some() {
+            return None;
+        }
+        if let Some(own) = data.other("minecraft:cooking_fuel") {
+            return Some((
+                horizon_core::json_nbt::tag_to_json(own.get("burn_time")?).ok()?,
+                horizon_core::json_nbt::tag_to_json(own.get("speed_multiplier")?).ok()?,
+            ));
+        }
+    }
+    items.get(&stack.item).and_then(|i| i.fuel.clone())
 }
 
 #[cfg(test)]

@@ -521,6 +521,63 @@ mod tests {
         assert_eq!(fuel_slot(&furnace), Some(("test:coal", 1)));
         assert!(drops.is_empty());
     }
+
+    /// `AbstractFurnaceBlockEntity` reads `COOKING_FUEL` from the fuel stack:
+    /// a component on an item that has no default fuel lights the furnace,
+    /// and a removal patch hides an item's default.
+    #[test]
+    fn a_stack_own_cooking_fuel_lights_the_furnace() {
+        let (items, recipes, providers) = data("stack-cooking-fuel");
+        let context = crate::test_resources::server_loop_context();
+        let mut patched = ItemStack::new("test:ingot", 1);
+        patched.data_mut().set_other(
+            "minecraft:cooking_fuel",
+            Some(horizon_core::nbt::Tag::compound([
+                ("burn_time", horizon_core::nbt::Tag::Int(100)),
+                (
+                    "speed_multiplier",
+                    horizon_core::nbt::Tag::Float(2.0f32.to_bits()),
+                ),
+            ])),
+        );
+        assert_eq!(providers.burn_time(&items, &patched, false), 100);
+        assert_eq!(providers.speed(&items, &patched, false), 2.0);
+
+        let mut removed = ItemStack::new("test:coal", 1);
+        removed.data_mut().set_other(
+            "!minecraft:cooking_fuel",
+            Some(horizon_core::nbt::Tag::Compound(Default::default())),
+        );
+        assert_eq!(providers.burn_time(&items, &removed, false), 0);
+        assert_eq!(providers.speed(&items, &removed, false), 1.0);
+
+        let mut furnace = Furnace {
+            kind: FurnaceKind::Furnace,
+            items: [Some(ItemStack::new("test:ore", 1)), Some(patched), None],
+            lit_remaining: 0,
+            lit_total: 0,
+            cooking_timer: 0,
+            cooking_total: 200,
+            speed: 1.0,
+            recipes_used: HashMap::new(),
+        };
+        let remainder =
+            |s: &ItemStack| crate::crafting::CraftingRemainder::crafting_remainder(&items, s);
+        let mut drops = Vec::new();
+        assert_eq!(
+            furnace.tick(
+                context, &recipes, &items, &providers, &mut drops, &remainder
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            (furnace.lit_remaining, furnace.lit_total, furnace.speed),
+            (100, 100, 2.0)
+        );
+        // The 2x fuel rescaled the 200-tick recipe as it lit.
+        assert_eq!((furnace.cooking_total, furnace.cooking_timer), (100, 1));
+        assert!(furnace.items[1].is_none());
+    }
 }
 
 #[cfg(test)]

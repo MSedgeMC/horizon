@@ -1612,7 +1612,9 @@ impl Menu {
     }
 
     fn is_fuel(env: &Env, stack: &ItemStack) -> bool {
-        env.items.get(&stack.item).is_some_and(|i| i.fuel.is_some())
+        // `AbstractFurnaceMenu.isFuel`: `ItemStack.has(COOKING_FUEL)`, so a
+        // stack's own component counts and a removal patch hides the default.
+        crate::providers::cooking_fuel(env.items, stack).is_some()
     }
 
     // ---- Slot ----
