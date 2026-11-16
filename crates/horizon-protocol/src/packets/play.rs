@@ -3659,6 +3659,30 @@ mod tests {
         );
     }
 
+    #[test]
+    fn set_objective_refuses_an_unknown_render_type() {
+        // RenderType: 0 integer, 1 hearts. Vanilla reads the ordinal with
+        // readEnum, which indexes the enum's two values and throws past the
+        // end.
+        let decode = |method: i8, render: i32| {
+            let mut w = Writer::new();
+            w.string("kills");
+            w.i8(method);
+            w.nbt(&Tag::String("Kills".into()));
+            w.varint(render);
+            w.bool(false);
+            Clientbound::decode(crate::ids::play::clientbound::SET_OBJECTIVE, &w.data)
+        };
+        assert!(decode(0, 0).is_ok());
+        assert!(decode(0, 1).is_ok());
+        assert!(decode(0, 2).is_err());
+        assert!(decode(0, -1).is_err());
+        assert!(decode(2, 0).is_ok());
+        assert!(decode(2, 1).is_ok());
+        assert!(decode(2, 2).is_err());
+        assert!(decode(2, -1).is_err());
+    }
+
     /// A registry entry is its id + 1, the dialog itself a 0 then its NBT.
     #[test]
     fn dialogs_round_trip() {

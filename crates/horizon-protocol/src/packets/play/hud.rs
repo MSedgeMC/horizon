@@ -187,12 +187,28 @@ pub struct SetObjective {
     pub method: i8,
     pub display: Option<(Tag, i32, Option<NumberFormat>)>,
 }
+/// `ObjectiveCriteria.RenderType` has two values: integer 0 and hearts 1.
+/// `ClientboundSetObjectivePacket` reads the ordinal with `readEnum`, which
+/// indexes the enum's `values()` array and throws past the end.
+fn objective_render_type(r: &mut Reader) -> Result<i32> {
+    let render = r.varint()?;
+    if !(0..=1).contains(&render) {
+        return Err(Error::new(format!(
+            "unknown objective render type {render}"
+        )));
+    }
+    Ok(render)
+}
 impl Codec<SetObjective> for SetObjective {
     fn read(r: &mut Reader) -> Result<Self> {
         let name = r.string(32767)?;
         let method = r.i8()?;
         let display = if method == 0 || method == 2 {
-            Some((r.nbt()?, r.varint()?, <Opt<NumberFormat>>::read(r)?))
+            Some((
+                r.nbt()?,
+                objective_render_type(r)?,
+                <Opt<NumberFormat>>::read(r)?,
+            ))
         } else {
             None
         };
