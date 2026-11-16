@@ -106,7 +106,7 @@ WaterAvoidingRandomStrollGoal.getPosition	inline	crates/horizon-client/src/mobs/
 WrappedGoal.canBeReplacedBy	inline	crates/horizon-client/src/mobs/goals.rs::GoalSelector::tick	interruptable and lower priority number
 WrappedGoal.start	inline	crates/horizon-client/src/mobs/goals.rs::GoalSelector::tick	running flag then goal.start
 WrappedGoal.equals	skip:java		identity of wrapped goals in a set
-HurtByTargetGoal.alertOthers	inline	crates/horizon-client/src/mobs/goals.rs::HurtByTarget::start	gap: player: the owner and team checks are missing, so when a wolf is hurt every wolf nearby is called, including other owners' and the player's own tamed wolves
+HurtByTargetGoal.alertOthers	inline	crates/horizon-client/src/mobs/goals.rs::HurtByTarget::start	targetless same-species mobs in range, with the owner and team (`isAlliedTo`) checks
 NonTameRandomTargetGoal.canUse	inline	crates/horizon-client/src/mobs/tame.rs::NonTameTarget::can_use	wolf and cat target goals wrap NearestTarget: wild only, then the prey search
 NonTameRandomTargetGoal.canContinueToUse	inline	crates/horizon-client/src/mobs/tame.rs::NonTameTarget::can_continue	re-tests the prey selector (a baby turtle out of water), then the base TargetGoal rules
 ResetUniversalAngerTargetGoal.wasHurtByPlayer	missing		minor: the universal_anger rule is never read by mobs (default off)

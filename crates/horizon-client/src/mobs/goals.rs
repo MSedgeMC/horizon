@@ -831,10 +831,17 @@ impl Mob {
                 && w.selected_player()
                     .is_some_and(|p| super::tame::owned_by(self.extra.owner, p.uuid)))
     }
-    /// `canAttack` of any target: the player rules above, and
-    /// `IronGolem.canAttack`'s refusal of creepers. The callers check that
-    /// the target is alive and can be seen as an enemy.
+    /// `canAttack` of any target and the combat conditions' ally rule: the
+    /// player rules above, `IronGolem.canAttack`'s refusal of creepers, and
+    /// `TargetingConditions.test`'s `targeter.isAlliedTo(target)`. The callers
+    /// check that the target is alive and can be seen as an enemy.
     pub fn spares_target(&self, w: &MobWorld, who: Who) -> bool {
+        // `TargetingConditions.test` (combat): never an ally, so a team mate
+        // is no target (`Entity.isAlliedTo`; `spares_players` has the pet
+        // owner half).
+        if crate::scoreboard::teams_allied(w.teams.of(Who::Mob(self.id)), w.teams.of(who)) {
+            return true;
+        }
         // Dolphin.canAttack: a baby dolphin attacks nobody, so whatever hurt it
         // is never taken as its target.
         if self.species() == Species::Dolphin && self.is_baby() {
@@ -2094,6 +2101,15 @@ impl Goal for HurtByTarget {
                     // PolarBearHurtByTargetGoal.alertOther: adults only.
                     .filter(|s| !(self.polar_bear && s.baby))
                     .filter(|s| Who::Mob(s.id) != by)
+                    // HurtByTargetGoal.alertOthers: `!other.isAlliedTo(
+                    // this.mob.getLastHurtByMob())`, so a team mate of the
+                    // attacker is left alone.
+                    .filter(|s| {
+                        !crate::scoreboard::teams_allied(
+                            cx.w.teams.of(Who::Mob(s.id)),
+                            cx.w.teams.of(by),
+                        )
+                    })
                     // HurtByTargetGoal.alertOthers: a pet is only called by a
                     // pet with the same owner.
                     .filter(|s| !tamable || s.tame.then_some(s.owner).flatten() == owner)
@@ -4646,6 +4662,70 @@ mod breed_continue_tests {
             (started, stopped),
             (Some(true), Some(true)),
             "the breed goal starts for a calm partner and stops when it panics"
+        );
+    }
+}
+
+#[cfg(test)]
+mod hurt_by_target_tests {
+    use super::*;
+    use crate::mobs::Teams;
+    use crate::mobs::world::with_test_world;
+    use crate::scoreboard::Scoreboard;
+    use horizon_core::geometry::Vec3;
+    use std::collections::HashMap;
+    use std::sync::Arc;
+
+    /// Tick one `<HurtByTarget>` goal through the real selector.
+    fn tick(goals: &mut GoalSelector, m: &mut Mob, world: &MobWorld) {
+        let mut fixture = crate::health::TestLevel::new(0);
+        let mut events = Vec::new();
+        let mut cx = Cx {
+            w: world,
+            level: &mut fixture.level(),
+            events: &mut events,
+        };
+        goals.tick(m, &mut cx);
+    }
+
+    /// `HurtByTargetGoal.canUse`: `TargetingConditions.test` (combat) refuses an
+    /// attacker its targeter is allied to, so a team mate's hit is no revenge.
+    #[test]
+    #[ignore = "daily"]
+    fn a_team_mates_hit_starts_no_revenge() {
+        let mut board = Scoreboard::default();
+        board.add_team("t");
+        let team = board.team("t").expect("team t");
+        let teams = Teams {
+            player: None,
+            mobs: HashMap::from([(1, team), (2, team)]),
+        };
+        let mut kind = (*crate::mobs::sensor_scan_tests::kind()).clone();
+        kind.species = Species::Skeleton;
+        let other = Mob::new(2, Arc::new(kind), Vec3::new(1.5, 64.0, 0.5), 0.0)
+            .seen(None, &crate::items::Items::empty());
+        let others = [other];
+        let mut outcomes = None;
+        let ran = with_test_world(&others, |w, types| {
+            let kind = Arc::new(types.types["minecraft:zombie"].clone());
+            let mut m = Mob::new(1, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+            // `getLastHurtByMob`: the team mate's hit.
+            m.ai.last_hurt_by = Some(Who::Mob(2));
+            m.ai.last_hurt_by_time = 1;
+            let mut world = w.clone();
+            world.teams = Arc::new(teams);
+            let mut goals = GoalSelector::default();
+            goals.add(1, HurtByTarget::new());
+            tick(&mut goals, &mut m, &world);
+            outcomes = Some((goals.is_running("HurtByTarget"), m.ai.target));
+        });
+        if !ran {
+            return;
+        }
+        assert_eq!(
+            outcomes,
+            Some((false, None)),
+            "a team mate's hit does not make a mob retaliate"
         );
     }
 }
