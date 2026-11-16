@@ -277,7 +277,7 @@ pub fn setup_fog(tables: &FogTables, state: &FogState, input: &FogInputs) -> Fog
                 let m = 1.0 - input.thunder * 0.5;
                 sky_color = sky_color.map(|c| c * m);
             }
-            let sky_fog_end = (512.0f32 / 16.0).min(input.render_distance_chunks as f32);
+            let sky_fog_end = (sky.sky_fog_end / 16.0).min(input.render_distance_chunks as f32);
             let mix = (sky_fog_end / 32.0).clamp(0.0, 1.0).mul_add(0.75, 0.25);
             let mix = 1.0 - mix.powf(0.25);
             std::array::from_fn(|i| fog[i] + (sky_color[i] - fog[i]) * mix)
@@ -375,7 +375,7 @@ pub fn setup_fog(tables: &FogTables, state: &FogState, input: &FogInputs) -> Fog
             fog.cloud_end = distance;
         }
         FogType::Water => {
-            fog.environmental_start = -8.0;
+            fog.environmental_start = sky.water_fog_start;
             let factor = tables
                 .water_fog_end
                 .get(input.biome as usize)
@@ -389,7 +389,7 @@ pub fn setup_fog(tables: &FogTables, state: &FogState, input: &FogInputs) -> Fog
             fog.environmental_start = sky.fog_start + -160.0 * state.rain_fog_multiplier;
             let min_end = sky.fog_end.min(96.0);
             fog.environmental_end = min_end.max(sky.fog_end + -256.0 * state.rain_fog_multiplier);
-            fog.sky_end = rd.min(512.0);
+            fog.sky_end = rd.min(sky.sky_fog_end);
             fog.cloud_end = ((input.cloud_range_chunks * 16) as f32).min(sky.cloud_fog_end);
             if input.boss_world_fog {
                 fog.environmental_start = fog.environmental_start.min(10.0);
@@ -762,6 +762,36 @@ mod tests {
         assert!((fog.render_distance_start - (192.0 - 19.2)).abs() < 1e-4);
         assert_eq!(fog.render_distance_end, 192.0);
         assert_eq!(fog.sky_end, 192.0);
+    }
+    /// `AtmosphericFogEnvironment.getBaseColor` and its `setupFog` read
+    /// `visual/sky_fog_end_distance`, and `WaterFogEnvironment.setupFog` reads
+    /// `visual/water_fog_start_distance`, instead of the old constants.
+    #[test]
+    fn fog_distances_come_from_their_environment_attributes() {
+        let sky = Sky {
+            fog_end: 1024.0,
+            sky_fog_end: 256.0,
+            water_fog_start: 12.0,
+            fog_color: [1.0, 0.0, 0.0],
+            sky_color: [0.0, 0.0, 1.0],
+            ..Sky::default()
+        };
+        let tables = FogTables {
+            water_fog_end: vec![1.0],
+        };
+        let mut input = inputs(&sky);
+        // 32 chunks = 512 blocks: only the attribute ends the sky before it.
+        input.render_distance_chunks = 32;
+        let fog = setup_fog(&tables, &FogState::default(), &input);
+        assert_eq!(fog.sky_end, 256.0);
+        // The sky-colour mix runs over the same shortened distance, so the
+        // sky colour has started to reach the fog colour at 512 blocks.
+        assert!(fog.color[2] > 0.05, "sky colour mixed in: {:?}", fog.color);
+        input.fog_type = FogType::Water;
+        assert_eq!(
+            setup_fog(&tables, &FogState::default(), &input).environmental_start,
+            12.0
+        );
     }
     #[test]
     fn distant_atmosphere_extends_without_extending_environmental_overrides() {

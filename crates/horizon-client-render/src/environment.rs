@@ -25,7 +25,7 @@ pub struct Environment {
     post: HashMap<String, AttributeMap>,
 }
 
-#[derive(Clone, Copy, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Sky {
     pub sky_color: [f32; 3],
     pub fog_color: [f32; 3],
@@ -44,10 +44,41 @@ pub struct Sky {
     /// Environmental fog (`visual/fog_start_distance` / `fog_end_distance`).
     pub fog_start: f32,
     pub fog_end: f32,
+    /// `visual/sky_fog_end_distance`: how far the sky and its colour reach.
+    pub sky_fog_end: f32,
+    /// `visual/water_fog_start_distance`.
+    pub water_fog_start: f32,
     /// `visual/cloud_fog_end_distance`.
     pub cloud_fog_end: f32,
     /// `visual/cloud_height`.
     pub cloud_height: f32,
+}
+impl Default for Sky {
+    /// `EnvironmentAttributes` defaults: the fog distances a hand-built sky
+    /// (a loading screen, a test) uses.
+    fn default() -> Self {
+        Self {
+            sky_color: [0.0; 3],
+            fog_color: [0.0; 3],
+            sky_light_factor: 0.0,
+            sky_light_color: [0.0; 3],
+            block_light_tint: [0.0; 3],
+            ambient_light_color: [0.0; 3],
+            sun_angle: 0.0,
+            moon_angle: 0.0,
+            star_angle: 0.0,
+            star_brightness: 0.0,
+            sunrise_color: [0.0; 4],
+            cloud_color: [0.0; 4],
+            sky_light_level: 0.0,
+            fog_start: 0.0,
+            fog_end: 0.0,
+            sky_fog_end: 512.0,
+            water_fog_start: -8.0,
+            cloud_fog_end: 0.0,
+            cloud_height: 0.0,
+        }
+    }
 }
 
 /// Where and when the sky is sampled.
@@ -1015,6 +1046,8 @@ impl Environment {
             sky_light_level: float("gameplay/sky_light_level") / 15.0,
             fog_start: float("visual/fog_start_distance"),
             fog_end: float("visual/fog_end_distance"),
+            sky_fog_end: float("visual/sky_fog_end_distance"),
+            water_fog_start: float("visual/water_fog_start_distance"),
             cloud_fog_end: float("visual/cloud_fog_end_distance"),
             cloud_height: float("visual/cloud_height"),
         }

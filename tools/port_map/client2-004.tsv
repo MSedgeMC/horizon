@@ -40,14 +40,14 @@ TranslucentFeatureRenderPhase.sortIndices	port	crates/horizon-client-render/src/
 TranslucentSubmit.computeDistanceToCameraSq	inline	crates/horizon-client-render/src/gfx/translucency.rs::Sorter::sort	distance from the quad centre to the camera, computed inside sort
 FogRenderer.getBuffer	skip:other		selects the fog uniform slice; Horizon hands its fog values to its own shader per frame
 FogRenderer.updateBuffer	skip:other		writes the fog uniform buffer; Horizon's frame_fog passes FogData to its own shader
-AtmosphericFogEnvironment.getBaseColor	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: minor: sky fog end uses constant 512 instead of the SKY_FOG_END_DISTANCE attribute
+AtmosphericFogEnvironment.getBaseColor	port	crates/horizon-client-render/src/fog.rs::setup_fog	the sky-colour mix and the sky fog end read visual/sky_fog_end_distance
 AtmosphericFogEnvironment.applyWeatherDarken	inline	crates/horizon-client-render/src/fog.rs::setup_fog	rain and thunder darkening folded into the atmospheric colour
 BlindnessFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	blindness distance and sky/cloud ends
 BlindnessFogEnvironment.getModifiedDarkness	inline	crates/horizon-client-render/src/fog.rs::setup_fog	blindness darkness folded into setup_fog
 LavaFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: player: spectator (-8 start, half render distance) and fire resistance (0 to 5) are not applied in lava
 MobEffectFogEnvironment.isApplicable	inline	crates/horizon-client/src/game/render_tick.rs::Game::frame_fog	effect gate is where frame_fog builds the blindness and darkness inputs
 PowderedSnowFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: player: spectator case (-8 start, half render distance) is not applied
-WaterFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	gap: minor: water fog start is fixed at -8; vanilla reads the WATER_FOG_START_DISTANCE attribute
+WaterFogEnvironment.setupFog	port	crates/horizon-client-render/src/fog.rs::setup_fog	the water fog start reads visual/water_fog_start_distance
 DrawableGizmoPrimitives.addPoint	missing		minor: debug points are not drawn; Gizmos has no point kind
 DrawableGizmoPrimitives.addLine	port	crates/horizon-client/src/gizmos.rs::Gizmos::line	
 DrawableGizmoPrimitives.addTriangleFan	missing		minor: debug triangle fans are not drawn
