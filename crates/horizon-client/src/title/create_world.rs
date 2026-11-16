@@ -674,8 +674,7 @@ impl Title {
             let label = Text::translate(key, &[]);
             crate::widgets::record(&label.plain(), [x, 0.0, tw, TAB_BAR], true);
             crate::widgets::target_as([x, 0.0, tw, TAB_BAR], crate::widgets::Kind::Tab(selected));
-            let hovered =
-                ui::hovered(cursor, x, 0.0, tw, TAB_BAR) || (tab_row_focused && selected);
+            let hovered = ui::hovered(cursor, x, 0.0, tw, TAB_BAR) || (tab_row_focused && selected);
             let sprite = match (selected, hovered) {
                 (true, true) => "gui/sprites/widget/tab_selected_highlighted",
                 (true, false) => "gui/sprites/widget/tab_selected",
