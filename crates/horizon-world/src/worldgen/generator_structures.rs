@@ -510,6 +510,30 @@ impl StructureState {
             .filter_map(|start| {
                 let index = (self.registry.structures.iter()).position(|s| s.name == start.name)?;
                 let def = &self.registry.structures[index];
+                if matches!(&def.kind, StructureKind::Monument(_)) {
+                    // An old chunk's monument is `StructureStart.loadStaticStart`'s
+                    // `PiecesContainer.load` plus `regeneratePiecesAfterLoad` too: the first
+                    // saved piece that loads supplies the box and orientation, and the
+                    // rooms are built again from the seed.
+                    let top = start.pieces.iter().find(|piece| {
+                        monument_piece(piece) || self.saved_piece(piece, def).is_some()
+                    });
+                    if let Some(top) = top
+                        && let Some(piece) =
+                            super::structure::monument::MonumentBuilding::regenerate_after_load(
+                                top,
+                                chunk,
+                                context.seed(),
+                            )
+                    {
+                        return Some(Arc::new(StructureStart::new(
+                            index,
+                            def,
+                            chunk,
+                            vec![Piece::Legacy(Box::new(piece))],
+                        )));
+                    }
+                }
                 if !start.pieces.is_empty()
                     && let Some(pieces) = start
                         .pieces
@@ -933,8 +957,35 @@ fn pieces_box(pieces: &[Piece]) -> Option<[i32; 6]> {
     }
     union.map(|b| [b.min[0], b.min[1], b.min[2], b.max[0], b.max[1], b.max[2]])
 }
+/// `PiecesContainer.load` keeps one of a monument's own pieces when `StructurePieceType`
+/// registers its id (`OMB` and the eleven room ids) and the `StructurePiece(StructurePieceType,
+/// CompoundTag)` constructor reads its box. An unknown id is logged and dropped, and a
+/// constructor that throws drops the piece too.
+fn monument_piece(piece: &horizon_core::nbt::Tag) -> bool {
+    matches!(
+        saved_piece_name(piece).as_deref(),
+        Some(
+            "minecraft:omb"
+                | "minecraft:omcr"
+                | "minecraft:omdxr"
+                | "minecraft:omdxyr"
+                | "minecraft:omdyr"
+                | "minecraft:omdyzr"
+                | "minecraft:omdzr"
+                | "minecraft:omentry"
+                | "minecraft:ompenthouse"
+                | "minecraft:omsimple"
+                | "minecraft:omsimplet"
+                | "minecraft:omwr"
+        )
+    ) && piece
+        .get("BB")
+        .and_then(super::structure::saved_legacy::read_box)
+        .is_some()
+}
 /// `StructureStart.loadStaticStart` / `PiecesContainer.load`, restricted to complete supported
-/// starts. Unsupported or unreadable children leave the entire start to regeneration.
+/// starts. Unsupported or unreadable children leave the entire start to regeneration; an
+/// ocean monument keeps the first child that loads and rebuilds its rooms.
 pub(super) fn read_saved_start(
     index: usize,
     def: &StructureDef,
@@ -958,13 +1009,40 @@ pub(super) fn read_saved_start(
     if children.is_empty() {
         return None;
     }
+    // `StructureStart.loadStaticStart` decodes each child through `PiecesContainer.load`,
+    // which drops every piece it cannot read and keeps the rest in saved order.
+    let decode = |piece: &horizon_core::nbt::Tag| -> Option<Piece> {
+        // `PiecesContainer.load`'s RENAMES read the old jigsaw ids as `jigsaw`; the other
+        // supported types are template pieces and the mineshaft, fortress and stronghold
+        // pieces that read their own tags.
+        if saved_piece_id(piece).is_none() {
+            let Tag::String(id) = piece.get("id")? else {
+                return None;
+            };
+            let id = id.to_string_lossy();
+            let id = id.strip_prefix("minecraft:").unwrap_or(&id);
+            return super::structure::saved_templates::read(id, piece, resources, bindings)
+                .or_else(|| super::structure::saved_legacy::read(id, piece, def))
+                .map(Piece::Legacy);
+        }
+        // Pool pieces have no orientation and depth 0. Preserve other values by falling
+        // back until the representation can hold them, rather than silently losing them.
+        if piece.get("O") != Some(&Tag::Int(-1)) || piece.get("GD") != Some(&Tag::Int(0)) {
+            return None;
+        }
+        PoolPiece::from_saved(&tag_json(piece), resources, bindings)
+            .ok()
+            .map(Piece::Pool)
+    };
     if matches!(&def.kind, StructureKind::Monument(_)) {
-        // `OceanMonumentStructure.regeneratePiecesAfterLoad` throws the saved pieces away and
-        // reads only the first one's box and orientation. A first piece that is not the
-        // building (or has no box) leaves the start to regeneration, like any other.
+        // `OceanMonumentStructure.regeneratePiecesAfterLoad` throws the saved rooms away,
+        // reads the box and orientation of the first piece `PiecesContainer.load` kept and
+        // builds the rooms again from the seed. A piece it cannot read (an unknown id, or
+        // no box) is dropped and the next one is tried; no survivor leaves the start to
+        // regeneration.
         let top = children
-            .first()
-            .filter(|piece| saved_piece_name(piece).as_deref() == Some("minecraft:omb"))?;
+            .iter()
+            .find(|piece| monument_piece(piece) || decode(piece).is_some())?;
         let piece =
             super::structure::monument::MonumentBuilding::regenerate_after_load(top, chunk, seed)?;
         let mut start =
@@ -972,32 +1050,7 @@ pub(super) fn read_saved_start(
         start.references = int("references");
         return Some(start);
     }
-    let pieces = children
-        .iter()
-        .map(|piece| {
-            // `PiecesContainer.load`'s RENAMES read the old jigsaw ids as `jigsaw`; the other
-            // supported types are template pieces and the mineshaft, fortress and stronghold
-            // pieces that read their own tags.
-            if saved_piece_id(piece).is_none() {
-                let Tag::String(id) = piece.get("id")? else {
-                    return None;
-                };
-                let id = id.to_string_lossy();
-                let id = id.strip_prefix("minecraft:").unwrap_or(&id);
-                return super::structure::saved_templates::read(id, piece, resources, bindings)
-                    .or_else(|| super::structure::saved_legacy::read(id, piece, def))
-                    .map(Piece::Legacy);
-            }
-            // Pool pieces have no orientation and depth 0. Preserve other values by falling
-            // back until the representation can hold them, rather than silently losing them.
-            if piece.get("O") != Some(&Tag::Int(-1)) || piece.get("GD") != Some(&Tag::Int(0)) {
-                return None;
-            }
-            PoolPiece::from_saved(&tag_json(piece), resources, bindings)
-                .ok()
-                .map(Piece::Pool)
-        })
-        .collect::<Option<Vec<_>>>()?;
+    let pieces = children.iter().map(decode).collect::<Option<Vec<_>>>()?;
     let mut start = StructureStart::new(index, def, chunk, pieces);
     start.references = int("references");
     Some(start)

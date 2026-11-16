@@ -1644,8 +1644,8 @@ mod tests {
             format!("{:?}", read(&no_orientation).unwrap()),
             format!("{original:?}")
         );
-        // A piece with no box, or a first piece of another type, leaves the start to the
-        // generator (vanilla drops the piece and reads the next one).
+        // A piece with no box does not survive `PiecesContainer.load`; with no other
+        // piece the start is left to the generator.
         for broken in [
             Tag::compound([
                 ("id", Tag::String("minecraft:OMB".into())),
@@ -1655,10 +1655,6 @@ mod tests {
                 ("id", Tag::String("minecraft:OMB".into())),
                 ("BB", Tag::String("0,0,0,1,1,1".into())),
             ]),
-            Tag::compound([
-                ("id", Tag::String("minecraft:msroom".into())),
-                ("BB", Tag::IntArray(vec![0, 0, 0, 1, 1, 1])),
-            ]),
         ] {
             let mut t = tag.clone();
             let Tag::List(children) = t.get_mut("Children").unwrap() else {
@@ -1667,6 +1663,45 @@ mod tests {
             children[0] = broken.clone();
             assert!(read(&t).is_none(), "{broken:?}");
         }
+        // `PiecesContainer.load` drops the pieces it cannot read and keeps the rest in
+        // order; `OceanMonumentStructure.regeneratePiecesAfterLoad` then builds the rooms
+        // again from the first survivor's box and orientation, not from the seed.
+        for broken in [
+            Tag::compound([
+                ("id", Tag::String("minecraft:OMB".into())),
+                ("BB", Tag::IntArray(vec![0, 0, 0, 1])),
+            ]),
+            Tag::compound([
+                ("id", Tag::String("minecraft:future_room".into())),
+                ("BB", Tag::IntArray(vec![0, 0, 0, 1, 1, 1])),
+            ]),
+        ] {
+            let mut t = tag.clone();
+            let Tag::List(children) = t.get_mut("Children").unwrap() else {
+                unreachable!()
+            };
+            children.insert(0, broken.clone());
+            assert_eq!(
+                format!("{:?}", read(&t).unwrap()),
+                format!("{loaded:?}"),
+                "the next saved piece anchors the rooms: {broken:?}"
+            );
+        }
+        // A first piece of another type is a survivor too: vanilla's version has no type
+        // test, so its box and orientation anchor the building.
+        let mut other = tag.clone();
+        let Tag::List(children) = other.get_mut("Children").unwrap() else {
+            unreachable!()
+        };
+        children[0] = Tag::compound([
+            ("id", Tag::String("minecraft:msroom".into())),
+            ("BB", Tag::IntArray(vec![100, 20, -300, 157, 42, -243])),
+        ]);
+        assert_eq!(
+            piece(&other).bounding_box(),
+            BoundingBox::new([100, 39, -300], [157, 61, -243]),
+            "the first surviving piece's box, whatever its type"
+        );
         let mut empty = tag.clone();
         *empty.get_mut("Children").unwrap() = Tag::List(Vec::new());
         assert!(read(&empty).is_none());
