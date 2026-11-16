@@ -3659,6 +3659,40 @@ mod tests {
         );
     }
 
+    #[test]
+    fn boss_event_refuses_an_unknown_colour_ordinal() {
+        // BossBarColor: 0 pink through 6 white. Vanilla reads the ordinal
+        // with readEnum, which indexes the enum's seven values and throws
+        // past the end.
+        let add = |color: i32| {
+            let mut w = Writer::new();
+            w.uuid(0);
+            w.varint(0);
+            w.nbt(&Tag::End);
+            w.f32(0.0);
+            w.varint(color);
+            w.varint(0);
+            w.u8(0);
+            Clientbound::decode(crate::ids::play::clientbound::BOSS_EVENT, &w.data)
+        };
+        let style = |color: i32| {
+            let mut w = Writer::new();
+            w.uuid(0);
+            w.varint(4);
+            w.varint(color);
+            w.varint(0);
+            Clientbound::decode(crate::ids::play::clientbound::BOSS_EVENT, &w.data)
+        };
+        assert!(add(0).is_ok());
+        assert!(add(6).is_ok());
+        assert!(add(7).is_err());
+        assert!(add(-1).is_err());
+        assert!(style(0).is_ok());
+        assert!(style(6).is_ok());
+        assert!(style(7).is_err());
+        assert!(style(-1).is_err());
+    }
+
     /// A registry entry is its id + 1, the dialog itself a 0 then its NBT.
     #[test]
     fn dialogs_round_trip() {

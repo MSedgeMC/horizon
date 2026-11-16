@@ -50,6 +50,16 @@ fn boss_flags(darken: bool, music: bool, fog: bool) -> u8 {
 fn split_flags(flags: u8) -> (bool, bool, bool) {
     (flags & 1 != 0, flags & 2 != 0, flags & 4 != 0)
 }
+/// `BossEvent.BossBarColor` has seven values: pink 0 through white 6.
+/// `ClientboundBossEventPacket` reads an ordinal with `readEnum`, which
+/// indexes the enum's `values()` array and throws past the end.
+fn boss_color(r: &mut Reader) -> Result<i32> {
+    let color = r.varint()?;
+    if !(0..=6).contains(&color) {
+        return Err(Error::new(format!("unknown boss bar colour {color}")));
+    }
+    Ok(color)
+}
 impl Codec<BossEvent> for BossEvent {
     fn read(r: &mut Reader) -> Result<BossEvent> {
         let id = r.uuid()?;
@@ -57,7 +67,7 @@ impl Codec<BossEvent> for BossEvent {
             0 => {
                 let name = r.nbt()?;
                 let progress = r.f32()?;
-                let color = r.varint()?;
+                let color = boss_color(r)?;
                 let overlay = r.varint()?;
                 let (darken, music, fog) = split_flags(r.u8()?);
                 BossAction::Add {
@@ -74,7 +84,7 @@ impl Codec<BossEvent> for BossEvent {
             2 => BossAction::UpdateProgress { progress: r.f32()? },
             3 => BossAction::UpdateName { name: r.nbt()? },
             4 => BossAction::UpdateStyle {
-                color: r.varint()?,
+                color: boss_color(r)?,
                 overlay: r.varint()?,
             },
             5 => {
