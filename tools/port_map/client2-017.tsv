@@ -115,7 +115,7 @@ PackSelectionModel.getUnselected	port	crates/horizon-client-render/src/packs.rs:
 PackSelectionModel.getSelected	port	crates/horizon-client-render/src/packs.rs::SelectionModel::list	selected list (list(true)), returned as a slice rather than a stream
 PackSelectionModel.updateRepoSelectedList	port	crates/horizon-client-render/src/packs.rs::SelectionModel::commit	selection written bottom first, as options.txt stores it; downloaded server/… packs are omitted from the saved list
 PackSelectionModel.findNewPacks	port	crates/horizon-client/src/game/packs.rs::Game::refresh_pack_lists	gap: minor: rescans when the options open and lists the data pack folder again once a second while the screen is open (OptionsUi::watch_data_packs); no watch on the resource pack folder; active server packs are included
-PackSelectionModel.EntryBase.updateHighContrastOptionInstance	missing		minor: selecting the high_contrast pack does not switch the High Contrast option on, as vanilla does
+PackSelectionModel.EntryBase.updateHighContrastOptionInstance	port	crates/horizon-client-render/src/options_ui.rs::OptionsUi::back	committing the resource packs sets Options.highContrast to whether the built-in high_contrast pack is selected
 PackSelectionModel.EntryBase.move	port	crates/horizon-client-render/src/packs.rs::SelectionModel::move_by	move up or down within the list when the neighbour is not fixed
 PackSelectionScreen.closeWatcher	missing		minor: no folder watcher to close (see PackSelectionScreen.Watcher)
 PackSelectionScreen.setInitialFocus	port	crates/horizon-client-render/src/pack_screen.rs::PackScreen::set_focus	search box focused on open

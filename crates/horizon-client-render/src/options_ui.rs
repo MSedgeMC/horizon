@@ -4390,6 +4390,9 @@ impl OptionsUi {
                         // `PackSelectionModel.commit` already drops `server/…`
                         // ids; keep the same filter if the screen is rebuilt.
                         let ids = crate::packs::player_pack_ids(ids);
+                        // `PackSelectionModel.EntryBase.updateHighContrastOptionInstance`:
+                        // the High Contrast option follows its built-in pack.
+                        s.high_contrast = ids.iter().any(|id| id == "high_contrast");
                         s.resource_packs = ids.clone();
                         self.pack_selection = ids.clone();
                         events.push(Event::Packs(ids));
@@ -8148,6 +8151,57 @@ mod tests {
         ui.click(&mut s, &atlas, px, py, size, [854, 480], false, false);
         assert_eq!(s.particles, 0);
         ui.shift = false;
+    }
+
+    /// `PackSelectionModel.EntryBase.updateHighContrastOptionInstance`: committing
+    /// the built-in High Contrast pack switches `Options.highContrast` on, and
+    /// committing without it switches the option off.
+    #[test]
+    fn committing_the_high_contrast_pack_switches_the_option_on() {
+        let atlas = HudAtlas::build(std::path::Path::new("/nonexistent/horizon-test-assets"));
+        let atlas = atlas.unwrap();
+        let m = crate::screen_draw::Measure(&atlas.font);
+        let pack = |id: &str| crate::pack_screen::PackInfo {
+            id: id.to_owned(),
+            title: Text::literal(id),
+            description: Text::literal(""),
+            description_style: Style::default(),
+            source: crate::pack_screen::Source::BuiltIn,
+            compat: crate::pack_screen::Compat::Compatible,
+            icon: None,
+            required: false,
+            position: crate::packs::Position::Top,
+            fixed: false,
+        };
+        for (selected, expected) in [
+            (vec!["vanilla".to_owned(), "high_contrast".to_owned()], true),
+            (vec!["vanilla".to_owned()], false),
+        ] {
+            let mut screen = crate::pack_screen::PackScreen::new(
+                &m,
+                Text::literal("Resource Packs"),
+                854,
+                480,
+                false,
+                vec![pack("vanilla"), pack("high_contrast")],
+                &selected,
+            );
+            screen.changed = true;
+            let mut settings = Settings::default();
+            settings.high_contrast = !expected;
+            let mut ui = OptionsUi::default();
+            ui.show(Page::Packs);
+            ui.pack_screen = Some(screen);
+            ui.back(&mut settings);
+            assert_eq!(settings.high_contrast, expected);
+            assert_eq!(
+                settings
+                    .resource_packs
+                    .iter()
+                    .any(|id| id == "high_contrast"),
+                expected
+            );
+        }
     }
 }
 
