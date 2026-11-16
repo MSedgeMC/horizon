@@ -3622,6 +3622,40 @@ mod tests {
     }
 
     #[test]
+    fn boss_event_refuses_an_unknown_overlay_ordinal() {
+        // BossBarOverlay: 0 progress through 4 notched_20. Vanilla reads the
+        // ordinal with readEnum, which indexes the enum's five values and
+        // throws past the end.
+        let add = |overlay: i32| {
+            let mut w = Writer::new();
+            w.uuid(0);
+            w.varint(0);
+            w.nbt(&Tag::End);
+            w.f32(0.0);
+            w.varint(0);
+            w.varint(overlay);
+            w.u8(0);
+            Clientbound::decode(crate::ids::play::clientbound::BOSS_EVENT, &w.data)
+        };
+        let style = |overlay: i32| {
+            let mut w = Writer::new();
+            w.uuid(0);
+            w.varint(4);
+            w.varint(0);
+            w.varint(overlay);
+            Clientbound::decode(crate::ids::play::clientbound::BOSS_EVENT, &w.data)
+        };
+        assert!(add(0).is_ok());
+        assert!(add(4).is_ok());
+        assert!(add(5).is_err());
+        assert!(add(-1).is_err());
+        assert!(style(0).is_ok());
+        assert!(style(4).is_ok());
+        assert!(style(5).is_err());
+        assert!(style(-1).is_err());
+    }
+
+    #[test]
     fn boss_event_round_trips() {
         let add = Clientbound::BossEvent(BossEvent {
             id: 0x0123_4567_89ab_cdef_fedc_ba98_7654_3210,
