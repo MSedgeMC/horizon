@@ -241,7 +241,7 @@ impl Hub {
             return;
         }
         let bound = play::ChatTypeBound {
-            chat_type: self.chat_type,
+            chat_type: play::ChatTypeHolder::Registry(self.chat_type),
             name: self.player_display_name(uuid, &name),
             target: None,
         };
@@ -448,7 +448,7 @@ impl Hub {
             return false;
         };
         let bound = play::ChatTypeBound {
-            chat_type: self.chat_type,
+            chat_type: play::ChatTypeHolder::Registry(self.chat_type),
             name: self.player_display_name(uuid, &name),
             target: None,
         };
@@ -537,7 +537,7 @@ impl Hub {
         except: Option<u32>,
     ) {
         let bound = play::ChatTypeBound {
-            chat_type: self.chat_type_id(chat_type),
+            chat_type: play::ChatTypeHolder::Registry(self.chat_type_id(chat_type)),
             name,
             target: None,
         };
@@ -561,7 +561,7 @@ impl Hub {
     ) {
         let (uuid, name) = (self.guests[i].uuid, self.guests[i].name.clone());
         let bound = play::ChatTypeBound {
-            chat_type: self.chat_type_id(chat_type),
+            chat_type: play::ChatTypeHolder::Registry(self.chat_type_id(chat_type)),
             name: self.player_display_name(uuid, &name),
             target: None,
         };
@@ -604,12 +604,12 @@ impl Hub {
         for &t in targets {
             let target = self.player_display_name(self.guests[t].uuid, &self.guests[t].name);
             let out = play::ChatTypeBound {
-                chat_type: outgoing,
+                chat_type: play::ChatTypeHolder::Registry(outgoing),
                 name: self.player_display_name(uuid, &name),
                 target: Some(target),
             };
             let inc = play::ChatTypeBound {
-                chat_type: incoming,
+                chat_type: play::ChatTypeHolder::Registry(incoming),
                 name: self.player_display_name(uuid, &name),
                 target: None,
             };

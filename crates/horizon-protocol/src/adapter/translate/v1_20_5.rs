@@ -254,7 +254,10 @@ mod tests {
                 }
                 _ => panic!("chat"),
             };
-            assert_eq!(bound.chat_type, chat_type);
+            assert_eq!(
+                bound.chat_type,
+                crate::packets::play::ChatTypeHolder::Registry(chat_type)
+            );
             assert_eq!(bound.name, Tag::String("Wire".into()));
             assert_eq!(bound.target, (chat_type == 2).then(|| Tag::String("Target".into())));
             assert!(clientbound(&session, State::Play, id, &old[..old.len() - 1]).is_err());

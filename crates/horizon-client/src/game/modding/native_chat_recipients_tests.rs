@@ -139,7 +139,7 @@ fn a_chat_line_hidden_from_one_receiver_reaches_the_others() {
             lines(&sender);
             lines(&other);
             let bound = play::ChatTypeBound {
-                chat_type: 0,
+                chat_type: play::ChatTypeHolder::Registry(0),
                 name: horizon_client::lan::data::component_nbt(
                     &Text::literal("guest12").component(),
                 ),

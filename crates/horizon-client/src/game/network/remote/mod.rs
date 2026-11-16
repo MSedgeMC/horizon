@@ -1933,7 +1933,7 @@ impl Game<'_> {
             trust: ChatTrust::Error,
             narration,
             sender: 0,
-            chat_type: chat_type.chat_type,
+            chat_type: chat_type.chat_type.registry(),
             player: None,
         });
     }
@@ -2043,7 +2043,7 @@ impl Game<'_> {
         }
         // handleChatMessageError says its line as system chat, and mods are not told of it.
         let error = matches!(trust, ChatTrust::Error);
-        let (system, kind, player) = (false, Some(chat_type), player.as_ref());
+        let (system, kind, player) = (false, chat_type, player.as_ref());
         if !error && !self.chat_received(system, false, sender, kind, player, &mut line) {
             return false;
         }
@@ -4952,7 +4952,7 @@ impl Game<'_> {
                     trust,
                     narration,
                     sender: p.sender,
-                    chat_type: p.chat_type.chat_type,
+                    chat_type: p.chat_type.chat_type.registry(),
                     player,
                 });
             }
@@ -4968,7 +4968,7 @@ impl Game<'_> {
                     trust: ChatTrust::Secure,
                     narration,
                     sender: 0,
-                    chat_type: p.chat_type.chat_type,
+                    chat_type: p.chat_type.chat_type.registry(),
                     player: None,
                 });
             }
@@ -5815,8 +5815,18 @@ impl Game<'_> {
         let Some(r) = self.remote.as_ref() else {
             return comp_text(content);
         };
-        let chat_type = r.registries.data("minecraft:chat_type", bound.chat_type);
-        comp_text(&chat_type_decorate(chat_type, decoration, bound, content))
+        let chat_type = match &bound.chat_type {
+            play::ChatTypeHolder::Registry(id) => {
+                r.registries.data("minecraft:chat_type", *id).cloned()
+            }
+            play::ChatTypeHolder::Direct(direct) => Some(direct.to_tag()),
+        };
+        comp_text(&chat_type_decorate(
+            chat_type.as_ref(),
+            decoration,
+            bound,
+            content,
+        ))
     }
     fn remote_item_data(&mut self, id: i32, stack: &Option<Stack>) {
         let Some(stack) = self.to_stack(stack) else {
@@ -11439,7 +11449,7 @@ pub(crate) mod tests {
                 C::DisguisedChat(play::DisguisedChat {
                     message: Tag::String(message.into()),
                     chat_type: play::ChatTypeBound {
-                        chat_type: 0,
+                        chat_type: play::ChatTypeHolder::Registry(0),
                         name: Tag::String("Steve".into()),
                         target: None,
                     },
@@ -14538,7 +14548,7 @@ pub(crate) mod tests {
         use horizon_core::nbt::{JavaString, Tag, parse_snbt};
         use serde_json::json;
         let bound = play::ChatTypeBound {
-            chat_type: 0,
+            chat_type: play::ChatTypeHolder::Registry(0),
             name: Tag::String(JavaString::from("Steve")),
             target: None,
         };

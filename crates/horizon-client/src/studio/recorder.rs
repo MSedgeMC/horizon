@@ -335,7 +335,7 @@ mod tests {
             P::DisguisedChat(play::DisguisedChat {
                 message: Tag::String("private message".into()),
                 chat_type: ChatTypeBound {
-                    chat_type: 0,
+                    chat_type: play::ChatTypeHolder::Registry(0),
                     name: Tag::String("PlayerName".into()),
                     target: None,
                 },
@@ -356,7 +356,7 @@ mod tests {
                 unsigned_content: None,
                 filter: (0, vec![]),
                 chat_type: ChatTypeBound {
-                    chat_type: 0,
+                    chat_type: play::ChatTypeHolder::Registry(0),
                     name: Tag::String("PlayerName".into()),
                     target: None,
                 },

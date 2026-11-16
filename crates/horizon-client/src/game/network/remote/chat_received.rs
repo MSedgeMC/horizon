@@ -12,8 +12,9 @@ pub(super) struct QueuedChat {
     pub(super) narration: String,
     /// The player's UUID, 0 for disguised chat (`Util.NIL_UUID`).
     pub(super) sender: u128,
-    /// The chat type's network ID (`ChatType.Bound.chatType`).
-    pub(super) chat_type: i32,
+    /// The chat type's network ID (`ChatType.Bound.chatType`), `None` when
+    /// the server sent the chat type inline.
+    pub(super) chat_type: Option<i32>,
     /// The message as the player signed it, read only while a mod listens;
     /// `None` for disguised chat and validation errors.
     pub(super) player: Option<mod_api::PlayerChatInfo>,
@@ -105,7 +106,7 @@ mod tests {
             unsigned_content: Some(Tag::String("[mod] hello".into())),
             filter: (2, vec![-1, 3]),
             chat_type: play::ChatTypeBound {
-                chat_type: 0,
+                chat_type: play::ChatTypeHolder::Registry(0),
                 name: Tag::String("Steve".into()),
                 target: None,
             },

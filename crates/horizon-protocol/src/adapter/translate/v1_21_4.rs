@@ -331,7 +331,7 @@ mod tests {
         old.varint(0);
         play::ChatTypeBound::write(
             &play::ChatTypeBound {
-                chat_type: 0,
+                chat_type: play::ChatTypeHolder::Registry(0),
                 name: Tag::String("Player".into()),
                 target: None,
             },

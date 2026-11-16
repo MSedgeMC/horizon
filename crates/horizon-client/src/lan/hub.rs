@@ -1138,7 +1138,7 @@ impl Hub {
         self.broadcast(&C::DisguisedChat(play::DisguisedChat {
             message: literal(text),
             chat_type: play::ChatTypeBound {
-                chat_type: self.chat_type,
+                chat_type: play::ChatTypeHolder::Registry(self.chat_type),
                 name: literal(sender),
                 target: None,
             },
@@ -1209,7 +1209,7 @@ impl Hub {
         self.broadcast(&C::DisguisedChat(play::DisguisedChat {
             message: literal(text),
             chat_type: play::ChatTypeBound {
-                chat_type,
+                chat_type: play::ChatTypeHolder::Registry(chat_type),
                 name: literal(source),
                 target: None,
             },
@@ -6679,7 +6679,7 @@ mod tests {
                 unsigned_content: None,
             }),
             bound: Box::new(play::ChatTypeBound {
-                chat_type: 0,
+                chat_type: play::ChatTypeHolder::Registry(0),
                 name: horizon_core::nbt::Tag::String("Bob".into()),
                 target: None,
             }),

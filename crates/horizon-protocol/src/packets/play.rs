@@ -244,17 +244,120 @@ pub mod custom_chat_action {
     pub const SET: i32 = 2;
 }
 packet!(ContainerSetSlot { container: i32 => VarInt, state: i32 => VarInt, slot: i16 => Short, item: Option<Stack> => Slot });
-/// A holder reference: registry id + 1, or 0 for an inline value (unsupported).
-pub struct HolderId;
-impl Codec<i32> for HolderId {
-    fn read(r: &mut Reader) -> Result<i32> {
-        match r.varint()? {
-            0 => Err(Error::new("inline registry values are not supported")),
-            id => Ok(id.wrapping_sub(1)),
+/// One `ChatTypeDecoration`: the translation key, its parameters (`0` sender,
+/// `1` target, `2` content) and the style the decoration applies.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChatTypeDecoration {
+    pub translation_key: String,
+    pub parameters: Vec<i32>,
+    pub style: Tag,
+}
+impl Codec<ChatTypeDecoration> for ChatTypeDecoration {
+    fn read(r: &mut Reader) -> Result<Self> {
+        let translation_key = r.string(32767)?;
+        let n = r.count(r.remaining())?;
+        let parameters = (0..n).map(|_| r.varint()).collect::<Result<_>>()?;
+        Ok(Self {
+            translation_key,
+            parameters,
+            style: r.nbt()?,
+        })
+    }
+    fn write(v: &Self, w: &mut Writer) {
+        w.string(&v.translation_key);
+        w.varint(v.parameters.len() as i32);
+        for parameter in &v.parameters {
+            w.varint(*parameter);
+        }
+        w.nbt(&v.style);
+    }
+}
+/// A `ChatType` sent inline: its chat and narration decorations, in that order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DirectChatType {
+    pub chat: ChatTypeDecoration,
+    pub narration: ChatTypeDecoration,
+}
+impl Codec<DirectChatType> for DirectChatType {
+    fn read(r: &mut Reader) -> Result<Self> {
+        Ok(Self {
+            chat: ChatTypeDecoration::read(r)?,
+            narration: ChatTypeDecoration::read(r)?,
+        })
+    }
+    fn write(v: &Self, w: &mut Writer) {
+        ChatTypeDecoration::write(&v.chat, w);
+        ChatTypeDecoration::write(&v.narration, w);
+    }
+}
+impl DirectChatType {
+    /// The NBT a `Registry Data` packet sends for a chat type, so an inline
+    /// chat type decorates a message as the registry entry would.
+    pub fn to_tag(&self) -> Tag {
+        fn decoration(d: &ChatTypeDecoration) -> Tag {
+            Tag::compound([
+                (
+                    "translation_key",
+                    Tag::String(d.translation_key.as_str().into()),
+                ),
+                (
+                    "parameters",
+                    Tag::List(
+                        d.parameters
+                            .iter()
+                            .map(|id| {
+                                Tag::String(
+                                    match id {
+                                        0 => "sender",
+                                        1 => "target",
+                                        _ => "content",
+                                    }
+                                    .into(),
+                                )
+                            })
+                            .collect(),
+                    ),
+                ),
+                ("style", d.style.clone()),
+            ])
+        }
+        Tag::compound([
+            ("chat", decoration(&self.chat)),
+            ("narration", decoration(&self.narration)),
+        ])
+    }
+}
+/// `ChatType.Bound`'s chat type: a `minecraft:chat_type` registry entry (its
+/// id + 1 on the wire), or the chat type itself inline.
+#[derive(Clone, Debug, PartialEq)]
+pub enum ChatTypeHolder {
+    Registry(i32),
+    Direct(DirectChatType),
+}
+impl ChatTypeHolder {
+    /// The registry id a mod sees, `None` for an inline chat type.
+    pub fn registry(&self) -> Option<i32> {
+        match self {
+            Self::Registry(id) => Some(*id),
+            Self::Direct(_) => None,
         }
     }
-    fn write(v: &i32, w: &mut Writer) {
-        w.varint(v + 1)
+}
+impl Codec<ChatTypeHolder> for ChatTypeHolder {
+    fn read(r: &mut Reader) -> Result<Self> {
+        Ok(match r.varint()? {
+            0 => Self::Direct(DirectChatType::read(r)?),
+            id => Self::Registry(id.wrapping_sub(1)),
+        })
+    }
+    fn write(v: &Self, w: &mut Writer) {
+        match v {
+            Self::Registry(id) => w.varint(id.wrapping_add(1)),
+            Self::Direct(direct) => {
+                w.varint(0);
+                DirectChatType::write(direct, w);
+            }
+        }
     }
 }
 /// `Holder<Dialog>` as Dialog.STREAM_CODEC sends it: an entry of the
@@ -288,7 +391,7 @@ packet!(
 );
 packet!(
     /// ChatType.Bound.
-    ChatTypeBound { chat_type: i32 => HolderId, name: Tag => Nbt, target: Option<Tag> => Opt<Nbt> }
+    ChatTypeBound { chat_type: ChatTypeHolder => ChatTypeHolder, name: Tag => Nbt, target: Option<Tag> => Opt<Nbt> }
 );
 packet!(DisguisedChat { message: Tag => Nbt, chat_type: ChatTypeBound => ChatTypeBound });
 packet!(EntityEvent { id: i32 => Int, event: i8 => Byte });
@@ -1887,10 +1990,39 @@ impl crate::retained::OwnedHeap for Offers {
         0usize
     }
 }
-impl crate::retained::OwnedHeap for HolderId {
+impl crate::retained::OwnedHeap for ChatTypeDecoration {
     fn owned_heap_bytes(&self) -> usize {
-        let Self = self;
+        let Self {
+            translation_key,
+            parameters,
+            style,
+        } = self;
         0usize
+            .saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(
+                translation_key,
+            ))
+            .saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(parameters))
+            .saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(style))
+    }
+}
+impl crate::retained::OwnedHeap for DirectChatType {
+    fn owned_heap_bytes(&self) -> usize {
+        let Self { chat, narration } = self;
+        0usize
+            .saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(chat))
+            .saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(narration))
+    }
+}
+impl crate::retained::OwnedHeap for ChatTypeHolder {
+    fn owned_heap_bytes(&self) -> usize {
+        match self {
+            Self::Registry(field_0) => {
+                0usize.saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(field_0))
+            }
+            Self::Direct(field_0) => {
+                0usize.saturating_add(crate::retained::OwnedHeap::owned_heap_bytes(field_0))
+            }
+        }
     }
 }
 impl crate::retained::OwnedHeap for DialogHolder {
@@ -2728,6 +2860,37 @@ mod tests {
     }
 
     #[test]
+    fn a_chat_type_may_arrive_inline() {
+        // ChatType.Bound's chat type is `ID or Chat Type`: 0 is the inline form,
+        // then the chat and narration decorations (translation key, parameter ids,
+        // style), then the sender and no target.
+        let mut w = Writer::new();
+        w.varint(0);
+        for (key, parameters) in [
+            ("chat.type.text", vec![0, 2]),
+            ("chat.type.text.narrate", vec![0]),
+        ] {
+            w.string(key);
+            w.varint(parameters.len() as i32);
+            for parameter in parameters {
+                w.varint(parameter);
+            }
+            w.nbt(&Tag::Compound(Default::default()));
+        }
+        w.nbt(&literal("Steve"));
+        w.bool(false);
+        let wire = w.data.clone();
+        let mut r = Reader::new(&wire);
+        let bound = ChatTypeBound::read(&mut r).expect("an inline chat type is valid");
+        assert_eq!(r.remaining(), 0);
+        assert_eq!(bound.name, literal("Steve"));
+        assert_eq!(bound.target, None);
+        let mut back = Writer::new();
+        ChatTypeBound::write(&bound, &mut back);
+        assert_eq!(back.data, wire);
+    }
+
+    #[test]
     fn clientbound_round_trips() {
         let packets = vec![
             Clientbound::BundleDelimiter(Empty),
@@ -2949,7 +3112,7 @@ mod tests {
                 unsigned_content: None,
                 filter: (0, vec![]),
                 chat_type: ChatTypeBound {
-                    chat_type: 0,
+                    chat_type: ChatTypeHolder::Registry(0),
                     name: literal("Steve"),
                     target: None,
                 },

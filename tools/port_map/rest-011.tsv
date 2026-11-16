@@ -147,4 +147,4 @@ ByteBufCodecs.fixedSizeCollection	skip:java		fixed-length list codec; Horizon re
 ByteBufCodecs.map	skip:java		generic map codec; each packet spells its map fields out
 ByteBufCodecs.lengthPrefixed	skip:java		codec wrapper; the size limits are checked per field by count and byte_array(max)
 ByteBufCodecs.idMapper	skip:java		generic enum-id codec; each packet reads its own VarInt ids
-ByteBufCodecs.registry	port	crates/horizon-protocol/src/packets/play.rs::HolderId::read	gap: minor: inline holder values are refused; vanilla accepts them
+ByteBufCodecs.registry	port	crates/horizon-protocol/src/packets/play.rs::ChatTypeHolder::read	chat types decode as an id + 1 or the inline `ID or Chat Type` form
