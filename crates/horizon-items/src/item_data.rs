@@ -792,7 +792,11 @@ impl ItemStack {
         }
     }
     pub fn with_potion(mut self, potion: &str) -> Self {
-        self.data_mut().potion = Some(Arc::from(potion));
+        // `PotionContents.withPotion` stores the holder; a bare id is
+        // `minecraft:`'s, as `Identifier.CODEC` reads it (the `set_potion`
+        // loot function's `Potion.CODEC` does the same).
+        let potion = horizon_world::datafix::dynamic::namespaced(potion);
+        self.data_mut().potion = Some(Arc::from(potion.as_str()));
         self
     }
     /// `ItemStack.isSameItemSameComponents`.
@@ -1639,12 +1643,17 @@ pub fn decode_components(components: Option<&Tag>) -> (u32, Option<Box<StackData
     let seen = Seen::read(c);
     // NbtOps.getNumberValue supplies a boxed number; Codec.INT truncates its value.
     let damage = horizon_world::datafix::dynamic::as_int(seen.damage, 0).max(0) as u32;
+    // `PotionContents.CODEC`'s `Potion.CODEC` is `holderByNameCodec`:
+    // `Identifier.CODEC` gives a bare id the `minecraft:` namespace.
     let potion = match seen.potion_contents {
-        Some(Tag::String(s)) => Some(Arc::from(s.to_string_lossy().as_str())),
-        Some(t) => t
-            .get("potion")
-            .and_then(string)
-            .map(|s| Arc::from(s.as_str())),
+        Some(Tag::String(s)) => {
+            let id = horizon_world::datafix::dynamic::namespaced(&s.to_string_lossy());
+            Some(Arc::from(id.as_str()))
+        }
+        Some(t) => t.get("potion").and_then(string).map(|s| {
+            let id = horizon_world::datafix::dynamic::namespaced(&s);
+            Arc::from(id.as_str())
+        }),
         None => None,
     };
     let potion_extra = match seen.potion_contents {
@@ -2625,6 +2634,36 @@ mod tests {
         };
         assert_eq!(stack.enchantment_level("minecraft:knockback"), 2);
         assert_eq!(stack.enchantment_level("minecraft:sharpness"), 1);
+    }
+
+    /// `PotionContents.CODEC` reads a bare potion id as `minecraft:`'s, as its
+    /// `Potion.CODEC` field does (and as the enchantment ids above), so a
+    /// component given `potion:"water"` is the water potion. `with_potion` (the
+    /// `set_potion` loot function's builder) normalizes the same way.
+    #[test]
+    fn potion_ids_without_a_namespace_are_minecraft_ones() {
+        for contents in [
+            Tag::compound([("potion", Tag::String("water".into()))]),
+            Tag::String("water".into()),
+        ] {
+            let components = Tag::compound([("minecraft:potion_contents", contents)]);
+            let (_, extra) = decode_components(Some(&components));
+            let stack = ItemStack {
+                extra,
+                ..ItemStack::new("minecraft:potion", 1)
+            };
+            assert_eq!(stack.potion(), Some("minecraft:water"));
+            let saved = encode_components(&stack).expect("the potion component");
+            let potion = saved
+                .get("minecraft:potion_contents")
+                .and_then(|contents| contents.get("potion"));
+            assert_eq!(potion, Some(&Tag::String("minecraft:water".into())));
+        }
+        let bare = ItemStack::new("minecraft:potion", 1).with_potion("water");
+        assert_eq!(bare.potion(), Some("minecraft:water"));
+        assert!(bare.same_item_same_components(
+            &ItemStack::new("minecraft:potion", 1).with_potion("minecraft:water")
+        ));
     }
 
     #[test]
