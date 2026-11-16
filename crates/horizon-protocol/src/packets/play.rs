@@ -688,16 +688,32 @@ packet!(
     /// ClientboundProjectilePowerPacket: an AbstractHurtingProjectile's accelerationPower.
     ProjectilePower { id: i32 => VarInt, power: f64 => Double }
 );
+/// `EntityAnchorArgument.Anchor` as `ClientboundPlayerLookAtPacket` sends it:
+/// a VarInt ordinal, 0 feet or 1 eyes. A negative or larger ordinal would
+/// index past `Anchor.values()`.
+pub struct EntityAnchor;
+impl Codec<i32> for EntityAnchor {
+    fn read(r: &mut Reader) -> Result<i32> {
+        let anchor = r.varint()?;
+        if !(0..=1).contains(&anchor) {
+            return Err(Error::new(format!("unknown entity anchor {anchor}")));
+        }
+        Ok(anchor)
+    }
+    fn write(v: &i32, w: &mut Writer) {
+        w.varint(*v);
+    }
+}
 packet!(
     /// ClientboundPlayerLookAtPacket's entity target: its id and the anchor
     /// (`EntityAnchorArgument.Anchor`: 0 feet, 1 eyes) to look at on it.
-    LookAtEntity { id: i32 => VarInt, anchor: i32 => VarInt }
+    LookAtEntity { id: i32 => VarInt, anchor: i32 => EntityAnchor }
 );
 packet!(
     /// ClientboundPlayerLookAtPacket: turn this player's `from` anchor towards
     /// a point, or towards an entity when the client knows it.
     PlayerLookAt {
-        from: i32 => VarInt,
+        from: i32 => EntityAnchor,
         target: [f64; 3] => Vec3d,
         entity: Option<LookAtEntity> => Opt<LookAtEntity>,
     }
@@ -3832,6 +3848,36 @@ mod tests {
         assert_eq!((t.clocks[0].clock, t.clocks[0].total_ticks), (0, 66678));
         assert_eq!((t.clocks[1].clock, t.clocks[1].total_ticks), (1, 13071));
         assert_eq!(t.clocks[0].rate, 1.0);
+    }
+
+    #[test]
+    fn player_look_at_refuses_an_unknown_anchor_ordinal() {
+        // EntityAnchorArgument.Anchor has two values: 0 feet, 1 eyes. Vanilla
+        // reads both anchors with `readEnum`, whose VarInt indexes that array.
+        let payload = |from: i32, to: Option<i32>| {
+            let mut w = Writer::new();
+            w.varint(from);
+            for c in [0.0, 64.0, 0.0] {
+                w.f64(c);
+            }
+            w.bool(to.is_some());
+            if let Some(to) = to {
+                w.varint(42);
+                w.varint(to);
+            }
+            w.data
+        };
+        let decode = |from, to| {
+            Clientbound::decode(
+                crate::ids::play::clientbound::PLAYER_LOOK_AT,
+                &payload(from, to),
+            )
+        };
+        assert!(decode(0, None).is_ok());
+        assert!(decode(1, Some(1)).is_ok());
+        assert!(decode(2, None).is_err());
+        assert!(decode(-1, None).is_err());
+        assert!(decode(0, Some(2)).is_err());
     }
 
     #[test]
