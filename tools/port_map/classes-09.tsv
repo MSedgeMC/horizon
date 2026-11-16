@@ -38,8 +38,8 @@ LootItemRandomChanceWithEnchantedBonusCondition.test	port	crates/horizon-world/s
 LootPredicates	skip:data		registry bootstrap; loot conditions are matched in loot.rs and items.rs
 MatchBlock.blockMatches	skip:java		static builder
 MatchBlock.getReferencedContextParams	skip:data		validation metadata for context params
-MatchBlock.test	port	crates/horizon-items/src/items.rs::LootContext::condition	match_block arm: block id, state and property ranges; gap: minor: the block-entity part of the predicate is not read
-MatchTool.test	port	crates/horizon-items/src/items.rs::LootContext::condition	match_tool arm; gap: minor: item ids, tags and enchantment levels only, other ItemPredicate parts are not read
+MatchBlock.test	port	crates/horizon-items/src/items.rs::LootContext::condition	match_block arm: block id, holder-set block list, state and property ranges; gap: minor: the block-entity parts of the predicate are not read
+MatchTool.test	port	crates/horizon-items/src/items.rs::LootContext::condition	match_tool arm: item ids, tags, enchantment levels, custom data and the exact `components` map; gap: minor: the damage/durability predicate and the other component predicates are not read
 TimeCheck	missing		no `time_check` arm in `loot.rs::condition`; no vanilla data file uses it, so only a datapack reaches it
 WeatherCheck.test	port	crates/horizon-client/src/advancements.rs::conditions	named command predicates compare both optional fields against Game View's effective weather; channeling remains a separate thunder-only caller
 NbtProviders	skip:data		registry bootstrap

@@ -1502,9 +1502,19 @@ impl Items {
         block: &str,
         properties: &horizon_world::chunk::BlockProperties,
     ) -> bool {
-        let blocks_ok = match &c["blocks"].as_str().or(c["block"].as_str()) {
-            Some(spec) => self.block_matches(spec, block),
-            None => true,
+        // `BlockPredicate.blocks` is a holder set: one id (or `#tag`), or a
+        // list of them, and the state's block must be in it. The legacy
+        // `block` field stands in when `blocks` is absent.
+        let blocks_ok = match &c["blocks"] {
+            Value::String(spec) => self.block_matches(spec, block),
+            Value::Array(list) => list.iter().any(|entry| {
+                entry
+                    .as_str()
+                    .is_some_and(|spec| self.block_matches(spec, block))
+            }),
+            _ => c["block"]
+                .as_str()
+                .is_none_or(|spec| self.block_matches(spec, block)),
         };
         blocks_ok
             && c["state"]
@@ -2141,7 +2151,17 @@ impl LootContext<'_> {
                             self.held.and_then(ItemStack::custom_data),
                         )
                     });
-                items_ok && enchants_ok && custom_ok
+                // ItemPredicate "components": each listed component must equal
+                // the stack's own value exactly (not a subset pattern).
+                let components_ok = c["predicate"]["components"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .all(|(id, expected)| {
+                        self.held
+                            .is_some_and(|held| held.matches_component(id, expected))
+                    });
+                items_ok && enchants_ok && custom_ok && components_ok
             }
             "minecraft:killed_by_player" => self.killed_by_player,
             "minecraft:random_chance_with_enchanted_bonus" => {
@@ -3656,6 +3676,76 @@ mod tests {
                 usize::from(value.unwrap_or(true))
             );
         }
+    }
+
+    /// `ItemPredicate.components`: each listed component must equal the
+    /// stack's own value exactly; a different value, or no tool, does not
+    /// match.
+    #[test]
+    fn match_tool_reads_the_exact_component_map() {
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = |components: Value| {
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item",
+                "name":"minecraft:diamond",
+                "condition":{"type":"minecraft:match_tool",
+                    "predicate":{"items":"minecraft:potion","components":components}}}]}]})
+        };
+        let mut held = ItemStack::new("minecraft:potion", 1);
+        held.data_mut().potion = Some("minecraft:healing".into());
+        let drops = |components: Value, held: Option<&ItemStack>| {
+            ctx(&items, held, &props, "")
+                .evaluate(&table(components), &mut LegacyRandom::new(7))
+                .len()
+        };
+        assert_eq!(
+            drops(
+                json!({"minecraft:potion_contents":{"potion":"minecraft:healing"}}),
+                Some(&held)
+            ),
+            1,
+            "the exact component value matches"
+        );
+        assert_eq!(
+            drops(
+                json!({"minecraft:potion_contents":{"potion":"minecraft:swiftness"}}),
+                Some(&held)
+            ),
+            0,
+            "a different component value does not"
+        );
+        assert_eq!(
+            drops(
+                json!({"minecraft:potion_contents":{"potion":"minecraft:healing"}}),
+                None
+            ),
+            0,
+            "no tool carries no component"
+        );
+    }
+
+    /// `BlockPredicate.blocks` is a holder set: one id or a list, and the
+    /// state's block must be in it.
+    #[test]
+    fn match_block_reads_a_holder_set_of_blocks() {
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item",
+            "name":"minecraft:diamond",
+            "condition":{"type":"minecraft:match_block",
+                "blocks":["minecraft:stone","minecraft:dirt"]}}]}]});
+        let drops = |block: &str| {
+            ctx(&items, None, &props, block)
+                .evaluate(&table, &mut LegacyRandom::new(7))
+                .len()
+        };
+        assert_eq!(drops("minecraft:stone"), 1, "a block in the list matches");
+        assert_eq!(drops("minecraft:dirt"), 1, "every listed block matches");
+        assert_eq!(
+            drops("minecraft:cobblestone"),
+            0,
+            "a block outside the list does not"
+        );
     }
 
     fn ctx<'a>(

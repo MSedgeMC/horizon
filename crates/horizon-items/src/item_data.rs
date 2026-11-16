@@ -429,6 +429,28 @@ impl ItemStack {
             _ => None,
         }
     }
+    /// `DataComponentPredicate.test` for one component: the stack carries
+    /// `id` with exactly the value `expected`. Components compare in the saved
+    /// form `set_components` reads, so this is an exact match, not the subset
+    /// match `ItemPredicate.predicates` use. A component only the item's
+    /// prototype supplies is not synthesized and does not match.
+    pub fn matches_component(&self, id: &str, expected: &serde_json::Value) -> bool {
+        let Some(Tag::Compound(components)) = components_tag(self.damage, self.data()) else {
+            return false;
+        };
+        let Some(have) = components.get(&JavaString::from(id)) else {
+            return false;
+        };
+        let expected = match expected {
+            // `CustomData.CODEC` reads an NBT compound; a data pack may write
+            // it as JSON or as SNBT, as `NbtPredicate` does.
+            serde_json::Value::String(_) if id == "minecraft:custom_data" => {
+                horizon_world::loot::nbt_predicate_tag(expected)
+            }
+            _ => Some(horizon_client_core::scoreboard::json_to_tag(expected)),
+        };
+        expected.is_some_and(|expected| *have == expected)
+    }
     /// `ResolvableProfile.name`: a bare profile string or its `name` field.
     pub fn profile_name(&self) -> Option<String> {
         let profile = self.data()?.other("minecraft:profile")?;
