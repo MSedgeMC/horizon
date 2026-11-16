@@ -204,10 +204,30 @@ impl Codec<ClientInformation> for ClientInformation {
     }
 }
 packet!(CookieResponse { key: String => Ident, payload: Option<Vec<u8>> => Opt<crate::buf::BytesN<MAX_COOKIE>> });
+
+/// `ServerboundResourcePackPacket.Action` has eight values: 0 loaded through
+/// 7 discarded. Vanilla reads it with `readEnum`, which indexes the enum's
+/// `values()` array and throws past the end.
+struct ResourcePackAction;
+impl Codec<i32> for ResourcePackAction {
+    fn read(r: &mut Reader) -> Result<i32> {
+        let action = r.varint()?;
+        if !(0..=7).contains(&action) {
+            return Err(crate::Error::new(format!(
+                "unknown resource pack action {action}"
+            )));
+        }
+        Ok(action)
+    }
+    fn write(v: &i32, w: &mut Writer) {
+        w.varint(*v);
+    }
+}
+
 packet!(
     /// ServerboundResourcePackPacket.Action: 0 loaded, 1 declined, 2 failed
     /// download, 3 accepted, 4 downloaded, 5 invalid url, 6 failed reload, 7 discarded.
-    ResourcePackResponse { id: u128 => Uuid, action: i32 => VarInt }
+    ResourcePackResponse { id: u128 => Uuid, action: i32 => ResourcePackAction }
 );
 
 packet_enum!(Serverbound, crate::ids::configuration::serverbound {
@@ -385,6 +405,29 @@ mod tests {
         ] {
             round_trip(p, Serverbound::encode, Serverbound::decode);
         }
+    }
+
+    #[test]
+    fn resource_pack_response_refuses_an_unknown_action() {
+        // ServerboundResourcePackPacket.Action: 0 loaded through 7 discarded.
+        // Vanilla reads it with readEnum, which indexes the enum's eight
+        // values and throws past the end.
+        let payload = |action: i32| {
+            let mut w = Writer::new();
+            w.uuid(0);
+            w.varint(action);
+            w.data
+        };
+        let decode = |action: i32| {
+            Serverbound::decode(
+                crate::ids::configuration::serverbound::RESOURCE_PACK,
+                &payload(action),
+            )
+        };
+        assert!(decode(0).is_ok());
+        assert!(decode(7).is_ok());
+        assert!(decode(8).is_err());
+        assert!(decode(-1).is_err());
     }
 
     #[test]
