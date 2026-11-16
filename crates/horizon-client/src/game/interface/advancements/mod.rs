@@ -831,7 +831,7 @@ impl Game<'_> {
             baby: m.is_baby(),
             on_ground: m.on_ground,
             in_water: m.fluids.in_water,
-            fall_flying: m.fall_flying,
+            fall_flying: m.extra.fall_flying,
             equipment,
             // LivingEntity.getActiveEffectsMap supplies the active predicate instances.
             effects: m
