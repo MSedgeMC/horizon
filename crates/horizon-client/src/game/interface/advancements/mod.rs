@@ -232,6 +232,33 @@ impl adv::World for View<'_, '_> {
             _ => None,
         }
     }
+    /// `FluidState.getValues`: source water or lava is `LEVEL=8`, a flowing
+    /// fluid keeps the level its amount leaves (the block facts carry the
+    /// source/flowing amount, not vanilla's falling levels 9..15), and
+    /// `FALLING` as the waterlogged block facts give it.
+    fn fluid_state(&self, p: [i32; 3]) -> Option<(String, BTreeMap<String, String>)> {
+        let facts = self.0.res.facts().get(self.0.world.block(p[0], p[1], p[2]));
+        let fluid = match facts.fluid {
+            horizon_client::blocks::Fluid::Water => "minecraft:water",
+            horizon_client::blocks::Fluid::Lava => "minecraft:lava",
+            _ => return None,
+        };
+        let level = if facts.fluid_level >= 8 {
+            "8".to_owned()
+        } else {
+            (8 - facts.fluid_level).to_string()
+        };
+        Some((
+            fluid.into(),
+            BTreeMap::from([
+                ("level".to_owned(), level),
+                ("falling".to_owned(), facts.fluid_falling.to_string()),
+            ]),
+        ))
+    }
+    fn fluid_property_values(&self, fluid: &str, property: &str) -> Option<Vec<String>> {
+        self.block_property_values(fluid, property)
+    }
     /// `Level.canSeeSky`: sky light 15 at the position, whatever stands
     /// above it, as `MobWorld` reads it for the spawn rules.
     fn can_see_sky(&self, p: [i32; 3]) -> bool {

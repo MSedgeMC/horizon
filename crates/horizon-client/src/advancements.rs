@@ -630,6 +630,16 @@ pub trait World {
         None
     }
     fn fluid(&self, pos: [i32; 3]) -> Option<String>;
+    /// The fluid state at `pos`: its fluid and its state properties
+    /// (`FluidState.getValues`). Defaults to the fluid alone.
+    fn fluid_state(&self, pos: [i32; 3]) -> Option<(String, BTreeMap<String, String>)> {
+        self.fluid(pos).map(|f| (f, BTreeMap::new()))
+    }
+    /// Legal values of the actual registered fluid property, unavailable
+    /// without registry access.
+    fn fluid_property_values(&self, _fluid: &str, _property: &str) -> Option<Vec<String>> {
+        None
+    }
     fn can_see_sky(&self, pos: [i32; 3]) -> bool;
     fn light(&self, pos: [i32; 3]) -> i32;
     fn smokey(&self, pos: [i32; 3]) -> bool;
@@ -908,6 +918,29 @@ pub fn can_unlock(
     let empty = ItemView::default();
     spectator || item(lock, main_hand.unwrap_or(&empty), w)
 }
+/// `StatePropertiesPredicate.matches`: each asked property's actual value,
+/// or a range through the property's legal domain.
+fn state_properties(
+    v: &Value,
+    props: &BTreeMap<String, String>,
+    domain: &dyn Fn(&str) -> Option<Vec<String>>,
+) -> bool {
+    let Some(state) = v.as_object() else {
+        return true;
+    };
+    state.iter().all(|(k, want)| {
+        let have = props.get(k).cloned().unwrap_or_default();
+        match want {
+            Value::String(s) => have == *s,
+            Value::Bool(b) => have == b.to_string(),
+            Value::Number(n) => have == n.to_string(),
+            Value::Object(bounds) => {
+                domain(k).is_some_and(|domain| state_ranges::matches(bounds, &have, &domain))
+            }
+            _ => false,
+        }
+    })
+}
 /// `BlockPredicate`.
 pub fn block(v: &Value, pos: [i32; 3], w: &dyn World) -> bool {
     if v.is_null() {
@@ -917,22 +950,8 @@ pub fn block(v: &Value, pos: [i32; 3], w: &dyn World) -> bool {
     if !id_matches(&v["blocks"], "block", &name, w) {
         return false;
     }
-    if let Some(state) = v["state"].as_object() {
-        for (k, want) in state {
-            let have = props.get(k).cloned().unwrap_or_default();
-            let ok = match want {
-                Value::String(s) => have == *s,
-                Value::Bool(b) => have == b.to_string(),
-                Value::Number(n) => have == n.to_string(),
-                Value::Object(bounds) => w
-                    .block_property_values(&name, k)
-                    .is_some_and(|domain| state_ranges::matches(bounds, &have, &domain)),
-                _ => false,
-            };
-            if !ok {
-                return false;
-            }
-        }
+    if !state_properties(&v["state"], &props, &|k| w.block_property_values(&name, k)) {
+        return false;
     }
     // `matchesBlockEntity`: the block entity's data holds the pattern
     // (`NbtPredicate.matches`, `NbtUtils.compareNbt`); no block entity fails.
@@ -994,10 +1013,17 @@ pub fn location(v: &Value, p: [f64; 3], w: &dyn World) -> bool {
         return false;
     }
     if !v["fluid"].is_null() {
-        let Some(f) = w.fluid(pos) else {
+        let fp = &v["fluid"];
+        // `FluidPredicate.matches`: a position without a fluid holds the
+        // empty fluid state, and an absent `fluids` or `state` constrains
+        // nothing.
+        let (f, props) = w
+            .fluid_state(pos)
+            .unwrap_or_else(|| ("minecraft:empty".into(), BTreeMap::new()));
+        if !id_matches(&fp["fluids"], "fluid", &f, w) {
             return false;
-        };
-        if !id_matches(&v["fluid"]["fluids"], "fluid", &f, w) {
+        }
+        if !state_properties(&fp["state"], &props, &|k| w.fluid_property_values(&f, k)) {
             return false;
         }
     }
@@ -2205,6 +2231,77 @@ mod tests {
             !block(&beacon("{Levels:0b}"), [0, 0, 0], &Beacon),
             "an int, not a byte"
         );
+    }
+    /// `FluidPredicate.matches`: an empty predicate constrains nothing (air
+    /// included), and `state` reads the fluid state's own properties, its
+    /// ranges through the property's legal domain.
+    #[test]
+    fn a_location_fluid_reads_its_state_properties() {
+        /// Source water: `LEVEL=8`, not falling.
+        struct Pond;
+        impl World for Pond {
+            fn dimension(&self) -> &str {
+                "minecraft:overworld"
+            }
+            fn weather(&self) -> (bool, bool) {
+                (false, false)
+            }
+            fn biome(&self, _: [i32; 3]) -> String {
+                "minecraft:plains".into()
+            }
+            fn structures(&self, _: [i32; 3]) -> Vec<String> {
+                Vec::new()
+            }
+            fn block(&self, _: [i32; 3]) -> (String, BTreeMap<String, String>) {
+                (
+                    "minecraft:water".into(),
+                    BTreeMap::from([("level".to_owned(), "0".to_owned())]),
+                )
+            }
+            fn fluid(&self, _: [i32; 3]) -> Option<String> {
+                Some("minecraft:water".into())
+            }
+            fn fluid_state(&self, _: [i32; 3]) -> Option<(String, BTreeMap<String, String>)> {
+                Some((
+                    "minecraft:water".into(),
+                    BTreeMap::from([
+                        ("level".to_owned(), "8".to_owned()),
+                        ("falling".to_owned(), "false".to_owned()),
+                    ]),
+                ))
+            }
+            fn fluid_property_values(&self, _: &str, property: &str) -> Option<Vec<String>> {
+                (property == "level").then(|| (0..16).map(|v| v.to_string()).collect())
+            }
+            fn can_see_sky(&self, _: [i32; 3]) -> bool {
+                true
+            }
+            fn light(&self, _: [i32; 3]) -> i32 {
+                15
+            }
+            fn smokey(&self, _: [i32; 3]) -> bool {
+                false
+            }
+            fn in_tag(&self, _: &str, _: &str, _: &str) -> bool {
+                false
+            }
+        }
+        let loc = |p: Value, w: &dyn World| {
+            location(&serde_json::json!({"fluid": p}), [0.5, 0.5, 0.5], w)
+        };
+        // A predicate without fields is no constraint: air matches it too.
+        assert!(loc(serde_json::json!({}), &Flat));
+        assert!(!loc(
+            serde_json::json!({"fluids": "minecraft:water"}),
+            &Flat
+        ));
+        assert!(loc(serde_json::json!({"fluids": "minecraft:water"}), &Pond));
+        // `state` reads LEVEL: source water is 8, so 0 never matches.
+        assert!(loc(serde_json::json!({"state": {"level": "8"}}), &Pond));
+        assert!(!loc(
+            serde_json::json!({"state": {"level": {"max": "7"}}}),
+            &Pond
+        ));
     }
     #[test]
     fn weather_conditions_leave_absent_fields_unconstrained_and_compose() {
