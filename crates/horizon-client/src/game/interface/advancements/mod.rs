@@ -1,7 +1,7 @@
 //! The player's advancements in the game: criteria triggered from game
 //! events (`CriteriaTriggers`), awarding with rewards, the toast and the
 //! chat announcement, and `players/advancements/<uuid>.json`.
-use super::{Dim, Game};
+use super::{Dim, Game, commands::Target};
 mod icons;
 
 #[cfg(test)]
@@ -496,6 +496,7 @@ impl Game<'_> {
                     kind: self.target_type(t),
                     position: g.position,
                     sneaking: g.sneaking,
+                    tags: self.tags_of(t),
                     input_sneak: g.input & 32 != 0,
                     team: self
                         .score
@@ -517,6 +518,7 @@ impl Game<'_> {
             other => EntityView {
                 kind: self.target_type(other),
                 position: self.target_position(other).unwrap_or_default(),
+                tags: self.tags_of(other),
                 ..EntityView::default()
             },
         }
@@ -696,6 +698,7 @@ impl Game<'_> {
             swimming: p.pose == horizon_client::pose::Pose::Swimming,
             flying: p.flying,
             on_ground: p.ground.on_ground,
+            tags: self.tags_of(Target::Player),
             equipment: eq,
             vehicle,
             effects: self
@@ -725,6 +728,7 @@ impl Game<'_> {
             kind: "minecraft:player".into(),
             position: [p.position.x, p.position.y, p.position.z],
             gamemode: Some(self.mode.name().to_owned()),
+            tags: self.tags_of(Target::Player),
             ..Default::default()
         })
     }
@@ -735,6 +739,7 @@ impl Game<'_> {
             kind: b.entity_type(),
             position: [b.position.x, b.position.y, b.position.z],
             on_ground: b.on_ground,
+            tags: self.tags_of(Target::Boat(b.id)),
             passengers: self
                 .mobs
                 .iter()
@@ -752,6 +757,7 @@ impl Game<'_> {
             position: [e.position.x, e.position.y, e.position.z],
             on_ground: e.on_ground,
             on_fire: e.fire_ticks > 0,
+            tags: self.tags_of(Target::Item(e.id)),
             ..Default::default()
         }
     }
@@ -826,6 +832,7 @@ impl Game<'_> {
             on_fire: m.fire_ticks > 0,
             baby: m.is_baby(),
             on_ground: m.on_ground,
+            tags: self.tags_of(Target::Mob(m.id)),
             equipment,
             // LivingEntity.getActiveEffectsMap supplies the active predicate instances.
             effects: m

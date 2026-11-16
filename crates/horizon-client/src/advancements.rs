@@ -711,6 +711,9 @@ pub struct EntityView {
     /// `Entity.getTeam().getName()` (a tamed pet answers its owner's team);
     /// `None` without a team or where the identity is not bound.
     pub team: Option<String>,
+    /// `Entity.getTags` (the `Tags` list of the saved entity), for
+    /// `EntityTagPredicate`.
+    pub tags: Vec<String>,
     /// Existing objective scores for the bound command source holder. `None`
     /// means this context did not bind a scoreboard holder; an empty map is a
     /// real holder without scores. Named predicates snapshot current values.
@@ -1176,6 +1179,22 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             // equals the string exactly.
             "minecraft:team" => {
                 matches!((p.as_str(), &e.team), (Some(want), Some(have)) if want == have)
+            }
+            // `EntityTagPredicate.matches`: the label set against each named
+            // list; an empty `any_of` matches nothing, as vanilla's
+            // `containsAtLeastOne` does, while an empty `all_of` has nothing
+            // to require.
+            "minecraft:entity_tags" => {
+                let has = |tag: &str| e.tags.iter().any(|have| have == tag);
+                p["any_of"]
+                    .as_array()
+                    .is_none_or(|l| l.iter().any(|t| t.as_str().is_some_and(has)))
+                    && p["all_of"]
+                        .as_array()
+                        .is_none_or(|l| l.iter().all(|t| t.as_str().is_some_and(has)))
+                    && p["none_of"]
+                        .as_array()
+                        .is_none_or(|l| !l.iter().any(|t| t.as_str().is_some_and(has)))
             }
             "minecraft:predicates" => true,
             _ => false,
@@ -2495,6 +2514,44 @@ mod tests {
             &Flat,
             [0.0; 3]
         ));
+    }
+    /// `EntityTagPredicate.matches`: `any_of`, `all_of` and `none_of` read
+    /// the entity's own label set; a present but empty `any_of` matches
+    /// nothing and an empty `all_of` requires nothing.
+    #[test]
+    fn entity_tags_predicate_reads_any_all_none_of() {
+        let check = |v: serde_json::Value, e: &EntityView| {
+            super::entity(
+                &serde_json::json!({"minecraft:entity_tags": v}),
+                e,
+                &Flat,
+                [0.0; 3],
+            )
+        };
+        let zombie = EntityView {
+            tags: vec!["boss".into(), "raid".into()],
+            ..mob("minecraft:zombie")
+        };
+        assert!(check(serde_json::json!({"any_of": ["raid"]}), &zombie));
+        assert!(!check(serde_json::json!({"any_of": ["nope"]}), &zombie));
+        assert!(!check(serde_json::json!({"any_of": []}), &zombie));
+        assert!(check(serde_json::json!({"all_of": ["boss", "raid"]}), &zombie));
+        assert!(!check(
+            serde_json::json!({"all_of": ["boss", "nope"]}),
+            &zombie
+        ));
+        assert!(check(serde_json::json!({"all_of": []}), &zombie));
+        assert!(check(serde_json::json!({"none_of": ["nope"]}), &zombie));
+        assert!(!check(serde_json::json!({"none_of": ["raid"]}), &zombie));
+        assert!(check(serde_json::json!({}), &zombie));
+        assert!(!check(
+            serde_json::json!({"all_of": ["boss"], "none_of": ["raid"]}),
+            &zombie
+        ));
+        // Labels are exact strings, not resource locations.
+        assert!(!check(serde_json::json!({"any_of": ["Boss"]}), &zombie));
+        let bare = mob("minecraft:zombie");
+        assert!(!check(serde_json::json!({"any_of": ["boss"]}), &bare));
     }
     /// `entity_killed_player` by a mob's melee hit: the mob is the killer and
     /// the blow's causing and direct entity.
