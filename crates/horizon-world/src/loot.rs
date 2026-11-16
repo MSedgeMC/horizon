@@ -472,6 +472,20 @@ pub fn custom_data_matches(pattern: &Value, data: Option<&crate::nbt::Compound>)
         .iter()
         .all(|(k, v)| crate::nbt::compare_nbt(v, data.get(k)))
 }
+/// `BlockPredicate.matchesBlockEntityData`: `pattern` is a typed subset of
+/// the block entity's saved tag (`BlockEntity.saveWithFullMetadata`), the
+/// shape `LootContextParams.BLOCK_ENTITY` gives a loot roll. A roll with no
+/// block entity, or a pattern that is not a compound, matches nothing.
+pub fn block_entity_matches(pattern: &Value, block_entity: Option<&Tag>) -> bool {
+    let (Some(Tag::Compound(pattern)), Some(Tag::Compound(data))) =
+        (nbt_predicate_tag(pattern), block_entity)
+    else {
+        return false;
+    };
+    pattern
+        .iter()
+        .all(|(k, v)| crate::nbt::compare_nbt(v, data.get(k)))
+}
 /// A tag written in a data pack's JSON: SNBT text read whole, or JSON as
 /// DataFixerUpper's `JsonOps.convertTo(NbtOps)` turns it into NBT (whole
 /// numbers in the smallest of byte, short, int and long; others a float

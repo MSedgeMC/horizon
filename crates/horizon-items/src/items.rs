@@ -1506,7 +1506,19 @@ impl Items {
             Some(spec) => self.block_matches(spec, block),
             None => true,
         };
+        // `BlockPredicate.nbt`: the block entity save the roll carries as
+        // `LootContextParams.BLOCK_ENTITY` (none when the roll has no place).
+        let nbt_ok = if c["nbt"].is_null() {
+            true
+        } else {
+            let place = horizon_world::loot::current_native_loot_place();
+            horizon_world::loot::block_entity_matches(
+                &c["nbt"],
+                place.as_ref().and_then(|place| place.block_entity.as_ref()),
+            )
+        };
         blocks_ok
+            && nbt_ok
             && c["state"]
                 .as_object()
                 .into_iter()
@@ -3698,6 +3710,63 @@ mod tests {
         assert_eq!(drops(json!({"type":"mymod:always"}), ""), 0);
         assert_eq!(drops(json!("mymod:always"), "minecraft:stone"), 0);
         assert_eq!(drops(Value::Null, "minecraft:stone"), 1);
+    }
+
+    /// `MatchBlock` reads the block entity's saved tag: `nbt` is a typed
+    /// subset of what a roll at a place carries as
+    /// `LootContextParams.BLOCK_ENTITY`, and a roll without one matches
+    /// nothing.
+    #[test]
+    fn match_block_reads_the_block_entity_nbt() {
+        use horizon_world::loot::{NativeLootPlace, with_native_loot_place};
+
+        let items = Items::for_tests(HashMap::new());
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = |nbt: Value| {
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item",
+                "name":"minecraft:stone","condition":{"type":"minecraft:match_block",
+                "blocks":"minecraft:barrel","nbt":nbt}}]}]})
+        };
+        let barrel = || NativeLootPlace {
+            block_entity: Some(horizon_world::nbt::Tag::compound([
+                (
+                    "id",
+                    horizon_world::nbt::Tag::String("minecraft:barrel".into()),
+                ),
+                ("Lock", horizon_world::nbt::Tag::String("key".into())),
+            ])),
+            ..NativeLootPlace::default()
+        };
+        let matched = |nbt: Value, place: Option<NativeLootPlace>| {
+            let table = table(nbt);
+            let mut random = LegacyRandom::new(7);
+            match place {
+                Some(place) => with_native_loot_place(place, || {
+                    ctx(&items, None, &props, "minecraft:barrel")
+                        .evaluate(&table, &mut random)
+                        .len()
+                }),
+                None => ctx(&items, None, &props, "minecraft:barrel")
+                    .evaluate(&table, &mut random)
+                    .len(),
+            }
+        };
+        assert_eq!(matched(Value::Null, None), 1, "no nbt asks for no entity");
+        assert_eq!(
+            matched(json!("{Lock:\"key\"}"), Some(barrel())),
+            1,
+            "the saved Lock matches"
+        );
+        assert_eq!(
+            matched(json!("{Lock:\"other\"}"), Some(barrel())),
+            0,
+            "a different Lock does not"
+        );
+        assert_eq!(
+            matched(json!("{Lock:\"key\"}"), None),
+            0,
+            "no block entity matches nothing"
+        );
     }
 
     /// A mod's function kind changes the stack the items engine drops: what
