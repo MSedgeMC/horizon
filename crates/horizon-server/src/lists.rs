@@ -125,17 +125,15 @@ fn edit_locked(
                 .iter()
                 .map(|e| e.user.name.clone())
                 .collect();
-            let state = if config.server.whitelist { "on" } else { "off" };
+            // `commands.whitelist.none` and `commands.whitelist.list`, as the game's own
+            // `/whitelist list` prints them.
             if names.is_empty() {
-                (
-                    false,
-                    format!("There are no whitelisted players (the whitelist is {state})"),
-                )
+                (false, "There are no whitelisted players".to_owned())
             } else {
                 (
                     false,
                     format!(
-                        "There are {} whitelisted player(s): {} (the whitelist is {state})",
+                        "There are {} whitelisted player(s): {}",
                         names.len(),
                         names.join(", ")
                     ),
@@ -435,6 +433,31 @@ mod tests {
                 .unwrap()
                 .contains("Kai")
         );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `whitelist list` prints `commands.whitelist.none` / `commands.whitelist.list` with the
+    /// names, as the game's own `/whitelist list` does. The stopped command added
+    /// "(the whitelist is on)", which no vanilla reply has.
+    #[test]
+    fn a_stopped_whitelist_list_reads_as_vanillas_does() {
+        let dir = std::env::temp_dir().join(format!(
+            "horizon-server-whitelist-list-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(config::FILE), config::TEMPLATE).unwrap();
+        config::update(&dir, "server", "online_mode", toml::Value::Boolean(false)).unwrap();
+        let empty = edit_stopped(&dir, "whitelist", &["list"]).unwrap();
+        assert_eq!(empty.message, "There are no whitelisted players");
+        std::fs::write(
+            dir.join("whitelist.json"),
+            r#"[{"uuid":"069a79f4-44e9-4726-a5be-fca90e38aaf5","name":"Notch"}]"#,
+        )
+        .unwrap();
+        let one = edit_stopped(&dir, "whitelist", &["list"]).unwrap();
+        assert_eq!(one.message, "There are 1 whitelisted player(s): Notch");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
