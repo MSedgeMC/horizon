@@ -49,18 +49,18 @@ pub fn portal_cooldown(entities: &std::collections::HashMap<u32, PortalState>, i
 /// `Entity.processPortalCooldown` ticks down, not the value the entity was
 /// loaded with. The write goes over the loaded one, as every other live field
 /// does.
-pub fn put_portal_cooldown(tag: &mut horizon_world::nbt::Tag, cooldown: i32) {
-    if let horizon_world::nbt::Tag::Compound(fields) = tag {
+pub fn put_portal_cooldown(tag: &mut horizon_core::nbt::Tag, cooldown: i32) {
+    if let horizon_core::nbt::Tag::Compound(fields) = tag {
         fields.insert(
             "PortalCooldown".into(),
-            horizon_world::nbt::Tag::Int(cooldown),
+            horizon_core::nbt::Tag::Int(cooldown),
         );
     }
 }
 impl PortalState {
     /// `Entity.load`: the saved `PortalCooldown`, if any. The portal process
     /// is the live one and is not part of the compound.
-    pub fn from_saved(tag: &horizon_world::nbt::Tag) -> Self {
+    pub fn from_saved(tag: &horizon_core::nbt::Tag) -> Self {
         Self {
             cooldown: tag
                 .get("PortalCooldown")
@@ -163,14 +163,12 @@ mod tests {
     #[test]
     fn the_saved_portal_cooldown_is_the_live_one_not_the_loaded_one() {
         // An entity loaded with a cooldown of 17 ticks, its countdown now at 3.
-        let mut tag = horizon_world::nbt::Tag::compound([(
-            "PortalCooldown",
-            horizon_world::nbt::Tag::Int(17),
-        )]);
+        let mut tag =
+            horizon_core::nbt::Tag::compound([("PortalCooldown", horizon_core::nbt::Tag::Int(17))]);
         put_portal_cooldown(&mut tag, 3);
         assert_eq!(
             tag.get("PortalCooldown"),
-            Some(&horizon_world::nbt::Tag::Int(3))
+            Some(&horizon_core::nbt::Tag::Int(3))
         );
     }
 
@@ -180,9 +178,9 @@ mod tests {
         // `Entity.load` keeps it, `Entity.saveWithoutId` writes it back and
         // `Entity.handlePortal`'s `processPortalCooldown` takes one off a tick.
         for kind in ["minecraft:trident", "minecraft:armor_stand"] {
-            let mut tag = horizon_world::nbt::Tag::compound([
-                ("id", horizon_world::nbt::Tag::String(kind.into())),
-                ("PortalCooldown", horizon_world::nbt::Tag::Int(250)),
+            let mut tag = horizon_core::nbt::Tag::compound([
+                ("id", horizon_core::nbt::Tag::String(kind.into())),
+                ("PortalCooldown", horizon_core::nbt::Tag::Int(250)),
             ]);
             let mut entities = HashMap::new();
             entities.insert(7, PortalState::from_saved(&tag));
@@ -190,7 +188,7 @@ mod tests {
             put_portal_cooldown(&mut tag, portal_cooldown(&entities, 7));
             assert_eq!(
                 tag.get("PortalCooldown"),
-                Some(&horizon_world::nbt::Tag::Int(250)),
+                Some(&horizon_core::nbt::Tag::Int(250)),
                 "{kind}: save keeps it"
             );
             entities
@@ -200,7 +198,7 @@ mod tests {
             put_portal_cooldown(&mut tag, portal_cooldown(&entities, 7));
             assert_eq!(
                 tag.get("PortalCooldown"),
-                Some(&horizon_world::nbt::Tag::Int(249)),
+                Some(&horizon_core::nbt::Tag::Int(249)),
                 "{kind}: one tick down"
             );
         }
@@ -208,21 +206,21 @@ mod tests {
 
     #[test]
     fn a_saved_portal_cooldown_is_written_even_when_the_entity_had_none() {
-        let mut tag = horizon_world::nbt::Tag::compound([(
+        let mut tag = horizon_core::nbt::Tag::compound([(
             "id",
-            horizon_world::nbt::Tag::String("minecraft:pig".into()),
+            horizon_core::nbt::Tag::String("minecraft:pig".into()),
         )]);
         put_portal_cooldown(&mut tag, 0);
         assert_eq!(
             tag.get("PortalCooldown"),
-            Some(&horizon_world::nbt::Tag::Int(0))
+            Some(&horizon_core::nbt::Tag::Int(0))
         );
     }
 
     #[test]
     fn a_saved_portal_cooldown_leaves_a_tag_that_is_not_a_compound_alone() {
-        let mut tag = horizon_world::nbt::Tag::Int(3);
+        let mut tag = horizon_core::nbt::Tag::Int(3);
         put_portal_cooldown(&mut tag, 5);
-        assert_eq!(tag, horizon_world::nbt::Tag::Int(3));
+        assert_eq!(tag, horizon_core::nbt::Tag::Int(3));
     }
 }
