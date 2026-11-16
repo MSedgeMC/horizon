@@ -161,7 +161,7 @@ fn title_lines(atlas: &HudAtlas) -> Vec<String> {
 impl Title {
     /// The first screen of a first launch (`addInitialScreens`).
     pub fn start_onboarding(&mut self) {
-        self.mode = Mode::Onboarding(Onboarding::new());
+        self.set_mode(Mode::Onboarding(Onboarding::new()));
         // `setInitialFocus(narratorButton)`: the keyboard focus starts on the Narrator
         // button, even though Horizon draws it inactive while it has no narrator.
         self.focused_button = Some(NARRATOR);
@@ -180,7 +180,7 @@ impl Title {
         if let Mode::Onboarding(screen) = &self.mode
             && screen.closed(now)
         {
-            self.mode = Mode::Main;
+            self.set_mode(Mode::Main);
             // The title is a new screen, whose own `setInitialFocus` starts the focus again.
             self.focused_button = None;
             self.onboarding_finished = true;
@@ -255,12 +255,14 @@ impl Title {
         batch: &mut HudBatch,
         w: f32,
         h: f32,
+        phases: &mut dyn FnMut(crate::screen_draw::RenderPhase, &mut HudBatch),
     ) -> usize {
         let Mode::Onboarding(screen) = &self.mode else {
             return batch.vertices.len();
         };
         screen.alpha.set(screen.fade(Instant::now()));
         crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
+        phases(crate::screen_draw::RenderPhase::Background, batch);
         let lines = title_lines(atlas);
         self.message_lines.set(lines.len());
         let first = batch.vertices.len();
@@ -355,6 +357,7 @@ mod tests {
         let mut title = Title::new(
             std::path::PathBuf::new(),
             std::path::Path::new("/nonexistent/horizon-test-resources"),
+            "",
         );
         title.start_onboarding();
         title.escape();

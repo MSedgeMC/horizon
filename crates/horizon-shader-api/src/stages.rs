@@ -149,8 +149,9 @@ const BEFORE_WORLD_RESOURCES: [Resource; 7] = [
     shadow_color(10),
 ];
 
-/// The colour boundary, in every prelude: vanilla's 2.2 power both ways.
-const COLOR_HELPERS: &str = "\
+/// The colour boundary, in every prelude and in mod pipelines' generated entries:
+/// vanilla's 2.2 power both ways.
+pub const COLOR_HELPERS: &str = "\
 // Negatives and NaN made 0 (a comparison with NaN is false), so no `pow` sees them.
 fn horizon_sanitize(c: vec3<f32>) -> vec3<f32> {
     return select(vec3<f32>(0.0), c, c > vec3<f32>(0.0));
@@ -618,11 +619,12 @@ pub const PBR_SPECULAR_BINDING: u32 = 13;
 pub const PBR_MAPS_TERRAIN: &str =
     pbr_maps!("horizon_terrain_sprite_sampler", "horizon_terrain_sprites");
 
-/// A traced post pass's, against the scene: its `nearest_sampler` (at full size, the one mip
-/// level a hit reads, as the terrain's sampler there) and the scene's first sprite array.
+/// A traced post, compute or before-world pass's, against the scene: its `nearest_sampler` (at
+/// full size, the one mip level a hit reads, as the terrain's sampler there) and the scene's
+/// first sprite array.
 const PBR_MAPS_POST: &str = pbr_maps!("nearest_sampler", "horizon_ray_sprites_0");
 
-/// A traced post pass's `block_pbr_maps`, as the material prelude's.
+/// A traced post, compute or before-world pass's `block_pbr_maps`, as the material prelude's.
 const POST_PBR: &str = "\
 // LabPBR: whether the resource packs ship normal (`_n`) or specular (`_s`) maps beside their
 // block textures. Without them `hit_normal_map` and `hit_specular_map` give their defaults.
@@ -1286,18 +1288,22 @@ impl StageKind {
     }
 
     /// `prelude` with what `tracing` holds of the scene: in every stage the frame's two fields
-    /// for it, and in the post and material stages `RayHit`, `trace`, `trace_any`, their
-    /// `_layers` forms with `RAY_SOLID` and `RAY_TRANSLUCENT`, `hit_normal_map` and
-    /// `hit_specular_map` (and in the post stage `block_pbr_maps`).
+    /// for it, and in the post, material, compute and before-world stages `RayHit`, `trace`,
+    /// `trace_any`, their `_layers` forms with `RAY_SOLID` and `RAY_TRANSLUCENT`,
+    /// `hit_normal_map` and `hit_specular_map`, and outside the material stage, which has its
+    /// own, `block_pbr_maps`.
     pub fn prelude_traced(self, tracing: Tracing) -> String {
-        let rays = matches!(self, StageKind::Post | StageKind::Material);
+        let rays = matches!(
+            self,
+            StageKind::Post | StageKind::Material | StageKind::Compute | StageKind::BeforeWorld
+        );
         self.prelude_rays(tracing, rays, false, false)
     }
 
-    /// `prelude_traced`, with the ray names only where `rays`: a material stage that calls
-    /// none of the trace functions is built as it was before them. `kept`: the frame's epochs,
-    /// for a pack with `[[resource]]`. With `entities` (the pack's files name `RAY_ENTITY`) the
-    /// trace functions have the entity layer too.
+    /// `prelude_traced`, with the ray names only where `rays`: a material, compute or
+    /// before-world stage that calls none of the trace functions is built as it was before
+    /// them. `kept`: the frame's epochs, for a pack with `[[resource]]`. With `entities` (the
+    /// pack's files name `RAY_ENTITY`) the trace functions have the entity layer too.
     fn prelude_rays(self, tracing: Tracing, rays: bool, kept: bool, entities: bool) -> String {
         let rays = rays && tracing != Tracing::None;
         let mut out = match tracing {
@@ -1357,7 +1363,7 @@ impl StageKind {
             }
             out += &layered(RAY_LAYERS, entities);
             // The material stage's renderer, or the check's stand-in, reads the LabPBR maps.
-            if self == StageKind::Post {
+            if self != StageKind::Material {
                 out += match tracing {
                     Tracing::Scene => PBR_MAPS_POST,
                     _ => PBR_STUB,
@@ -1617,7 +1623,8 @@ pub fn compose(pack: &Pack, kind: StageKind, file: &str) -> Composed {
 }
 
 /// `compose` for a pack with `[ray_tracing]` where the renderer binds the scene: its post
-/// stage traces it, and its material stage where that calls a trace function (`TRACE_NAMES`).
+/// stage traces it, and its material, compute and before-world stages where they call a trace
+/// function (`TRACE_NAMES`).
 /// Such a module needs a device with ray queries.
 pub fn compose_scene(pack: &Pack, kind: StageKind, file: &str) -> Composed {
     compose_traced(pack, kind, file, None, true)
@@ -1767,7 +1774,9 @@ pub(crate) fn compose_traced(
     let source = |f: &&str| pack.source(f).unwrap_or_default();
     let rays = match kind {
         StageKind::Post => true,
-        StageKind::Material => tracing != Tracing::None && traces(files.iter().map(source)),
+        StageKind::Material | StageKind::Compute | StageKind::BeforeWorld => {
+            tracing != Tracing::None && traces(files.iter().map(source))
+        }
         _ => false,
     };
     let kept = !m.kept.resources.is_empty();
