@@ -126,6 +126,12 @@ impl List {
         if ip.is_empty() {
             return Err("A server needs an address.".into());
         }
+        // The Add Server screen enables Add only for `ServerAddress.isValidAddress`
+        // (`ManageServerScreen.updateAddButtonStatus`): a host with a bad port or brackets
+        // is not a server the game can join, so it is not added here.
+        if !horizon_platform::servers::is_valid_address(ip) {
+            return Err(format!("{ip} is not a server address."));
+        }
         let name = if name.is_empty() {
             "Minecraft Server"
         } else {

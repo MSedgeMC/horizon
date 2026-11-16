@@ -131,6 +131,35 @@ fn adding_and_removing_keeps_every_other_field_and_the_hidden_servers() {
 }
 
 #[test]
+fn an_address_the_games_add_server_screen_refuses_is_not_added() {
+    let home = scratch("invalid-address").join("home");
+    let mut list = List::load(&home);
+    // ServerAddress.isValidAddress: HostAndPort.fromString must parse, with a host and a
+    // port in 0..=65535, and IDN.toASCII must accept the host.
+    for bad in [
+        ":25565",
+        "example.com:notaport",
+        "example.com:65536",
+        "example.com:+25565",
+        "[::1]junk",
+        "[example.com]:25565",
+        "[]",
+        "play..example.com",
+    ] {
+        assert!(list.add("", bad).is_err(), "{bad} was added");
+    }
+    assert!(list.servers().is_empty());
+    // The addresses the screen does accept still go in, trimmed.
+    for good in ["example.com", "example.com.", "example.com:25570", "[::1]:25565"] {
+        assert!(list.add("", good).is_ok(), "{good} was refused");
+    }
+    assert_eq!(
+        list.servers().iter().map(|s| s.ip.as_str()).collect::<Vec<_>>(),
+        ["example.com", "example.com.", "example.com:25570", "[::1]:25565"]
+    );
+}
+
+#[test]
 fn a_server_without_a_name_gets_the_games_default() {
     let home = scratch("default");
     let mut list = List::load(home.as_path());

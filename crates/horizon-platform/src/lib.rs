@@ -98,7 +98,7 @@ pub mod hud {
 #[cfg(feature = "protocol")]
 pub mod servers {
     pub use horizon_protocol::servers::{
-        ServerEntry, load, lock, parse_address, prepend, remove_where, save,
+        ServerEntry, is_valid_address, load, lock, parse_address, prepend, remove_where, save,
     };
 }
 
