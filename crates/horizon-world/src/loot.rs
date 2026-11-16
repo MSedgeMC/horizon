@@ -3823,13 +3823,22 @@ impl LootData {
             {
                 return false;
             }
-            // State properties, block entity data and components need more
-            // than the block id this lookup has.
-            if !block["state"].is_null()
-                || !block["nbt"].is_null()
-                || !block["components"].is_null()
-            {
+            // An empty state selector constrains nothing; a non-empty one
+            // needs the block state's properties, which the id lookup lacks.
+            let state = &block["state"];
+            if !state.is_null() && !state.as_object().is_some_and(|o| o.is_empty()) {
                 return false;
+            }
+            // Block entity data and non-empty component matchers need more
+            // than the block id this lookup has.
+            if !block["nbt"].is_null() {
+                return false;
+            }
+            for key in ["components", "predicates"] {
+                let matcher = &block[key];
+                if !matcher.is_null() && !matcher.as_object().is_some_and(|o| o.is_empty()) {
+                    return false;
+                }
             }
         }
         // structures, dimension, smokey, light, fluid and can_see_sky need
