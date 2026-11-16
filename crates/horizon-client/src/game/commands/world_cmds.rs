@@ -575,11 +575,21 @@ impl Game<'_> {
         Ok(1)
     }
     pub(super) fn cmd_swing(&mut self, ctx: &Context) -> R<i32> {
-        let hand = if ctx.has("offhand") { Hand::Off } else { Hand::Main };
+        let hand = if ctx.has("offhand") {
+            Hand::Off
+        } else {
+            Hand::Main
+        };
         let animation = match ctx.get("animation") {
             Some(Arg::Str(name)) => match name.as_str() {
-                "stab" => SwingAnimation { kind: 2, duration: 6 },
-                "none" => SwingAnimation { kind: 0, duration: 0 },
+                "stab" => SwingAnimation {
+                    kind: 2,
+                    duration: 6,
+                },
+                "none" => SwingAnimation {
+                    kind: 0,
+                    duration: 0,
+                },
                 _ => SwingAnimation::DEFAULT,
             },
             _ => SwingAnimation::DEFAULT,
