@@ -2719,6 +2719,13 @@ mod tests {
             &Flat,
             o
         ));
+        // A cube mob whose size was never set fails instead of inventing one.
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/cube_mob": {"size": 1}}),
+            &mob("minecraft:slime"),
+            &Flat,
+            o
+        ));
     }
     /// `RaiderPredicate.matches`: only a raider, then `has_raid` and
     /// `is_captain`, both false unless the data says otherwise.

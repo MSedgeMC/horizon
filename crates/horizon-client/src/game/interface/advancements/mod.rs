@@ -855,13 +855,16 @@ impl Game<'_> {
                 .collect(),
             sheep_sheared: (m.species() == horizon_client::mobs::Species::Sheep)
                 .then_some(m.extra.sheared),
-            cube_size: matches!(
-                m.species(),
-                horizon_client::mobs::Species::Slime
-                    | horizon_client::mobs::Species::MagmaCube
-                    | horizon_client::mobs::Species::SulfurCube
-            )
-            .then(|| m.extra.size.max(1)),
+            // `AbstractCubeMob.getSize`; 0 is this codebase's "not sized"
+            // sentinel, so an unknown size fails instead of inventing one.
+            cube_size: (m.extra.size > 0
+                && matches!(
+                    m.species(),
+                    horizon_client::mobs::Species::Slime
+                        | horizon_client::mobs::Species::MagmaCube
+                        | horizon_client::mobs::Species::SulfurCube
+                ))
+            .then_some(m.extra.size),
             raider: horizon_client::mobs::raider::is_raider(m.species()).then(|| adv::RaiderView {
                 has_raid: horizon_client::mobs::raider::in_raid(m)
                     || horizon_client::mobs::raider::state(m).is_some_and(|s| s.raided),
