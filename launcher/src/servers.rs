@@ -637,26 +637,20 @@ fn ports_taken() -> Vec<u16> {
     out
 }
 
-/// The player's worlds (the game home's `saves/`), newest first: their name and folder.
+/// The player's worlds (the game home's `saves/`), as the game's world list shows them: the last
+/// played first, named by `LevelName`. Their name and folder, for the create dialog's copy.
 pub fn player_worlds() -> Vec<(String, PathBuf)> {
-    let saves = backend::game_home().join("saves");
-    let mut worlds: Vec<(std::time::SystemTime, String, PathBuf)> = fs::read_dir(saves)
+    player_worlds_in(&backend::game_home())
+}
+
+/// `worlds::list`, as the world screen and the dark dialog read it: `LastPlayed` orders the worlds
+/// (not level.dat's modification time, which a copy or a restored backup changes) and `LevelName`
+/// names each one (a folder keeps the name it had before a rename).
+fn player_worlds_in(game_home: &Path) -> Vec<(String, PathBuf)> {
+    crate::worlds::list(game_home)
         .into_iter()
-        .flatten()
-        .flatten()
-        .filter(|e| e.path().join("level.dat").is_file())
-        .map(|e| {
-            let when = e
-                .path()
-                .join("level.dat")
-                .metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::UNIX_EPOCH);
-            (when, e.file_name().to_string_lossy().into_owned(), e.path())
-        })
-        .collect();
-    worlds.sort_by_key(|w| std::cmp::Reverse(w.0));
-    worlds.into_iter().map(|(_, n, p)| (n, p)).collect()
+        .map(|world| (world.name, world.path))
+        .collect()
 }
 
 /// The `horizon-server init` arguments for a new server.

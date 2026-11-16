@@ -1,4 +1,5 @@
 use super::*;
+use horizon_platform::world::nbt::{self, Limits, Tag};
 use std::io::{BufRead, BufReader, Write};
 
 fn scratch(name: &str) -> PathBuf {
@@ -291,4 +292,51 @@ fn the_game_mode_comes_from_server_toml() {
     fs::write(dir.join("server.toml"), "[server]\nport = 25565\n").unwrap();
     assert_eq!(game_mode(&dir), None);
     let _ = fs::remove_dir_all(&dir);
+}
+
+/// The create dialog's "copy one of my worlds" list is the game's world list (`worlds::list`), as
+/// the dark dialog already reads it: `LastPlayed` orders the worlds, and each is named by its
+/// `LevelName`. The list read the saves folders instead, ordered by level.dat's modification time
+/// and named after the folder, so a renamed world showed its old folder name and a world copied in
+/// from another computer sorted as if it had just been played.
+#[test]
+fn the_worlds_to_copy_are_the_game_world_list() {
+    let home = scratch("player-worlds");
+    let world = |folder: &str, name: &str, played: i64| {
+        let dir = home.join("saves").join(folder);
+        fs::create_dir_all(&dir).unwrap();
+        let root = Tag::compound([(
+            "Data",
+            Tag::compound([
+                ("LevelName", Tag::String(name.into())),
+                ("LastPlayed", Tag::Long(played)),
+            ]),
+        )]);
+        let bytes = nbt::write_named(
+            &nbt::NamedTag {
+                name: "".into(),
+                tag: root,
+            },
+            Limits::default(),
+        )
+        .unwrap();
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(&bytes).unwrap();
+        fs::write(dir.join("level.dat"), gz.finish().unwrap()).unwrap();
+    };
+    // Written first and played last: only LastPlayed can put it first.
+    world("Old folder", "Renamed world", 1_700_000_000_000);
+    std::thread::sleep(Duration::from_millis(5));
+    world("New folder", "Not played since", 1_600_000_000_000);
+    let worlds = player_worlds_in(&home);
+    assert_eq!(
+        worlds
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<_>>(),
+        ["Renamed world", "Not played since"]
+    );
+    assert_eq!(worlds[0].1, home.join("saves/Old folder"));
+    assert_eq!(worlds[1].1, home.join("saves/New folder"));
+    fs::remove_dir_all(home).unwrap();
 }
