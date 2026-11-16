@@ -422,11 +422,18 @@ pub struct LootDamage {
     pub direct: Option<LootEntity>,
 }
 /// The level a rolled entity is in, as an entity predicate reads it: the block
-/// at a position (`Level.getBlockState`), for `LocationPredicate.block`.
-/// `None` when that position is not loaded.
+/// at a position (`Level.getBlockState`) and the biome there (`Level.getBiome`),
+/// for `LocationPredicate.block` and `LocationPredicate.biomes`. `None` when
+/// that position is not loaded.
 pub trait LootBlockSource: std::fmt::Debug {
     /// The block id at `pos` (`minecraft:stone`), or `None` when unloaded.
     fn block(&self, pos: [i32; 3]) -> Option<String>;
+    /// The biome id at `pos` (`minecraft:jungle`), or `None` when the source
+    /// has no biome lookup or the position is unloaded. A source that only
+    /// knows blocks leaves this default.
+    fn biome(&self, _pos: [i32; 3]) -> Option<String> {
+        None
+    }
 }
 
 /// `Entity.getBlockPosBelowThatAffectsMyMovement` for a position whose tracked
@@ -456,7 +463,8 @@ pub struct EntityLootParams<'a> {
     /// position), for `distance`. It is the roll's origin, not the entity's
     /// position: the two are the same for a death table, but distinct params.
     pub origin: Option<[f64; 3]>,
-    /// The level the rolled entity is in; `None` when the roll has no level.
+    /// The level the rolled entity is in, for the block and biome lookups a
+    /// location predicate does; `None` when the roll has no level.
     pub level: Option<&'a dyn LootBlockSource>,
 }
 /// The most a table's read of an enchantment level counts as. A mod can answer
@@ -3744,8 +3752,8 @@ impl LootData {
     }
     /// `EntityPredicate.matches` with the rolled entity's place: `position`
     /// (`Entity.position`), `origin` (`LootContextParams.ORIGIN`, for
-    /// `distance`), `level` for the block lookup a location predicate does, and
-    /// the roll's `biome` for `biomes`.
+    /// `distance`), `level` for the block and biome lookups a location
+    /// predicate does, and the roll's `biome` for a roll without a level.
     fn entity_matches_with(
         &self,
         p: &Value,
@@ -3877,8 +3885,9 @@ impl LootData {
         })
     }
     /// `LocationPredicate.matches` for the fields a loot roll can supply:
-    /// `position`, `biomes` (the roll's biome) and `block` (the level lookup).
-    /// A field the roll cannot read fails, as vanilla requires every present
+    /// `position`, `biomes` (the level's biome at `position`, or the roll's
+    /// biome parameter without a level) and `block` (the level lookup). A
+    /// field the roll cannot read fails, as vanilla requires every present
     /// field to match.
     fn location_matches(
         &self,
@@ -3899,14 +3908,29 @@ impl LootData {
                 return false;
             }
         }
-        if !p["biomes"].is_null()
-            && !biome.is_some_and(|biome| {
+        // `LocationPredicate.biomes`: `level.getBiome(pos)` when the roll has
+        // a level, which reads the biome at the queried position (the entity's
+        // own position for `location`, the block below it for
+        // `movement_affected_by`); a roll without one falls back to the biome
+        // parameter it carries (`location_check`'s source). Vanilla requires
+        // the position to be loaded for the biome test.
+        if !p["biomes"].is_null() {
+            let at = [
+                position[0].floor() as i32,
+                position[1].floor() as i32,
+                position[2].floor() as i32,
+            ];
+            let found = match level {
+                Some(level) => level.biome(at),
+                None => biome.map(str::to_owned),
+            };
+            if !found.is_some_and(|biome| {
                 self.holder_set("worldgen/biome", &p["biomes"])
                     .iter()
-                    .any(|b| b == biome)
-            })
-        {
-            return false;
+                    .any(|b| *b == biome)
+            }) {
+                return false;
+            }
         }
         if !p["block"].is_null() {
             let block = &p["block"];
@@ -4206,12 +4230,19 @@ mod movement_affected_by_tests {
 mod distance_location_predicate_tests {
     use super::*;
 
-    /// A level with a block id at some positions and nothing elsewhere.
+    /// A level with a block and biome id at some positions and nothing
+    /// elsewhere.
     #[derive(Debug, Default)]
-    struct Blocks(std::collections::HashMap<[i32; 3], &'static str>);
+    struct Blocks {
+        blocks: std::collections::HashMap<[i32; 3], &'static str>,
+        biomes: std::collections::HashMap<[i32; 3], &'static str>,
+    }
     impl LootBlockSource for Blocks {
         fn block(&self, pos: [i32; 3]) -> Option<String> {
-            self.0.get(&pos).map(|id| (*id).to_owned())
+            self.blocks.get(&pos).map(|id| (*id).to_owned())
+        }
+        fn biome(&self, pos: [i32; 3]) -> Option<String> {
+            self.biomes.get(&pos).map(|id| (*id).to_owned())
         }
     }
 
@@ -4312,6 +4343,38 @@ mod distance_location_predicate_tests {
         assert!(!drops_with_entity(&speed, this));
     }
 
+    /// `LocationPredicate.matches`'s `biomes`: the level's biome at the queried
+    /// position. `EntityLocationPredicate` passes the entity's own position,
+    /// and `movement_affected_by` the block below it; a position the level does
+    /// not know fails the test, as vanilla requires it loaded.
+    #[test]
+    fn location_biomes_read_the_entity_position() {
+        let jungle = table(
+            "jungle",
+            r#"{"minecraft:location":{"biomes":"minecraft:jungle"}}"#,
+        );
+        let plains = table(
+            "plains",
+            r#"{"minecraft:location":{"biomes":"minecraft:plains"}}"#,
+        );
+        let mut blocks = Blocks::default();
+        blocks.biomes.insert([0, 64, 0], "minecraft:jungle");
+        assert!(drops(&jungle, None, Some([0.5, 64.0, 0.5]), &blocks));
+        // A plains id is not the jungle the level has at the position.
+        assert!(!drops(&plains, None, Some([0.5, 64.0, 0.5]), &blocks));
+        // The biome is read at the entity's block, not the body's whole column:
+        // the neighbouring block is unknown to the level and fails.
+        assert!(!drops(&jungle, None, Some([1.5, 64.0, 0.5]), &blocks));
+        // `movement_affected_by` reads the biome one block below.
+        let below = table(
+            "below-jungle",
+            r#"{"minecraft:movement_affected_by":{"biomes":"minecraft:jungle"}}"#,
+        );
+        assert!(!drops(&below, None, Some([0.5, 64.0, 0.5]), &blocks));
+        blocks.biomes.insert([0, 63, 0], "minecraft:jungle");
+        assert!(drops(&below, None, Some([0.5, 64.0, 0.5]), &blocks));
+    }
+
     /// `EntityLocationPredicate.matches`: the nested location predicate runs at
     /// the entity's own position, so it reads the block the entity occupies.
     #[test]
@@ -4321,14 +4384,14 @@ mod distance_location_predicate_tests {
             r#"{"minecraft:location":{"block":{"blocks":"minecraft:stone"}}}"#,
         );
         let mut blocks = Blocks::default();
-        blocks.0.insert([0, 64, 0], "minecraft:stone");
+        blocks.blocks.insert([0, 64, 0], "minecraft:stone");
         assert!(drops(&stone, None, Some([0.5, 64.0, 0.5]), &blocks));
         // The same predicate fails where the block at the entity position differs.
-        blocks.0.insert([0, 64, 0], "minecraft:slime_block");
+        blocks.blocks.insert([0, 64, 0], "minecraft:slime_block");
         assert!(!drops(&stone, None, Some([0.5, 64.0, 0.5]), &blocks));
         // The block below the feet is not the entity's position.
         let mut below = Blocks::default();
-        below.0.insert([0, 63, 0], "minecraft:stone");
+        below.blocks.insert([0, 63, 0], "minecraft:stone");
         assert!(!drops(&stone, None, Some([0.5, 64.0, 0.5]), &below));
         // The nested position field reads the entity position too.
         let at = table(

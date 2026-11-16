@@ -1,21 +1,44 @@
-//! The blocks a loot roll's entity predicates read, taken from the level before
-//! a mod-listened roll borrows the game.
+//! The blocks and biomes a loot roll's entity predicates read, taken from the
+//! level before a mod-listened roll borrows the game.
 use horizon_world::{
     loot::{LootBlockSource, movement_affected_by_pos},
     registry::BlockRegistry,
 };
 
-/// The blocks `MovementAffectedByPredicate` and `EntityLocationPredicate` read:
-/// the centre of `Entity.getBlockPosBelowThatAffectsMyMovement` and, for a
-/// `location` predicate, the block at `Entity.getX/getY/getZ`. The game's roll
-/// holds this owned snapshot, so `ListenedRolls` can keep its `&mut Game`.
+/// What `MovementAffectedByPredicate` and `EntityLocationPredicate` read: the
+/// centre of `Entity.getBlockPosBelowThatAffectsMyMovement` and, for a
+/// `location` predicate, the block and biome at `Entity.getX/getY/getZ`. The
+/// game's roll holds this owned snapshot, so `ListenedRolls` can keep its
+/// `&mut Game`.
 #[derive(Debug)]
 pub struct LootBlockAt {
-    below: ([i32; 3], Option<String>),
-    at: Option<([i32; 3], Option<String>)>,
+    below: Snapshot,
+    at: Option<Snapshot>,
 }
 
-impl LootBlockAt {
+/// One position's `Level.getBlockState` and `Level.getBiome` answers.
+#[derive(Debug)]
+struct Snapshot {
+    pos: [i32; 3],
+    block: Option<String>,
+    /// `LocationPredicate.biomes` reads the biome at the queried position.
+    biome: Option<String>,
+}
+
+impl Snapshot {
+    fn new(
+        pos: [i32; 3],
+        world: &crate::world::World,
+        registry: &BlockRegistry,
+        biomes: &crate::biome::Biomes,
+    ) -> Self {
+        Self {
+            pos,
+            block: Self::block_at(pos, world, registry),
+            biome: Self::biome_at(pos, world, biomes),
+        }
+    }
+
     /// `Level.getBlockState(pos)`, as the block id (`minecraft:stone`); `None`
     /// when that position is unloaded.
     fn block_at(
@@ -32,35 +55,50 @@ impl LootBlockAt {
             })
     }
 
-    /// `Level.getBlockState(getBlockPosBelowThatAffectsMyMovement)` only: the
-    /// block `movement_affected_by` reads.
+    /// `Level.getBiome(pos)`, as the biome id (`minecraft:jungle`); `None` when
+    /// that position is unloaded.
+    fn biome_at(
+        pos: [i32; 3],
+        world: &crate::world::World,
+        biomes: &crate::biome::Biomes,
+    ) -> Option<String> {
+        let chunk = world.chunks.get(&(pos[0] >> 4, pos[2] >> 4))?;
+        Some(biomes.get(chunk.biome(pos[0], pos[1], pos[2])).name.clone())
+    }
+}
+
+impl LootBlockAt {
+    /// `Level.getBlockState(getBlockPosBelowThatAffectsMyMovement)` and its
+    /// biome: what `movement_affected_by` reads.
     pub fn below(
         position: [f64; 3],
         world: &crate::world::World,
         registry: &BlockRegistry,
+        biomes: &crate::biome::Biomes,
     ) -> Self {
         let pos = movement_affected_by_pos(position);
         Self {
-            below: (pos, Self::block_at(pos, world, registry)),
+            below: Snapshot::new(pos, world, registry, biomes),
             at: None,
         }
     }
 
-    /// The block below the entity and the block at its own position, the
-    /// latter for `location` (`LocationPredicate.block` at `Entity.position`).
+    /// The block and biome below the entity and at its own position, the
+    /// latter for `location` (`LocationPredicate` at `Entity.position`).
     pub fn at_entity(
         position: [f64; 3],
         world: &crate::world::World,
         registry: &BlockRegistry,
+        biomes: &crate::biome::Biomes,
     ) -> Self {
         let at = [
             position[0].floor() as i32,
             position[1].floor() as i32,
             position[2].floor() as i32,
         ];
-        let mut blocks = Self::below(position, world, registry);
-        if at != blocks.below.0 {
-            blocks.at = Some((at, Self::block_at(at, world, registry)));
+        let mut blocks = Self::below(position, world, registry, biomes);
+        if at != blocks.below.pos {
+            blocks.at = Some(Snapshot::new(at, world, registry, biomes));
         }
         blocks
     }
@@ -68,12 +106,22 @@ impl LootBlockAt {
 
 impl LootBlockSource for LootBlockAt {
     fn block(&self, pos: [i32; 3]) -> Option<String> {
-        if pos == self.below.0 {
-            return self.below.1.clone();
+        if pos == self.below.pos {
+            return self.below.block.clone();
         }
         self.at
             .as_ref()
-            .filter(|(at, _)| *at == pos)
-            .and_then(|(_, block)| block.clone())
+            .filter(|at| at.pos == pos)
+            .and_then(|at| at.block.clone())
+    }
+
+    fn biome(&self, pos: [i32; 3]) -> Option<String> {
+        if pos == self.below.pos {
+            return self.below.biome.clone();
+        }
+        self.at
+            .as_ref()
+            .filter(|at| at.pos == pos)
+            .and_then(|at| at.biome.clone())
     }
 }

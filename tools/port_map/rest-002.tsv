@@ -15,7 +15,7 @@ MinMaxBounds.Bounds.readNumber	port	crates/horizon-command/src/args.rs::read_bou
 MinMaxBounds.Bounds.isAllowedInputChar	inline	crates/horizon-command/src/args.rs::read_bounds	the digit, minus and single dot test inside read_bounds
 MinMaxBounds.Doubles.matchesSqr	inline	crates/horizon-client/src/advancements.rs::distance; crates/horizon-world/src/loot.rs::double_bounds_sqr	advancement distance takes the square root and tests the range; the loot distance predicate compares the squared bounds directly
 MinMaxBounds.Ints.matchesSqr	skip:other		no caller in vanilla 26.3
-MobEffectsPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity; crates/horizon-world/src/loot.rs::LootData::entity_matches	the effects key: every named effect must be active; the loot reader checks amplifier, duration, ambient and visible
+MobEffectsPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity; crates/horizon-world/src/loot.rs::LootData::entity_matches	the effects key: every named effect must be active; the loot reader checks amplifier, duration, ambient and visible, and reads a player target's Player.active_effects (the game's PlayerEffects) as well as a mob's effects
 MobEffectsPredicate.Builder.and	skip:java		builder for effect predicates in code
 MobEffectsPredicate.MobEffectInstancePredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity; crates/horizon-world/src/loot.rs::LootData::entity_matches	amplifier and duration; the loot reader checks ambient and visible too, the advancement entity() only amplifier and duration
 NbtPredicate.matches	missing		minor: custom_data and entity NBT predicates are not read; no vanilla advancement uses them
@@ -40,7 +40,7 @@ EntityEquipmentPredicate.matches	inline	crates/horizon-client/src/advancements.r
 EntityEquipmentPredicate.Builder.build	skip:java		builder
 EntityFlagsPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: is_in_water and is_fall_flying are not read; vanilla advancements only use is_baby
 EntityFlagsPredicate.Builder.build	skip:java		builder
-EntityLocationPredicate.matches	port	crates/horizon-client/src/advancements.rs::location; crates/horizon-world/src/loot.rs::LootData::entity_matches	the location key of entity() and entity_properties: the nested location predicate at the entity's own position
+EntityLocationPredicate.matches	port	crates/horizon-client/src/advancements.rs::location; crates/horizon-world/src/loot.rs::LootData::entity_matches	the location key of entity() and entity_properties: the nested location predicate at the entity's own position, whose biomes are the level's biome at that position (Level.getBiome)
 EntityPartialComponentsPredicate.matches	missing		minor: the predicates key is accepted and ignored (entity() returns true); no vanilla advancement uses it
 EntityPredicate.wrap	skip:java		wraps a builder into a loot condition
 EntityPredicate.createContext	inline	crates/horizon-client/src/game/interface/advancements/mod.rs::Game::trigger_entity	the entity context (this entity, origin at the player) built in each trigger

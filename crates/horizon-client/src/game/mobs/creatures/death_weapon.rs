@@ -252,6 +252,7 @@ impl Game<'_> {
             [m.position.x, m.position.y, m.position.z],
             &self.world,
             &self.pack.assets.registry,
+            world_biomes!(self),
         );
         let death = drops::Death {
             loot: &loot,

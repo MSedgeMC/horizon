@@ -24,6 +24,10 @@ impl Game<'_> {
                     e.equipment.push((slot.into(), to_loot(stack)));
                 }
             }
+            // `LivingEntity.getActiveEffectsMap` of the killer: their own
+            // `Player.active_effects`, swapped into `potions` around
+            // `as_guest`, so a predicate on `attacking_player` reads them.
+            e.effects = horizon_client::mobs::drops::loot_player_effects(&g.potions.effects);
             e
         };
         if let Some(conn) = guest.filter(|_| self.lan_acting.is_none())

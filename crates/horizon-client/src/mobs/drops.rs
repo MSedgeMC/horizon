@@ -488,6 +488,27 @@ pub fn loot_entity(m: &Mob, vehicle: Option<LootEntity>) -> LootEntity {
         .collect();
     e
 }
+/// The active effects on a player (`Player.active_effects`, which the game
+/// keeps in `PlayerEffects`), as the loot facts `EntityEffectsPredicate`
+/// reads. A player has no `Mob` for `loot_entity` to read, so the killer's
+/// own effect list is mapped here; a mob's effects keep the `Mob.extra` path.
+pub fn loot_player_effects(effects: &crate::effects::PlayerEffects) -> Vec<LootEffect> {
+    effects
+        .list
+        .iter()
+        .map(|effect| LootEffect {
+            // `MobEffect` id, namespaced: a player effect id is vanilla's short
+            // name (`speed`) or a mod's `<ns>:<path>`.
+            id: horizon_client_core::potions::namespaced(effect.id).to_owned(),
+            amplifier: effect.amplifier,
+            duration: effect.duration,
+            ambient: effect.ambient,
+            // `MobEffectInstance.isVisible`; `show_icon` is its own flag.
+            visible: effect.visible,
+        })
+        .collect()
+}
+
 /// What a mob clears on itself in `LivingEntity.die`, before any loot is
 /// rolled: `Wolf.die` drops the wet flag and the shake animation, so a wolf
 /// killed mid-shake does not shake on the ground.

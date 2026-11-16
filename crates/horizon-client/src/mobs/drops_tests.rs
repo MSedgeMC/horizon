@@ -201,3 +201,55 @@ fn a_named_saddle_and_wolfs_armor_drop_with_their_names() {
     }
     assert_eq!(names, ["Seat", "Fang"]);
 }
+
+/// `Player.active_effects` on the killer: an `effects` predicate on the
+/// `attacking_player` target matches a speed effect the player has.
+#[test]
+fn a_players_active_effects_are_loot_facts() {
+    use crate::effects::{EffectInstance, PlayerEffects};
+    use horizon_core::random::LegacyRandom;
+    use horizon_world::loot::{EntityLootParams, LootEntity};
+
+    let root = std::env::temp_dir().join(format!(
+        "horizon-drops-player-effects-{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&root);
+    let dir = root.join("data/minecraft/loot_table");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("test.json"),
+        r#"{"pools":[{"rolls":1,"entries":[{"type":"minecraft:item","name":"minecraft:stone","condition":{"type":"minecraft:entity_properties","entity":"attacking_player","predicate":{"minecraft:effects":{"minecraft:speed":{"amplifier":{"min":1}}}}}}]}]}"#,
+    )
+    .unwrap();
+    std::fs::write(root.join("items.json"), "{}").unwrap();
+    let defaults = horizon_world::item_defaults::read(&root).unwrap();
+    let loot = LootData::load(&root, &PackOverlay::default(), &defaults).unwrap();
+    let _ = std::fs::remove_dir_all(&root);
+
+    let mut effects = PlayerEffects::default();
+    effects.add(EffectInstance::new("speed", 600, 2));
+    let mut player = LootEntity::new("minecraft:player");
+    player.effects = super::loot_player_effects(&effects);
+    let params = |player: LootEntity| EntityLootParams {
+        this: LootEntity::new("minecraft:zombie"),
+        player: Some(player),
+        ..EntityLootParams::default()
+    };
+    let drops = loot.roll_entity(
+        "minecraft:test",
+        &mut LegacyRandom::new(1),
+        &params(player.clone()),
+    );
+    assert_eq!(drops.len(), 1, "amplifier 2 matches min 1: {drops:?}");
+
+    // The predicate is about the amplifier: a weaker speed does not match.
+    let mut weak = PlayerEffects::default();
+    weak.add(EffectInstance::new("speed", 600, 0));
+    let mut player = LootEntity::new("minecraft:player");
+    player.effects = super::loot_player_effects(&weak);
+    assert!(
+        loot.roll_entity("minecraft:test", &mut LegacyRandom::new(1), &params(player))
+            .is_empty()
+    );
+}
