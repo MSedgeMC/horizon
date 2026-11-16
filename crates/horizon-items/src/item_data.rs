@@ -777,6 +777,12 @@ impl ItemStack {
     /// `DataComponents.POTION_DURATION_SCALE` with the item's default: 0.125
     /// for a tipped arrow, 0.25 for a lingering potion, else 1.
     pub fn potion_duration_scale(&self) -> f32 {
+        if self
+            .data()
+            .is_some_and(|d| d.other("!minecraft:potion_duration_scale").is_some())
+        {
+            return 1.0;
+        }
         match self
             .data()
             .and_then(|d| d.other("minecraft:potion_duration_scale"))
@@ -2273,6 +2279,26 @@ mod tests {
                 r#"{"minecraft:potion_contents":{potion:"minecraft:water"}}"#
             ))
         );
+    }
+
+    /// `ItemStack.getOrDefault(POTION_DURATION_SCALE, 1.0F)` is 1.0 when a
+    /// `!minecraft:potion_duration_scale` patch removed the prototype's
+    /// component: a tipped arrow's and a lingering potion's effects then last
+    /// unscaled.
+    #[test]
+    fn a_removed_potion_duration_scale_is_the_unscaled_default() {
+        for item in ["minecraft:tipped_arrow", "minecraft:lingering_potion"] {
+            let mut stack = ItemStack::new(item, 1);
+            assert!(stack.potion_duration_scale() < 1.0, "{item}");
+            stack.data_mut().set_other(
+                "!minecraft:potion_duration_scale",
+                Some(horizon_core::nbt::Tag::compound(Vec::<(
+                    &str,
+                    horizon_core::nbt::Tag,
+                )>::new())),
+            );
+            assert_eq!(stack.potion_duration_scale(), 1.0, "{item}");
+        }
     }
 
     #[test]
