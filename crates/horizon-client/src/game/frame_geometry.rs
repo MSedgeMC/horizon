@@ -98,23 +98,7 @@ impl Game<'_> {
             }
         };
         body("environment/celestial/sun", sky.sun_angle, 30.0, false);
-        let phases = [
-            "full_moon",
-            "waning_gibbous",
-            "third_quarter",
-            "waning_crescent",
-            "new_moon",
-            "waxing_crescent",
-            "first_quarter",
-            "waxing_gibbous",
-        ];
-        let phase = phases[(self.view_day_time() / 24000).rem_euclid(8) as usize];
-        body(
-            &format!("environment/celestial/moon/{phase}"),
-            sky.moon_angle,
-            20.0,
-            true,
-        );
+        body(&sky.moon_sprite(), sky.moon_angle, 20.0, true);
         // SkyRenderer.renderStars: the static star buffer on the same frame.
         let stars =
             (sky.star_brightness > 0.0).then(|| (frame(sky.star_angle), sky.star_brightness));

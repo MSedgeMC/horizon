@@ -49,9 +49,6 @@ impl Resources {
     pub(super) fn animate(&self) -> &horizon_client::animate_tick::AnimateTables {
         &self.rest().animate
     }
-    pub(super) fn fog(&self) -> &horizon_client::fog::FogTables {
-        &self.rest().fog
-    }
     pub(super) fn music(&self) -> &horizon_client::music::MusicTables {
         &self.rest().music
     }

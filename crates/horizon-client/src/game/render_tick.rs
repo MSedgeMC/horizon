@@ -146,24 +146,16 @@ impl Game<'_> {
         &self,
         camera: glam::DVec3,
         sky: &horizon_client::environment::Sky,
-        biome: u16,
         water_fog_color: [f32; 3],
     ) -> FogData {
         let forward = self.forward();
         let at = [camera.x, camera.y, camera.z];
         let fog_type = self.camera_submersion(at);
         let (rain, thunder) = self.view_weather(self.clock.fraction() as f32);
-        let title_fog = horizon_client::fog::FogTables::default();
-        let tables = if self.title.is_some() {
-            &title_fog
-        } else {
-            self.res.fog()
-        };
         let input = FogInputs {
             fog_type,
             sky,
             water_fog_color,
-            biome,
             render_distance_chunks: self.terrain_distance(),
             distant_terrain: self.lod.is_some(),
             cloud_range_chunks: self.settings.cloud_range,
@@ -192,7 +184,7 @@ impl Game<'_> {
             environment: self.pack.polytone_colors.env,
             fluid_fog: self.pack.polytone_colors.fluid_fog,
         };
-        let mut fog = horizon_client::fog::setup_fog(tables, &self.fog, &input);
+        let mut fog = horizon_client::fog::setup_fog(&self.fog, &input);
         if !self.settings.horizon.fog {
             horizon_client::fog::clear_distance_fog(&mut fog, &input);
         }

@@ -65,7 +65,7 @@ SkyRenderer.renderSunriseAndSunset	port	crates/horizon-client-render/src/gfx/pac
 SkyRenderer.renderEndSky	port	crates/horizon-client-render/src/gfx/end_sky.rs::EndSky::draw	End sky cube
 SkyRenderer.buildSunriseFan	port	crates/horizon-client-render/src/gfx/pack_sky.rs::PackSky::new	gap: minor: a unit 16-segment fan; the 120 and -40 block shape is not built here
 SkyRenderer.buildCelestialQuad	port	crates/horizon-client/src/game/frame_geometry.rs::Game::celestial_geometry	sprite quad for the sun and moon (body closure)
-SkyRenderer.buildMoonPhases	port	crates/horizon-client/src/game/frame_geometry.rs::Game::celestial_geometry	gap: minor: picks the phase from day time (day_time / 24000), not from the environment's moon phase value
+SkyRenderer.buildMoonPhases	port	crates/horizon-client/src/game/frame_geometry.rs::Game::celestial_geometry	the moon picks its phase from visual/moon_phase
 SkyRenderer.buildSkyDisc	port	crates/horizon-client-render/src/gfx/pack_sky.rs::disc	16-block disc fan (top and bottom)
 SkyRenderer.close	skip:other		releases sky buffers; Rust drops the wgpu buffers
 SpriteCoordinateExpander.addVertex	skip:other		no callers in this vanilla tree; UV wrapper for sprite quads

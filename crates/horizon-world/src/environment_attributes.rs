@@ -33,6 +33,8 @@ enum Default {
     Float(f32),
     Rgb(i32),
     Argb(i32),
+    /// An `Other` attribute whose type has a ported default, as its codec value.
+    Other(&'static str),
     Unported,
 }
 
@@ -124,7 +126,12 @@ pub static ATTRIBUTES: [Attribute; 51] = {
         a("visual/sun_angle", AngleDegrees, D::Float(0.0), Range::Any),
         a("visual/moon_angle", AngleDegrees, D::Float(0.0), Range::Any),
         a("visual/star_angle", AngleDegrees, D::Float(0.0), Range::Any),
-        a("visual/moon_phase", Other, D::Unported, Range::Any),
+        a(
+            "visual/moon_phase",
+            Other,
+            D::Other("full_moon"),
+            Range::Any,
+        ),
         a("visual/star_brightness", Float, D::Float(0.0), UNIT),
         a(
             "visual/block_light_tint",
@@ -306,6 +313,7 @@ impl Attribute {
                 Value::Rgb([r, g, b])
             }
             Default::Argb(c) => Value::Argb(channels(c)),
+            Default::Other(name) => Value::Other(Json::String(name.to_owned())),
             Default::Unported => return None,
         })
     }

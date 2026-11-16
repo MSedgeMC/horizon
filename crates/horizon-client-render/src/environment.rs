@@ -48,14 +48,52 @@ pub struct Sky {
     pub sky_fog_end: f32,
     /// `visual/water_fog_start_distance`.
     pub water_fog_start: f32,
+    /// `visual/water_fog_end_distance`: how far the water fog reaches.
+    pub water_fog_end: f32,
+    /// `visual/moon_phase` as `MoonPhase.index()`: 0 is the full moon, 4 the new moon.
+    pub moon_phase: u8,
     /// `visual/cloud_fog_end_distance`.
     pub cloud_fog_end: f32,
     /// `visual/cloud_height`.
     pub cloud_height: f32,
 }
+
+/// `MoonPhase`'s serialized names (`MoonPhase.CODEC`), in `index()` order.
+const MOON_PHASES: [&str; 8] = [
+    "full_moon",
+    "waning_gibbous",
+    "third_quarter",
+    "waning_crescent",
+    "new_moon",
+    "waxing_crescent",
+    "first_quarter",
+    "waxing_gibbous",
+];
+
+/// `MoonPhase.CODEC`'s value, the phase's serialized name.
+fn moon_phase_index(json: &Json) -> Option<u8> {
+    let name = json.as_str()?;
+    MOON_PHASES
+        .iter()
+        .position(|phase| *phase == name)
+        .map(|index| index as u8)
+}
+
+impl Sky {
+    /// The moon sprite `visual/moon_phase` picks (`SkyRenderer.buildMoonPhases` textures each
+    /// phase by its serialized name).
+    pub fn moon_sprite(&self) -> String {
+        let phase = MOON_PHASES
+            .get(self.moon_phase as usize)
+            .copied()
+            .unwrap_or(MOON_PHASES[0]);
+        format!("environment/celestial/moon/{phase}")
+    }
+}
+
 impl Default for Sky {
-    /// `EnvironmentAttributes` defaults: the fog distances a hand-built sky
-    /// (a loading screen, a test) uses.
+    /// `EnvironmentAttributes` defaults: what a hand-built sky (a loading screen, a test)
+    /// uses.
     fn default() -> Self {
         Self {
             sky_color: [0.0; 3],
@@ -75,6 +113,8 @@ impl Default for Sky {
             fog_end: 0.0,
             sky_fog_end: 512.0,
             water_fog_start: -8.0,
+            water_fog_end: 96.0,
+            moon_phase: 0,
             cloud_fog_end: 0.0,
             cloud_height: 0.0,
         }
@@ -1030,6 +1070,10 @@ impl Environment {
             Some(Value::Argb(c)) => c,
             _ => [0.0; 4],
         };
+        let moon_phase = match self.value("visual/moon_phase", at) {
+            Some(Value::Other(json)) => moon_phase_index(&json).unwrap_or(0),
+            _ => 0,
+        };
         Sky {
             sky_color: rgb("visual/sky_color"),
             fog_color: rgb("visual/fog_color"),
@@ -1048,6 +1092,8 @@ impl Environment {
             fog_end: float("visual/fog_end_distance"),
             sky_fog_end: float("visual/sky_fog_end_distance"),
             water_fog_start: float("visual/water_fog_start_distance"),
+            water_fog_end: float("visual/water_fog_end_distance"),
+            moon_phase,
             cloud_fog_end: float("visual/cloud_fog_end_distance"),
             cloud_height: float("visual/cloud_height"),
         }
@@ -1143,6 +1189,26 @@ mod tests {
         env
     }
 
+    /// A one-dimension stack whose dimension type has `attributes`.
+    fn with_dimension_attributes(name: &str, attributes: &str) -> Environment {
+        let root = std::env::temp_dir().join(format!(
+            "horizon-env-attributes-{}-{name}",
+            std::process::id()
+        ));
+        let dir = root.join("data/minecraft/dimension_type");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("overworld.json"),
+            format!(
+                r#"{{"has_skylight": true, "has_ceiling": false, "attributes": {attributes}}}"#
+            ),
+        )
+        .unwrap();
+        let env = Environment::load_dimension(&root, "overworld").unwrap();
+        std::fs::remove_dir_all(&root).unwrap();
+        env
+    }
+
     fn sky_at(env: &Environment, biome: &str, rain: f32) -> Sky {
         let map = env.biome(biome).unwrap();
         env.sample(&Sample {
@@ -1171,6 +1237,25 @@ mod tests {
         assert_eq!(
             sky_at(&plain, "minecraft:plains", 0.0).sky_color,
             [GRAY_40; 3]
+        );
+    }
+
+    /// `SkyRenderer.buildMoonPhases` picks the moon by `visual/moon_phase`
+    /// (`MoonPhase.index()`), not by the day clock; absent, the phase is vanilla's full moon.
+    #[test]
+    fn the_moon_phase_comes_from_its_environment_attribute() {
+        let env = with_dimension_attributes(
+            "moon_phase_set",
+            r#"{"minecraft:visual/moon_phase": "new_moon"}"#,
+        );
+        assert_eq!(
+            env.sample(&Sample::default()).moon_sprite(),
+            "environment/celestial/moon/new_moon"
+        );
+        let plain = with_dimension_attributes("moon_phase_absent", "{}");
+        assert_eq!(
+            plain.sample(&Sample::default()).moon_sprite(),
+            "environment/celestial/moon/full_moon"
         );
     }
 

@@ -1922,7 +1922,6 @@ struct WorldRest {
     providers: Providers,
     block_entity_render: BlockEntityRenderer,
     animate: horizon_client::animate_tick::AnimateTables,
-    fog: horizon_client::fog::FogTables,
     music: horizon_client::music::MusicTables,
     ambient: horizon_client::ambience::AmbientTables,
     nether_environment: Environment,
@@ -9632,7 +9631,7 @@ impl Game<'_> {
             environment_fog: (self.dim == Dim::Nether).then_some((sky.fog_start, sky.fog_end)),
             cave_culling,
             water_fog,
-            fog: Some(self.frame_fog(camera, &sky, biome, water_fog)),
+            fog: Some(self.frame_fog(camera, &sky, water_fog)),
             dark_disc: self.dark_disc(camera),
             outline,
             outline_after_terrain,
@@ -12009,13 +12008,12 @@ fn load_world_rest(
         Ok(renderer)
     };
     let load_animate = || -> Result<_> {
-        let _step = startup::step("rest.animate_fog");
-        let animate = if draws {
-            horizon_client::animate_tick::AnimateTables::load(root, registry, biomes)?
+        let _step = startup::step("rest.animate");
+        if draws {
+            horizon_client::animate_tick::AnimateTables::load(root, registry, biomes)
         } else {
-            Default::default()
-        };
-        Ok((animate, horizon_client::fog::FogTables::load(root, biomes)))
+            Ok(Default::default())
+        }
     };
     let load_mobs = || -> Result<_> {
         let _step = startup::step("rest.mobs");
@@ -12149,7 +12147,7 @@ fn load_world_rest(
         )
     };
     let (items, recipes, stations) = items?;
-    let (animate, fog) = animate?;
+    let animate = animate?;
     let (mob_types, mob_data) = mobs?;
     let (transformers, (player_type, player_arm, player_arm_slim, spin_attack)) = transformers?;
     let nether_environment = nether_environment?;
@@ -12171,7 +12169,6 @@ fn load_world_rest(
         providers,
         block_entity_render: block_entity_render?,
         animate,
-        fog,
         music,
         ambient,
         nether_environment,
