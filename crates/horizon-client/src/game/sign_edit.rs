@@ -301,26 +301,30 @@ impl Game<'_> {
     /// side whose lines carry a click action (`executeClickCommandsIfPresent`,
     /// which runs it), and a player who may build (the text editor). Every
     /// other sign answers PASS, so `ServerPlayerGameMode.useItemOn` goes on to
-    /// `ItemStack.useOn` and an adventure-mode `can_place_on` stack places
-    /// against it. Vanilla also passes while another player is editing the
-    /// sign and when its text has styled lines; neither is modelled here.
-    pub(super) fn sign_consumes_click(&self, pos: [i32; 3]) -> bool {
+    /// `ItemStack.useOn` and a held block places against it. Another player
+    /// editing the sign (`otherPlayerIsEditingSign`) and a side whose lines are
+    /// not plain text (`SignText.hasEditableText`) also answer PASS.
+    pub(super) fn sign_consumes_click(&mut self, pos: [i32; 3]) -> bool {
         let key = (pos[0], pos[1], pos[2]);
         let Some(BlockEntity::Sign(sign)) = self.world.block_entities.get(&key) else {
             return false;
         };
-        if sign.waxed || self.may_build() {
-            return true;
-        }
-        let side = if self.facing_sign_front(key) {
-            &sign.front
-        } else {
-            &sign.back
-        };
-        side.click
+        let front = self.facing_sign_front(key);
+        let side = if front { &sign.front } else { &sign.back };
+        let click = side
+            .click
             .iter()
             .flatten()
-            .any(|event| click_action(event).is_some())
+            .any(|event| click_action(event).is_some());
+        let editable = side.has_editable_text();
+        let waxed = sign.waxed;
+        // `executeClickCommandsIfPresent` runs first: its answer consumes.
+        if click || waxed {
+            return true;
+        }
+        // `useWithoutItem` opens the editor only for a builder, and only while
+        // nobody else edits the sign and the side has plain text to rewrite.
+        !self.other_player_is_editing_sign(key) && self.may_build() && editable
     }
     /// `SignBlock.useItemOn` with a `SignApplicator` in hand (dyes, ink sacs,
     /// honeycomb): the item changes the side the player faces and is used up.

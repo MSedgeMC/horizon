@@ -146,7 +146,7 @@ SignText.hasMessage	port	crates/horizon-client-render/src/signs.rs::SignText::is
 SignText.getRenderMessages	port	crates/horizon-client-render/src/block_entity_render.rs::sign_text_calls	lines drawn on the sign
 SignText.filteredMessagesForSerialization	skip:service		chat-filtered sign text for clients; Horizon has no text filter
 SignText.hasAnyClickCommands	port	crates/horizon-client-render/src/signs.rs::SignText::has_any_click_commands	ticked in #3516; `SignText.hasAnyClickCommands` is cited at crates/horizon-client-render/src/signs.rs:81
-SignText.hasEditableText	skip:other		Horizon sign text has no click events, so every line is editable
+SignText.hasEditableText	inline	crates/horizon-client-render/src/signs.rs::SignText::has_editable_text	a translatable, score or other non-plain line makes the side answer PASS
 SignText.equals	skip:java		value equality
 SignText.hashCode	skip:java		value hashing
 SignText.Mutable.asImmutable	skip:java		copy into the immutable record

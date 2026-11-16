@@ -2,7 +2,11 @@
 //! (`ServerPlayerGameMode.useItemOn`'s `useWithoutItem` then `ItemStack.useOn`),
 //! so an adventure player's `can_place_on` block places against the sign.
 use horizon_client::{
-    command::args::GameMode, containers::BlockEntity, items::ItemStack, mobs::Who, signs::SignData,
+    command::args::GameMode,
+    containers::BlockEntity,
+    items::ItemStack,
+    mobs::Who,
+    signs::{SavedLine, SignData},
 };
 use horizon_world::nbt::Tag;
 
@@ -32,6 +36,16 @@ fn held(name: &str, count: u32, block: &str) -> ItemStack {
 /// at [2, 4, 3] with `stack` in hand, as `Minecraft.startUseItem` does; the
 /// game events the click posted.
 fn click_sign(game: &mut crate::game::Game<'_>, sign: SignData, stack: ItemStack) -> Vec<Posted> {
+    click_sign_as(game, sign, stack, GameMode::Adventure)
+}
+
+/// The same click by a player in `mode`.
+fn click_sign_as(
+    game: &mut crate::game::Game<'_>,
+    sign: SignData,
+    stack: ItemStack,
+    mode: GameMode,
+) -> Vec<Posted> {
     let registry = game.pack.assets.registry;
     let sign_state = registry.default_state("minecraft:oak_sign").unwrap();
     game.world.set(2, 4, 3, sign_state).unwrap();
@@ -39,7 +53,7 @@ fn click_sign(game: &mut crate::game::Game<'_>, sign: SignData, stack: ItemStack
     game.world
         .block_entities
         .insert((2, 4, 3), BlockEntity::Sign(sign));
-    game.set_mode(GameMode::Adventure);
+    game.set_mode(mode);
     *game.held_mut() = Some(stack);
     crate::game::sculk::TEST_POSTED_EVENTS.with(|events| *events.borrow_mut() = Some(Vec::new()));
     let hit = crate::game::Hit {
@@ -148,4 +162,57 @@ fn a_waxed_sign_or_a_click_command_keeps_the_adventure_click() {
         !events.iter().any(|e| e.0 == "minecraft:block_place"),
         "{events:?}"
     );
+}
+
+/// `SignBlock.otherPlayerIsEditingSign` and `SignText.hasEditableText`: a sign
+/// this player cannot rewrite answers PASS, so a builder held block places
+/// against it instead of being swallowed by the sign.
+#[test]
+#[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+fn a_sign_this_player_cannot_edit_keeps_the_click_for_the_item() {
+    let Some(mut game) = game() else {
+        return;
+    };
+    let planks = game
+        .pack
+        .assets
+        .registry
+        .default_state("minecraft:oak_planks")
+        .unwrap();
+
+    // Another player editor holds the sign: its UUID is not the actor UUID.
+    let mut edited = SignData::default();
+    edited.allowed_editor = Some(0x5100_0000_0000_000b);
+    click_sign_as(
+        &mut game,
+        edited,
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+        GameMode::Survival,
+    );
+    assert_eq!(
+        game.world.block(2, 4, 4),
+        planks,
+        "another player editor kept a builder click"
+    );
+    assert_eq!(game.held().map(|s| s.count), Some(1), "one plank is used");
+
+    // The side has a translatable line, so `hasEditableText` answers false.
+    let mut styled = SignData::default();
+    styled.front.lines[0] = "Stick".into();
+    styled.front.saved[0] = Some(SavedLine {
+        text: "Stick".into(),
+        component: Tag::compound([("translate", Tag::String("item.minecraft.stick".into()))]),
+    });
+    click_sign_as(
+        &mut game,
+        styled,
+        held("minecraft:oak_planks", 2, "minecraft:oak_sign"),
+        GameMode::Survival,
+    );
+    assert_eq!(
+        game.world.block(2, 4, 4),
+        planks,
+        "a non-editable side kept a builder click"
+    );
+    assert_eq!(game.held().map(|s| s.count), Some(1), "one plank is used");
 }
