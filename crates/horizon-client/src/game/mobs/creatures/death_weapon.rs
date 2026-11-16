@@ -245,6 +245,14 @@ impl Game<'_> {
             .and_then(|id| self.mobs.iter().find(|o| o.id == id))
             .map(|o| LootEntity::new(&o.kind.id));
         let kind = crate::game::native_hooks::mob_kind(m);
+        // `Level.getBlockState` for the location predicates a dead mob's loot
+        // reads around it (`movement_affected_by`), taken before the roll
+        // borrows the game for a listener.
+        let level = horizon_client::loot_blocks::LootBlockAt::below(
+            [m.position.x, m.position.y, m.position.z],
+            &self.world,
+            &self.pack.assets.registry,
+        );
         let death = drops::Death {
             loot: &loot,
             damage,
@@ -257,6 +265,7 @@ impl Game<'_> {
                 .rules
                 .bool_at(horizon_client::gamerules::vanilla::MOB_DROPS),
             world_seed: self.level.seed,
+            level: Some(&level),
         };
         let raider = horizon_client::mobs::raider::is_raider(m.species());
         let to_stack = |stack: &horizon_world::loot::LootStack| {

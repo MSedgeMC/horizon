@@ -54,6 +54,8 @@ impl LootData {
             luck,
             open_water,
             entity: None,
+            position: None,
+            level: None,
             enchanted_level: None,
         };
         let mut items = Vec::new();
@@ -78,6 +80,8 @@ impl LootData {
             luck: 0.0,
             open_water: None,
             entity: None,
+            position: None,
+            level: None,
             enchanted_level: None,
         };
         let mut items = Vec::new();

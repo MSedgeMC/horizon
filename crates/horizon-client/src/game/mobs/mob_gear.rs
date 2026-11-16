@@ -41,8 +41,15 @@ impl Game<'_> {
         if !loot.has_table(&name) {
             return;
         }
+        let level = horizon_client::loot_blocks::LootBlockAt::below(
+            [m.position.x, m.position.y, m.position.z],
+            &self.world,
+            &self.pack.assets.registry,
+        );
         let params = EntityLootParams {
             this: drops::loot_entity(m, None),
+            position: Some([m.position.x, m.position.y, m.position.z]),
+            level: Some(&level),
             ..EntityLootParams::default()
         };
         let seed = self.level.seed;

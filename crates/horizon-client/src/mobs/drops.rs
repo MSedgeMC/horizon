@@ -8,7 +8,10 @@ use super::{Mob, Species, equine, gear, raider, render::DYE_NAMES};
 use crate::random_sequences::RandomSequences;
 use horizon_core::random::{LegacyRandom, LevelRandom, RandomSource};
 use horizon_world::{
-    loot::{EnchantedLevel, EntityLootParams, LootDamage, LootData, LootEntity, LootStack},
+    loot::{
+        EnchantedLevel, EntityLootParams, LootBlockSource, LootDamage, LootData, LootEntity,
+        LootStack,
+    },
     registry::BlockStateId,
 };
 
@@ -53,6 +56,9 @@ pub struct Death<'a> {
     /// The `doMobLoot` game rule.
     pub mob_drops: bool,
     pub world_seed: i64,
+    /// The level the mob died in, for a predicate that reads a block around
+    /// it (`movement_affected_by`); `None` where the caller has no level.
+    pub level: Option<&'a dyn LootBlockSource>,
 }
 
 /// What a death's loot rolls with: the world's random sequences, the level's
@@ -537,6 +543,8 @@ pub fn roll_death(m: &mut Mob, d: &Death, rolls: &mut dyn DeathRolls) -> Rolled 
             damage: d.damage.clone(),
             player: None,
             luck: 0.0,
+            position: Some([m.position.x, m.position.y, m.position.z]),
+            level: d.level,
         };
         let items = roll(d, "minecraft:charged_creeper/root", &params, rolls, 0);
         skulls = items.iter().any(|i| !i.is_empty());
@@ -565,6 +573,8 @@ pub fn roll_death(m: &mut Mob, d: &Death, rolls: &mut dyn DeathRolls) -> Rolled 
             damage: d.damage.clone(),
             player: d.player.clone().filter(|_| killed_by_player),
             luck: if killed_by_player { d.luck } else { 0.0 },
+            position: Some([m.position.x, m.position.y, m.position.z]),
+            level: d.level,
         };
         let items = roll(d, &table, &params, rolls, m.extra.death_table_seed);
         out.extend(items.into_iter().filter(|i| !i.is_empty()).map(Drop::Item));
@@ -598,7 +608,8 @@ pub fn finish_death(
     let s = m.species();
     if table_rolled {
         // Mob.dropCustomDeathLoot.
-        let damage_params = damage_context(this.clone(), d);
+        let damage_params =
+            damage_context(this.clone(), d, [m.position.x, m.position.y, m.position.z]);
         for (index, slot) in SLOTS.iter().enumerate() {
             let stack = slot_item(m, slot);
             let Some((mut chance, preserve)) = slot_chance(m, d, &damage_params, slot) else {
@@ -698,12 +709,18 @@ pub fn finish_death(
 }
 /// The loot parameters of the damage that killed `m`, as the equipment drop
 /// chance enchantments read them (no luck, no killing player).
-fn damage_context(this: LootEntity, d: &Death) -> EntityLootParams {
+fn damage_context<'a>(
+    this: LootEntity,
+    d: &'a Death<'_>,
+    position: [f64; 3],
+) -> EntityLootParams<'a> {
     EntityLootParams {
         this,
         damage: d.damage.clone(),
         player: None,
         luck: 0.0,
+        position: Some(position),
+        level: d.level,
     }
 }
 /// `Mob.dropCustomDeathLoot`'s chance for `slot` before the roll, and whether
@@ -886,6 +903,7 @@ mod death_loot_table_tests {
             vehicle: None,
             mob_drops: true,
             world_seed: 0,
+            level: None,
         };
         let items = |seed: i64, own: bool| {
             let kind = crate::mobs::sensor_scan_tests::kind();
@@ -955,6 +973,7 @@ mod death_loot_table_tests {
             vehicle: None,
             mob_drops: true,
             world_seed: 0,
+            level: None,
         };
         let run = |mut level_random: LegacyRandom, draws: bool| {
             let mut sequences = RandomSequences::default();
@@ -998,6 +1017,7 @@ mod death_loot_table_tests {
             vehicle: None,
             mob_drops: true,
             world_seed: 0,
+            level: None,
         };
         let run = |chosen: Option<f32>| {
             let kind = crate::mobs::sensor_scan_tests::kind();
@@ -1138,6 +1158,7 @@ mod slot_tests {
             vehicle: None,
             mob_drops: true,
             world_seed: 0,
+            level: None,
         };
         let zombie = |helmet: bool| {
             let mut m = mob("minecraft:zombie", Species::Zombie);
