@@ -1788,7 +1788,19 @@ pub fn decode_components(components: Option<&Tag>) -> (u32, Option<Box<StackData
     if let Tag::Compound(map) = c {
         for (k, v) in map {
             let key = k.to_string_lossy();
-            if MODELLED.contains(&key.as_str())
+            // `DataComponents.COMMON_ITEM_COMPONENTS` gives every item an empty
+            // `enchantments` and `repair_cost: 0`; the patch constructor drops
+            // a value equal to the prototype (`PatchedDataComponentMap`), so
+            // neither is a nondefault component on any item.
+            let common_prototype = match key.as_str() {
+                "minecraft:enchantments" => {
+                    data.enchantments.is_empty() && matches!(v, Tag::Compound(_))
+                }
+                "minecraft:repair_cost" => int(v) == Some(0),
+                _ => false,
+            };
+            if !common_prototype
+                && MODELLED.contains(&key.as_str())
                 && key != "minecraft:damage"
                 && !data.sets_component(&key)
             {
@@ -2024,6 +2036,60 @@ mod tests {
                 .unwrap();
             assert_eq!(encode_components(&stack), Some(expected), "{item}: {patch}");
         }
+    }
+
+    /// `DataComponents.COMMON_ITEM_COMPONENTS` gives every item an empty
+    /// `enchantments` and `repair_cost: 0`; the patch constructor drops a
+    /// value equal to the prototype (`PatchedDataComponentMap`), so an
+    /// explicit default is not a nondefault component.
+    #[test]
+    fn an_explicit_common_default_is_not_a_component() {
+        let parse = |text: &str| parse_stack(text).unwrap().unwrap();
+        let tag = |text: &str| horizon_core::nbt::parse_snbt(text).unwrap().0;
+        let plain = ItemStack::new("minecraft:stone", 1);
+        let empty =
+            parse(r#"{id:"minecraft:stone",count:1,components:{"minecraft:enchantments":{}}}"#);
+        let wrapped = parse(
+            r#"{id:"minecraft:stone",count:1,components:{"minecraft:enchantments":{levels:{}}}}"#,
+        );
+        let invalid = parse(
+            r#"{id:"minecraft:stone",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":0}}}"#,
+        );
+        let zero_cost =
+            parse(r#"{id:"minecraft:stone",count:1,components:{"minecraft:repair_cost":0}}"#);
+        for stack in [&empty, &wrapped, &invalid, &zero_cost] {
+            assert!(
+                stack.same_item_same_components(&plain),
+                "{:?}",
+                stack.data()
+            );
+            assert_eq!(encode_components(stack), None, "{:?}", stack.data());
+        }
+        // The same default on an enchanted book is not a component either.
+        let book = ItemStack::new("minecraft:enchanted_book", 1);
+        let empty_book = parse(
+            r#"{id:"minecraft:enchanted_book",count:1,components:{"minecraft:enchantments":{}}}"#,
+        );
+        assert!(empty_book.same_item_same_components(&book));
+        // A non-empty map and a non-zero cost stay nondefault components.
+        let sword = ItemStack::new("minecraft:diamond_sword", 1);
+        let enchanted = parse(
+            r#"{id:"minecraft:diamond_sword",count:1,components:{"minecraft:enchantments":{"minecraft:sharpness":2}}}"#,
+        );
+        assert!(!enchanted.same_item_same_components(&sword));
+        assert_eq!(
+            encode_components(&enchanted),
+            Some(tag(
+                r#"{"minecraft:enchantments":{"minecraft:sharpness":2}}"#
+            ))
+        );
+        let repaired =
+            parse(r#"{id:"minecraft:stone",count:1,components:{"minecraft:repair_cost":5}}"#);
+        assert!(!repaired.same_item_same_components(&plain));
+        assert_eq!(
+            encode_components(&repaired),
+            Some(tag(r#"{"minecraft:repair_cost":5}"#))
+        );
     }
 
     #[test]
