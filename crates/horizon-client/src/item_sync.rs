@@ -63,8 +63,7 @@ pub fn can_glide_using(stack: &ItemStack, slot: &str, items: &crate::items::Item
 
 /// The effective equippable slot after the stack's component patch.
 pub fn equippable_slot(stack: &ItemStack, items: &crate::items::Items) -> Option<String> {
-    let info = items.get(&stack.item)?;
-    glider_and_slot(stack, info.glider, info.equip_slot.clone()).1
+    equippable(stack, items).map(|equippable| equippable.slot)
 }
 
 /// The `glider` and `equippable` slot `stack` has, from its item's own: the
@@ -213,6 +212,9 @@ pub struct Equippable {
     /// `cameraOverlay`: the texture drawn over the screen when worn
     /// (`minecraft:misc/pumpkinblur`).
     pub camera_overlay: Option<String>,
+    /// `swappable`: whether `Equippable.swapWithEquipmentSlot` may move it; a
+    /// component which omits the field has it.
+    pub swappable: bool,
 }
 
 /// `stack.get(DataComponents.EQUIPPABLE)`: the item's own, replaced or removed
@@ -233,6 +235,10 @@ pub fn equippable(stack: &ItemStack, items: &crate::items::Items) -> Option<Equi
             slot,
             asset_id: string("asset_id").map(namespaced),
             camera_overlay: string("camera_overlay").map(namespaced),
+            swappable: e
+                .get("swappable")
+                .and_then(crate::item_data::component_bool)
+                .unwrap_or(true),
         });
     }
     let Some((added, removed)) = data
@@ -424,6 +430,7 @@ pub fn item_equippable(item: &str, items: &crate::items::Items) -> Option<Equipp
         slot: info.equip_slot.clone()?,
         asset_id: info.equip_asset.clone(),
         camera_overlay: info.equip_camera_overlay.clone(),
+        swappable: info.swappable,
     })
 }
 
@@ -436,8 +443,8 @@ fn namespaced(id: String) -> String {
     }
 }
 
-/// `Equippable.STREAM_CODEC` up to the camera overlay: the slot, the equip
-/// sound, the asset id and the camera overlay.
+/// `Equippable.STREAM_CODEC` up to `swappable`: the slot, the equip sound, the
+/// asset id, the camera overlay, the allowed entities and the swappable flag.
 fn decode_equippable(bytes: &[u8]) -> Option<Equippable> {
     let mut r = Reader::new(bytes);
     let slot = equipment_slot_name(r.varint().ok()?)?.to_owned();
@@ -459,11 +466,34 @@ fn decode_equippable(bytes: &[u8]) -> Option<Equippable> {
     } else {
         None
     };
+    // A layout the fields before this one leave in another shape keeps the
+    // component's default (swappable) rather than losing the slot.
+    let swappable = read_swappable(&mut r).unwrap_or(true);
     Some(Equippable {
         slot,
         asset_id,
         camera_overlay,
+        swappable,
     })
+}
+
+/// `Equippable`'s `allowedEntities` (`HolderSet.STREAM_CODEC`: a tag's id and
+/// name, or a count plus one entity type ids), then its `swappable` bool.
+fn read_swappable(r: &mut Reader) -> Option<bool> {
+    if r.bool().ok()? {
+        match r.varint().ok()? {
+            0 => {
+                r.varint().ok()?;
+                r.string(32767).ok()?;
+            }
+            n => {
+                for _ in 0..n.checked_sub(1)? {
+                    r.varint().ok()?;
+                }
+            }
+        }
+    }
+    r.bool().ok()
 }
 
 /// `EquipmentSlot.byId`'s serialized names.
@@ -3133,5 +3163,39 @@ mod tests {
             back.data()
                 .is_some_and(|d| d.other("!minecraft:max_stack_size").is_some())
         );
+    }
+
+    /// `Equippable.swappable` comes from the stack's component, saved or the
+    /// server's patch, and its slot does too.
+    #[test]
+    fn equippable_swappable_comes_from_the_stack() {
+        let items = crate::items::Items::for_tests(Default::default());
+        let mut helmet = ItemStack::new("minecraft:iron_helmet", 1);
+        helmet.data_mut().set_other(
+            "minecraft:equippable",
+            Some(Tag::compound([("slot", Tag::String("head".into()))])),
+        );
+        assert_eq!(equippable_slot(&helmet, &items).as_deref(), Some("head"));
+        assert!(equippable(&helmet, &items).unwrap().swappable);
+
+        helmet.data_mut().set_other(
+            "minecraft:equippable",
+            Some(Tag::compound([
+                ("slot", Tag::String("head".into())),
+                ("swappable", Tag::Byte(0)),
+            ])),
+        );
+        assert_eq!(equippable_slot(&helmet, &items).as_deref(), Some("head"));
+        assert!(!equippable(&helmet, &items).unwrap().swappable);
+
+        // The server's patch: slot 4 (head), a registry sound, no asset id,
+        // camera overlay or allowed entities, and swappable false.
+        let mut bytes = vec![4, 1, 0, 0, 0, 0, 1, 1];
+        let mut patch = vec![1, 0, component::EQUIPPABLE as u8, bytes.len() as u8];
+        patch.append(&mut bytes);
+        let mut stick = ItemStack::new("minecraft:stick", 1);
+        stick.data_mut().wire = crate::item_data::Wire::new(stick.clone(), Arc::from(patch));
+        assert_eq!(equippable_slot(&stick, &items).as_deref(), Some("head"));
+        assert!(!equippable(&stick, &items).unwrap().swappable);
     }
 }
