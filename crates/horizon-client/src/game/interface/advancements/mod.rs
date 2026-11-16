@@ -237,9 +237,12 @@ impl adv::World for View<'_, '_> {
     fn can_see_sky(&self, p: [i32; 3]) -> bool {
         self.0.mob_world_base(&[]).can_see_sky(p[0], p[1], p[2])
     }
+    /// `Level.getMaxLocalRawBrightness`: `getRawBrightness(pos, getSkyDarken())`,
+    /// the sky light the level's time and weather darken, or the block light.
     fn light(&self, p: [i32; 3]) -> i32 {
         let l = self.0.world.light(p[0], p[1], p[2]);
-        i32::from((l >> 4).max(l & 15))
+        let sky = i32::from(l >> 4) - self.0.sky_darken();
+        sky.max(i32::from(l & 15))
     }
     /// `CampfireBlock.isSmokeyPos`: share the beehive smoke test.
     fn smokey(&self, p: [i32; 3]) -> bool {
@@ -3279,6 +3282,37 @@ mod tests {
         assert!(
             finished.is_some_and(|t| (9600..=9620).contains(&t)),
             "{finished:?}"
+        );
+    }
+
+    /// `LocationPredicate.light` reads `Level.getMaxLocalRawBrightness`:
+    /// `getRawBrightness(pos, getSkyDarken())`, so an open-sky block is 15 at
+    /// noon but loses the sky darkening at night. The origin chunk here is
+    /// empty: full sky light, no block light, so the night value is
+    /// 15 - skyDarken and a raw light read would stay 15.
+    #[test]
+    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    fn a_light_predicate_reads_the_darkened_sky_light() {
+        use crate::game::native_machines::tests::server_game;
+        let mut game = server_game();
+        let at = [0.5, 64.0, 0.5];
+        let wants = |game: &Game<'_>, predicate: Value| adv::location(&predicate, at, &View(game));
+        let noon = serde_json::json!({"light": {"light": 15}});
+        let midnight = serde_json::json!({"light": {"light": {"max": 4}}});
+        game.world.day_time = 6000;
+        assert!(wants(&game, noon.clone()), "open sky at noon is light 15");
+        assert!(
+            !wants(&game, midnight.clone()),
+            "open sky at noon is not dimmed"
+        );
+        game.world.day_time = 18000;
+        assert!(
+            !wants(&game, noon),
+            "open sky at midnight loses the sky darkening"
+        );
+        assert!(
+            wants(&game, midnight),
+            "open sky at midnight is light 15 - 11"
         );
     }
 }
