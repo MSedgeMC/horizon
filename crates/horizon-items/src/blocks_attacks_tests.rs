@@ -45,6 +45,28 @@ fn a_stacks_own_blocks_attacks_component_counts() {
     assert_eq!(b.bypassed_by, None);
 }
 
+/// `ItemStack.get(BLOCKS_ATTACKS)` is null for a `!minecraft:blocks_attacks`
+/// removal patch: `LivingEntity.getItemBlockingWith` and `Item.use` find no
+/// component, so a shield whose prototype has one does not block.
+#[test]
+fn a_removed_blocks_attacks_component_does_not_block() {
+    let info = ItemInfo {
+        blocks_attacks: Some(parse(json!({}))),
+        components: vec!["minecraft:blocks_attacks".into()],
+        ..ItemInfo::default()
+    };
+    let mut shield = ItemStack::new("minecraft:shield", 1);
+    assert!(BlocksAttacks::of_stack(&shield, Some(&info)).is_some());
+    shield.data_mut().set_other(
+        "!minecraft:blocks_attacks",
+        Some(horizon_core::nbt::Tag::compound(Vec::<(
+            &str,
+            horizon_core::nbt::Tag,
+        )>::new())),
+    );
+    assert!(BlocksAttacks::of_stack(&shield, Some(&info)).is_none());
+}
+
 /// `RegistryCodecs.holderSet` takes a tag, one id or a list of them, so a
 /// `bypassed_by` of any of the three bypasses those damage types; the sounds
 /// take `SoundEvent.CODEC`'s inline `{sound_id, range}` as well as an id.

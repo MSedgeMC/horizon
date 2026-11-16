@@ -365,11 +365,16 @@ fn sound_event(v: &Value) -> Option<String> {
 impl BlocksAttacks {
     /// The `blocks_attacks` `stack` has (`ItemStack.get(DataComponents.BLOCKS_ATTACKS)`):
     /// its own component when it carries one (`/give @s diamond_sword[blocks_attacks={}]`,
-    /// or a server's item), else its item's (`item`, a shield's).
+    /// or a server's item), else its item's (`item`, a shield's). A
+    /// `!minecraft:blocks_attacks` removal patch leaves the lookup empty, so
+    /// the item's component does not come back.
     pub fn of_stack<'a>(
         stack: &ItemStack,
         item: Option<&'a ItemInfo>,
     ) -> Option<std::borrow::Cow<'a, Self>> {
+        if !stack.carries_component(item, "minecraft:blocks_attacks") {
+            return None;
+        }
         if let Some(own) = stack
             .data()
             .and_then(|d| d.other("minecraft:blocks_attacks"))
