@@ -1097,6 +1097,19 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             "minecraft:stepping_on" => {
                 location(p, [e.position[0], e.position[1] - 0.5, e.position[2]], w)
             }
+            // `MovementAffectedByPredicate.matches`: the location predicate at
+            // the centre of `Entity.getBlockPosBelowThatAffectsMyMovement`
+            // (`getOnPos(0.500001F)`), the block that affects the entity's
+            // movement rather than the one it stands on.
+            "minecraft:movement_affected_by" => location(
+                p,
+                [
+                    e.position[0].floor() + 0.5,
+                    (e.position[1] - 0.500001).floor() + 0.5,
+                    e.position[2].floor() + 0.5,
+                ],
+                w,
+            ),
             "minecraft:distance" => distance(p, e.position, origin),
             "minecraft:movement" => e.movement.is_some_and(|m| movement(p, m)),
             "minecraft:flags" => {
@@ -2495,6 +2508,69 @@ mod tests {
             &Flat,
             [0.0; 3]
         ));
+    }
+    /// `MovementAffectedByPredicate.matches`: the location predicate runs at
+    /// the centre of `Entity.getBlockPosBelowThatAffectsMyMovement`
+    /// (`getOnPos(0.500001F)`), not at the entity's own feet.
+    #[test]
+    fn movement_affected_by_reads_the_centre_of_the_block_below() {
+        /// Slime at y=63, stone everywhere else.
+        struct Pedestal;
+        impl World for Pedestal {
+            fn dimension(&self) -> &str {
+                Flat.dimension()
+            }
+            fn weather(&self) -> (bool, bool) {
+                Flat.weather()
+            }
+            fn biome(&self, p: [i32; 3]) -> String {
+                Flat.biome(p)
+            }
+            fn structures(&self, p: [i32; 3]) -> Vec<String> {
+                Flat.structures(p)
+            }
+            fn block(&self, p: [i32; 3]) -> (String, BTreeMap<String, String>) {
+                let name = if p[1] == 63 {
+                    "minecraft:slime_block"
+                } else {
+                    "minecraft:stone"
+                };
+                (name.into(), BTreeMap::new())
+            }
+            fn fluid(&self, _: [i32; 3]) -> Option<String> {
+                None
+            }
+            fn can_see_sky(&self, p: [i32; 3]) -> bool {
+                Flat.can_see_sky(p)
+            }
+            fn light(&self, p: [i32; 3]) -> i32 {
+                Flat.light(p)
+            }
+            fn smokey(&self, _: [i32; 3]) -> bool {
+                false
+            }
+            fn in_tag(&self, _: &str, _: &str, _: &str) -> bool {
+                false
+            }
+        }
+        let standing = EntityView {
+            position: [0.5, 64.0, 0.5],
+            ..mob("minecraft:zombie")
+        };
+        let on_slime = json!({
+            "minecraft:movement_affected_by": {"block": {"blocks": "minecraft:slime_block"}}
+        });
+        assert!(entity(&on_slime, &standing, &Pedestal, [0.0; 3]));
+        let higher = EntityView {
+            position: [0.5, 65.0, 0.5],
+            ..standing.clone()
+        };
+        assert!(!entity(&on_slime, &higher, &Pedestal, [0.0; 3]));
+        // `Vec3.atCenterOf`: the location predicate sees y=63.5, not 64.
+        let at_centre = json!({
+            "movement_affected_by": {"position": {"y": {"min": 63.4, "max": 63.6}}}
+        });
+        assert!(entity(&at_centre, &standing, &Pedestal, [0.0; 3]));
     }
     /// `entity_killed_player` by a mob's melee hit: the mob is the killer and
     /// the blow's causing and direct entity.
