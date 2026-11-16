@@ -64,9 +64,6 @@ DecoratedPotBlockEntity.collectImplicitComponents	port	crates/horizon-client/src
 DecoratedPotBlockEntity.applyImplicitComponents	port	crates/horizon-client/src/block_entity_item.rs::place	sherds and item as components
 DecoratedPotBlockEntity.splitTheItem	port	crates/horizon-client/src/game/blocks/machines/mod.rs::Game::pot_take_one	a hopper above a pot takes one item a move (`ContainerSingleItem.removeItem(1)`): the saved `item` is split and the rest stays (the tag goes when the last item leaves); a pending loot table is rolled first by `Game::unpack_pot_loot`
 DecoratedPotBlockEntity.wobble	port	crates/horizon-client/src/game/blocks/decorated_pot.rs::Game::use_decorated_pot	wobble event sent on a hit
-DispenserBlockEntity.insertItem	port	crates/horizon-client/src/game/machines.rs::Game::add_item	slot-by-slot insert, as hoppers use it
-DecoratedPotBlockEntity.splitTheItem	missing		`decorated_pot.rs` has no split-count step for the pot's item
-DecoratedPotBlockEntity.wobble	port	crates/horizon-client/src/game/blocks/decorated_pot.rs::Game::use_decorated_pot	wobble event sent on a hit
 DispenserBlockEntity.insertItem	port	crates/horizon-client/src/game/blocks/machines/mod.rs::Game::add_item	slot-by-slot insert, as hoppers use it
 DispenserBlockEntity.loadAdditional	port	crates/horizon-client/src/save.rs::decode_block_entity	Items (9 slots)
 DispenserBlockEntity.saveAdditional	port	crates/horizon-client/src/save/block_entity_encode.rs::encode	Items (9 slots)
