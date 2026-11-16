@@ -69,7 +69,7 @@ PlayerPredicate.StatMatcher.createTypedCodec	skip:java		codec
 RaiderPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/raider arm: captain matches, and has_raid matches no raid running here; the advancement reader answers false for the key
 SheepPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/sheep arm, the sheared flag; the advancement reader answers false for the key
 SteppingOnPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: no on-ground test; the block is read 0.5 below the feet
-TargetedEntityPredicate.matches	missing		minor: targeted_entity key is not read; no vanilla advancement uses it
+TargetedEntityPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the minecraft:targeted_entity key: the target of a Mob (ai.target, Mob.getTarget) resolved by the world, matched recursively; a player has none
 TeamPredicate.matches	missing		minor: team key is not read though scoreboard teams exist; no vanilla advancement uses it
 AnyBlockInteractionTrigger.trigger	port	crates/horizon-client/src/game/interface/advancements/mod.rs::Game::trigger_any_block_use	any_block_use with the block's location and the stack in hand as the use left it
 AnyBlockInteractionTrigger.TriggerInstance.matches	port	crates/horizon-client/src/game/interface/advancements/mod.rs::Game::trigger_block	the location test; only the firing of the trigger is missing

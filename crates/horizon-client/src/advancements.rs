@@ -4,6 +4,7 @@
 //! conditions advancements use).
 mod state_ranges;
 
+use horizon_client_core::who::Who;
 use horizon_world::lazy_json::LazyJson;
 use serde_json::Value;
 use std::{
@@ -643,6 +644,12 @@ pub trait World {
     fn predicate(&self, _id: &str) -> Option<&Value> {
         None
     }
+    /// The view of the entity a relation names (`TargetedEntityPredicate`),
+    /// resolved when a predicate asks so a target cycle cannot recurse while
+    /// a view is built. `None` without entities or without that one.
+    fn entity_view(&self, _who: Who) -> Option<EntityView> {
+        None
+    }
 }
 /// An item stack as predicates see it.
 #[derive(Clone, Debug, Default)]
@@ -683,6 +690,12 @@ pub struct EntityView {
     pub vehicle: Option<Box<EntityView>>,
     /// `Entity.getPassengers`, for `PassengerPredicate`.
     pub passengers: Vec<EntityView>,
+    /// `TargetedEntityPredicate.matches`: the entity this one targets
+    /// (`Mob.getTarget()`), as the view names it. The world resolves it to a
+    /// view on demand, so a target pair that points at each other cannot
+    /// recurse while a snapshot is built. Non-mobs, a player included, have
+    /// no target.
+    pub targeted_entity: Option<Who>,
     /// Player: what it looks at within 100 blocks (`PlayerPredicate.lookingAt`).
     pub looking_at: Option<Box<EntityView>>,
     pub effects: Vec<(String, i32, i32)>,
@@ -1129,6 +1142,12 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                 .passengers
                 .iter()
                 .any(|passenger| entity(p, passenger, w, origin)),
+            // TargetedEntityPredicate.matches: the target of the Mob, when it
+            // has one, matches the nested predicate (a null target fails).
+            "minecraft:targeted_entity" => e
+                .targeted_entity
+                .and_then(|who| w.entity_view(who))
+                .is_some_and(|target| entity(p, &target, w, origin)),
             "minecraft:effects" => p.as_object().is_some_and(|m| {
                 m.iter().all(|(id, want)| {
                     e.effects.iter().any(|(eid, amp, dur)| {
@@ -2363,6 +2382,94 @@ mod tests {
         assert!(!super::entity(&want, &boat, &Flat, [0.0; 3]));
         boat.passengers.push(entity("minecraft:goat"));
         assert!(super::entity(&want, &boat, &Flat, [0.0; 3]));
+    }
+    /// `TargetedEntityPredicate.matches`: the nested predicate tests
+    /// `Mob.getTarget()`, resolved by the world, and recurses into it; an
+    /// entity without a target never matches, even an empty predicate.
+    #[test]
+    fn targeted_entity_predicate_tests_the_mobs_target() {
+        /// Targets by entity id, as `Mob.getTarget` names them.
+        struct Targeted(Vec<(u32, EntityView)>);
+        impl World for Targeted {
+            fn dimension(&self) -> &str {
+                Flat.dimension()
+            }
+            fn weather(&self) -> (bool, bool) {
+                Flat.weather()
+            }
+            fn biome(&self, p: [i32; 3]) -> String {
+                Flat.biome(p)
+            }
+            fn structures(&self, p: [i32; 3]) -> Vec<String> {
+                Flat.structures(p)
+            }
+            fn block(&self, p: [i32; 3]) -> (String, BTreeMap<String, String>) {
+                Flat.block(p)
+            }
+            fn fluid(&self, p: [i32; 3]) -> Option<String> {
+                Flat.fluid(p)
+            }
+            fn can_see_sky(&self, p: [i32; 3]) -> bool {
+                Flat.can_see_sky(p)
+            }
+            fn light(&self, p: [i32; 3]) -> i32 {
+                Flat.light(p)
+            }
+            fn smokey(&self, p: [i32; 3]) -> bool {
+                Flat.smokey(p)
+            }
+            fn in_tag(&self, registry: &str, tag: &str, id: &str) -> bool {
+                Flat.in_tag(registry, tag, id)
+            }
+            fn entity_view(&self, who: Who) -> Option<EntityView> {
+                match who {
+                    Who::Mob(id) => self
+                        .0
+                        .iter()
+                        .find(|(mob, _)| *mob == id)
+                        .map(|(_, view)| view.clone()),
+                    Who::Player => None,
+                }
+            }
+        }
+        let golem = EntityView {
+            kind: "minecraft:iron_golem".into(),
+            ..Default::default()
+        };
+        let prey = EntityView {
+            kind: "minecraft:iron_golem".into(),
+            targeted_entity: Some(Who::Mob(8)),
+            ..Default::default()
+        };
+        let world = Targeted(vec![(7, prey), (8, golem)]);
+        let mut hunter = EntityView {
+            kind: "minecraft:zombie".into(),
+            targeted_entity: Some(Who::Mob(7)),
+            ..Default::default()
+        };
+        let want = serde_json::json!({
+            "minecraft:entity_type": "minecraft:zombie",
+            "minecraft:targeted_entity": {"minecraft:entity_type": "minecraft:iron_golem"}
+        });
+        assert!(super::entity(&want, &hunter, &world, [0.0; 3]));
+        // The nested predicate recurses: the target of the target is the golem too.
+        let twice = serde_json::json!({
+            "minecraft:targeted_entity": {
+                "minecraft:targeted_entity": {"minecraft:entity_type": "minecraft:iron_golem"}
+            }
+        });
+        assert!(super::entity(&twice, &hunter, &world, [0.0; 3]));
+        let cow = serde_json::json!({
+            "minecraft:targeted_entity": {"minecraft:entity_type": "minecraft:cow"}
+        });
+        assert!(!super::entity(&cow, &hunter, &world, [0.0; 3]));
+        hunter.targeted_entity = None;
+        assert!(!super::entity(
+            &serde_json::json!({"minecraft:targeted_entity": {}}),
+            &hunter,
+            &world,
+            [0.0; 3]
+        ));
     }
     /// `EntityNbtPredicate.matches`: the entity's saved compound holds the
     /// pattern (`NbtUtils.compareNbt(…, true)`); without one it fails.

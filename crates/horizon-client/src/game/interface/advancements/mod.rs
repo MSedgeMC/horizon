@@ -12,6 +12,7 @@ use horizon_client::{
     advancements::{self as adv, EntityView, Frame, ItemView, Progress, Tree},
     hud::{HudBatch, rgba},
     items::ItemStack,
+    mobs::Who,
     text::{self, Style, Text},
     toasts::Slide,
 };
@@ -170,6 +171,25 @@ struct View<'a, 'g>(&'a Game<'g>);
 impl adv::World for View<'_, '_> {
     fn predicate(&self, id: &str) -> Option<&Value> {
         self.0.fns.store.predicates.get(id)
+    }
+    /// The entity a relation names (`TargetedEntityPredicate`): the local
+    /// player, with all the facts a player predicate may read, or a live mob
+    /// by id.
+    fn entity_view(&self, who: Who) -> Option<EntityView> {
+        use super::commands::Target;
+        match who {
+            Who::Player => self
+                .0
+                .player
+                .as_ref()
+                .map(|_| self.0.entity_view_asking(Target::Player, adv::FactsAsked::ALL)),
+            Who::Mob(id) => self
+                .0
+                .mobs
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| self.0.mob_entity(m)),
+        }
     }
     fn dimension(&self) -> &str {
         self.0.dim.id()
@@ -844,6 +864,7 @@ impl Game<'_> {
                 .collect(),
             custom_name: m.custom_name_text.as_ref().map(Text::component),
             passengers,
+            targeted_entity: m.ai.target,
             nbt,
             team: self.mob_team_of(m).map(|t| t.name.clone()),
             ..Default::default()
