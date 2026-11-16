@@ -769,7 +769,13 @@ impl Codec<Vec<(u8, Option<Stack>)>> for Equipment {
         let mut out = Vec::new();
         loop {
             let slot = r.u8()?;
-            out.push((slot & 127, Slot::read(r)?));
+            let index = slot & 127;
+            // EquipmentSlot.VALUES.get(slot & 127): 0 main hand through 7
+            // saddle. An ordinal past the enum is an IndexOutOfBoundsException.
+            if index > 7 {
+                return Err(Error::new(format!("unknown equipment slot {index}")));
+            }
+            out.push((index, Slot::read(r)?));
             if slot & 128 == 0 {
                 return Ok(out);
             }
@@ -3832,6 +3838,27 @@ mod tests {
         assert_eq!((t.clocks[0].clock, t.clocks[0].total_ticks), (0, 66678));
         assert_eq!((t.clocks[1].clock, t.clocks[1].total_ticks), (1, 13071));
         assert_eq!(t.clocks[0].rate, 1.0);
+    }
+
+    #[test]
+    fn set_equipment_refuses_an_unknown_slot_ordinal() {
+        // EquipmentSlot: 0 main hand, 1 off hand, 2 feet .. 5 head, 6 body,
+        // 7 saddle. Vanilla indexes its VALUES list with `slot & 127`, so 8
+        // and the unused 126 are both refused.
+        let payload = |slot: u8| {
+            let mut w = Writer::new();
+            w.varint(1);
+            w.u8(slot);
+            w.varint(0);
+            w.data
+        };
+        let decode = |slot: u8| {
+            Clientbound::decode(crate::ids::play::clientbound::SET_EQUIPMENT, &payload(slot))
+        };
+        assert!(decode(0).is_ok());
+        assert!(decode(7).is_ok());
+        assert!(decode(8).is_err());
+        assert!(decode(126).is_err());
     }
 
     #[test]
