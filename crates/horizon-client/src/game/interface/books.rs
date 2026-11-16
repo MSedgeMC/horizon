@@ -2351,7 +2351,7 @@ mod lectern_page_resolution_tests {
         motion::PlayerMotion,
     };
     use horizon_core::geometry::Vec3;
-    use horizon_world::nbt::Tag;
+    use horizon_core::nbt::Tag;
     use std::sync::Arc;
 
     /// Three component pages: the nearest entity within one block of the
@@ -2472,7 +2472,7 @@ mod lectern_page_resolution_tests {
         assert!(game.run_command("scoreboard players set Player pages 7"));
 
         // The lectern as the save holds it: three component pages, unresolved.
-        let saved = horizon_client::save::encode_block_entity(
+        let saved = horizon_client::save::block_entity_encode::encode(
             key,
             &BlockEntity::Lectern(Lectern {
                 book: Some(book()),
