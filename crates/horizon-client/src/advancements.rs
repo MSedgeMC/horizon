@@ -664,6 +664,19 @@ pub struct MovementView {
     pub fall_distance: f64,
 }
 
+/// A `MobEffectInstance` as `MobEffectsPredicate.EffectPredicate` compares it:
+/// the effect id, its amplifier and remaining duration, and the two flags a
+/// predicate may ask about (`ambient`, `visible`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffectView {
+    pub id: String,
+    pub amplifier: i32,
+    pub duration: i32,
+    /// `MobEffectInstance.isAmbient`.
+    pub ambient: bool,
+    /// `MobEffectInstance.isVisible`.
+    pub visible: bool,
+}
 /// An entity as predicates see it.
 #[derive(Clone, Debug, Default)]
 pub struct EntityView {
@@ -685,7 +698,7 @@ pub struct EntityView {
     pub passengers: Vec<EntityView>,
     /// Player: what it looks at within 100 blocks (`PlayerPredicate.lookingAt`).
     pub looking_at: Option<Box<EntityView>>,
-    pub effects: Vec<(String, i32, i32)>,
+    pub effects: Vec<EffectView>,
     /// Player: game mode name.
     pub gamemode: Option<String>,
     /// Player: the sneak input is held (`Input.shift`, what `input.sneak`
@@ -1131,10 +1144,12 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                 .any(|passenger| entity(p, passenger, w, origin)),
             "minecraft:effects" => p.as_object().is_some_and(|m| {
                 m.iter().all(|(id, want)| {
-                    e.effects.iter().any(|(eid, amp, dur)| {
-                        *eid == full(id)
-                            && range_i(&want["amplifier"], i64::from(*amp))
-                            && range_i(&want["duration"], i64::from(*dur))
+                    e.effects.iter().any(|have| {
+                        have.id == *full(id)
+                            && range_i(&want["amplifier"], i64::from(have.amplifier))
+                            && range_i(&want["duration"], i64::from(have.duration))
+                            && want["ambient"].as_bool().is_none_or(|b| b == have.ambient)
+                            && want["visible"].as_bool().is_none_or(|b| b == have.visible)
                     })
                 })
             }),
@@ -2746,7 +2761,13 @@ mod tests {
         let player = EntityView {
             kind: "minecraft:player".into(),
             position: [0.5, 64.0, 0.5],
-            effects: vec![("minecraft:speed".into(), 0, 100)],
+            effects: vec![EffectView {
+                id: "minecraft:speed".into(),
+                amplifier: 0,
+                duration: 100,
+                ambient: false,
+                visible: true,
+            }],
             ..Default::default()
         };
         let stone = ItemView {
@@ -2858,6 +2879,52 @@ mod tests {
             failed.is_empty(),
             "bare ids not read as minecraft: {failed:?}"
         );
+    }
+    /// `MobEffectsPredicate.EffectPredicate`: an expected `ambient` or
+    /// `visible` must equal the instance's flag; an omitted one asks nothing.
+    #[test]
+    fn entity_effects_predicate_reads_ambient_and_visible() {
+        let w = Flat;
+        let player = EntityView {
+            kind: "minecraft:player".into(),
+            effects: vec![
+                EffectView {
+                    id: "minecraft:speed".into(),
+                    amplifier: 0,
+                    duration: 100,
+                    ambient: true,
+                    visible: false,
+                },
+                EffectView {
+                    id: "minecraft:regeneration".into(),
+                    amplifier: 1,
+                    duration: 200,
+                    ambient: false,
+                    visible: true,
+                },
+            ],
+            ..Default::default()
+        };
+        let o = [0.0; 3];
+        let j = |s: &str| serde_json::from_str::<Value>(s).unwrap();
+        let ask = |s: &str| entity(&j(s), &player, &w, o);
+        assert!(ask(
+            r#"{"minecraft:effects": {"minecraft:speed": {"ambient": true, "visible": false}}}"#
+        ));
+        assert!(!ask(
+            r#"{"minecraft:effects": {"minecraft:speed": {"ambient": false}}}"#
+        ));
+        assert!(!ask(
+            r#"{"minecraft:effects": {"minecraft:speed": {"visible": true}}}"#
+        ));
+        // An omitted flag asks nothing of the instance.
+        assert!(ask(
+            r#"{"minecraft:effects": {"minecraft:regeneration": {"amplifier": 1}}}"#
+        ));
+        // The instance still has to exist.
+        assert!(!ask(
+            r#"{"minecraft:effects": {"minecraft:slowness": {"ambient": true}}}"#
+        ));
     }
     /// A bare trigger, item or recipe id reaches the indexes as `minecraft:`.
     #[test]

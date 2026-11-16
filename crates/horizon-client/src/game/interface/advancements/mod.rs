@@ -703,9 +703,12 @@ impl Game<'_> {
                 .effects
                 .list
                 .iter()
-                .map(|e| {
-                    let id = horizon_client::brewing::namespaced(e.id);
-                    (id.to_owned(), e.amplifier, e.duration)
+                .map(|e| adv::EffectView {
+                    id: horizon_client::brewing::namespaced(e.id).to_owned(),
+                    amplifier: e.amplifier,
+                    duration: e.duration,
+                    ambient: e.ambient,
+                    visible: e.visible,
                 })
                 .collect(),
             gamemode: Some(self.mode.name().to_owned()),
@@ -832,10 +835,12 @@ impl Game<'_> {
                 .extra
                 .effects
                 .iter()
-                .map(|effect| {
-                    let (id, duration, amplifier) = (effect.id, effect.duration, effect.amplifier);
-                    let id = horizon_client::brewing::namespaced(id);
-                    (id.to_owned(), amplifier, duration)
+                .map(|effect| adv::EffectView {
+                    id: horizon_client::brewing::namespaced(effect.id).to_owned(),
+                    amplifier: effect.amplifier,
+                    duration: effect.duration,
+                    ambient: m.extra.ambient_effects.contains(&effect.id),
+                    visible: !m.extra.hidden_effects.contains(&effect.id),
                 })
                 .collect(),
             components: horizon_client::mobs::finalize::variant_component(m)
@@ -2981,7 +2986,13 @@ mod tests {
         );
         assert_eq!(
             game.entity_view_of(Target::Mob(32300)).effects,
-            vec![("minecraft:speed".to_owned(), 2, -1)]
+            vec![adv::EffectView {
+                id: "minecraft:speed".into(),
+                amplifier: 2,
+                duration: -1,
+                ambient: false,
+                visible: false,
+            }]
         );
         assert!(matches(&game, 32300, speed_two));
         assert!(!matches(
