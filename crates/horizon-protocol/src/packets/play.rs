@@ -1580,11 +1580,24 @@ impl SetStructureBlock {
 }
 impl Codec<SetStructureBlock> for SetStructureBlock {
     /// `ServerboundSetStructureBlockPacket(FriendlyByteBuf)`: the offsets,
-    /// sizes and integrity are clamped as they are read.
+    /// sizes and integrity are clamped as they are read, and the enum ordinals
+    /// are refused past the enum like `readEnum`.
     fn read(r: &mut Reader) -> Result<Self> {
         let pos = Pos::read(r)?;
+        // StructureBlockEntity.UpdateType.values(): 0 update data, 1 save
+        // area, 2 load area, 3 scan area. readEnum indexes that array, so an
+        // ordinal past it throws and drops the connection.
         let update_type = r.varint()?;
+        if !(0..4).contains(&update_type) {
+            return Err(Error::new(format!(
+                "invalid structure block update type {update_type}"
+            )));
+        }
+        // StructureMode.values(): 0 save, 1 load, 2 corner, 3 data.
         let mode = r.varint()?;
+        if !(0..4).contains(&mode) {
+            return Err(Error::new(format!("invalid structure block mode {mode}")));
+        }
         let name = r.string(32767)?;
         let mut offset = [0; 3];
         for v in &mut offset {
@@ -1594,7 +1607,15 @@ impl Codec<SetStructureBlock> for SetStructureBlock {
         for v in &mut size {
             *v = i32::from(r.i8()?).clamp(0, 48);
         }
+        // Mirror.values(): 0 none, 1 left-right, 2 front-back.
         let mirror = r.varint()?;
+        if !(0..3).contains(&mirror) {
+            return Err(Error::new(format!(
+                "invalid structure block mirror {mirror}"
+            )));
+        }
+        // Rotation.STREAM_CODEC reads through ByIdMap.continuous, which wraps
+        // an out-of-range ordinal instead of throwing, so it stays a VarInt.
         let rotation = r.varint()?;
         let data = r.string(128)?;
         let integrity = r.f32()?.clamp(0.0, 1.0);
@@ -3745,6 +3766,142 @@ mod tests {
         assert_eq!(read.offset, [-48, 48, 0]);
         assert_eq!(read.size, [0, 48, 7]);
         assert_eq!(read.integrity, 1.0);
+    }
+
+    #[test]
+    fn a_structure_block_update_type_ordinal_must_name_a_known_type() {
+        // StructureBlockEntity.UpdateType.values(): 0 update data, 1 save
+        // area, 2 load area, 3 scan area. Vanilla reads it with readEnum,
+        // which indexes the enum's four values and throws past the end.
+        let base = SetStructureBlock {
+            pos: [0, 64, 0],
+            update_type: 0,
+            mode: 0,
+            name: "minecraft:house".into(),
+            offset: [0, 0, 0],
+            size: [0, 0, 0],
+            mirror: 0,
+            rotation: 0,
+            data: String::new(),
+            ignore_entities: false,
+            strict: false,
+            show_air: false,
+            show_bounding_box: false,
+            integrity: 1.0,
+            seed: 0,
+        };
+        let decode = |update_type: i32| {
+            let mut w = Writer::new();
+            SetStructureBlock::write(
+                &SetStructureBlock {
+                    update_type,
+                    ..base.clone()
+                },
+                &mut w,
+            );
+            Serverbound::decode(crate::ids::play::serverbound::SET_STRUCTURE_BLOCK, &w.data)
+        };
+        for update_type in 0..4 {
+            assert!(decode(update_type).is_ok());
+        }
+        for update_type in [4, -1] {
+            let err = decode(update_type).unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("invalid structure block update type"),
+                "{err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_structure_block_mode_ordinal_must_name_a_known_mode() {
+        // StructureMode.values(): 0 save, 1 load, 2 corner, 3 data. Vanilla
+        // reads it with readEnum, which indexes the enum's four values and
+        // throws past the end.
+        let base = SetStructureBlock {
+            pos: [0, 64, 0],
+            update_type: 0,
+            mode: 0,
+            name: "minecraft:house".into(),
+            offset: [0, 0, 0],
+            size: [0, 0, 0],
+            mirror: 0,
+            rotation: 0,
+            data: String::new(),
+            ignore_entities: false,
+            strict: false,
+            show_air: false,
+            show_bounding_box: false,
+            integrity: 1.0,
+            seed: 0,
+        };
+        let decode = |mode: i32| {
+            let mut w = Writer::new();
+            SetStructureBlock::write(
+                &SetStructureBlock {
+                    mode,
+                    ..base.clone()
+                },
+                &mut w,
+            );
+            Serverbound::decode(crate::ids::play::serverbound::SET_STRUCTURE_BLOCK, &w.data)
+        };
+        for mode in 0..4 {
+            assert!(decode(mode).is_ok());
+        }
+        for mode in [4, -1] {
+            let err = decode(mode).unwrap_err();
+            assert!(
+                err.to_string().contains("invalid structure block mode"),
+                "{err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_structure_block_mirror_ordinal_must_name_a_known_mirror() {
+        // Mirror.values(): 0 none, 1 left-right, 2 front-back. Vanilla reads
+        // it with readEnum, which indexes the enum's three values and throws
+        // past the end.
+        let base = SetStructureBlock {
+            pos: [0, 64, 0],
+            update_type: 0,
+            mode: 0,
+            name: "minecraft:house".into(),
+            offset: [0, 0, 0],
+            size: [0, 0, 0],
+            mirror: 0,
+            rotation: 0,
+            data: String::new(),
+            ignore_entities: false,
+            strict: false,
+            show_air: false,
+            show_bounding_box: false,
+            integrity: 1.0,
+            seed: 0,
+        };
+        let decode = |mirror: i32| {
+            let mut w = Writer::new();
+            SetStructureBlock::write(
+                &SetStructureBlock {
+                    mirror,
+                    ..base.clone()
+                },
+                &mut w,
+            );
+            Serverbound::decode(crate::ids::play::serverbound::SET_STRUCTURE_BLOCK, &w.data)
+        };
+        for mirror in 0..3 {
+            assert!(decode(mirror).is_ok());
+        }
+        for mirror in [3, -1] {
+            let err = decode(mirror).unwrap_err();
+            assert!(
+                err.to_string().contains("invalid structure block mirror"),
+                "{err}"
+            );
+        }
     }
 
     #[test]
