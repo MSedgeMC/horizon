@@ -578,6 +578,12 @@ pub fn instrument_id(stack: &ItemStack) -> Option<String> {
     if &*stack.item != "minecraft:goat_horn" {
         return None;
     }
+    if stack
+        .data()
+        .is_some_and(|d| d.other("!minecraft:instrument").is_some())
+    {
+        return None;
+    }
     match stack.data().and_then(|d| d.other("minecraft:instrument")) {
         Some(horizon_core::nbt::Tag::String(id)) => Some(id.to_string_lossy()),
         Some(horizon_core::nbt::Tag::Compound(_)) => None,
@@ -3042,6 +3048,26 @@ mod tests {
             )>::new())),
         );
         assert_eq!(items.weapon_damage(&sword), None);
+    }
+
+    /// `ItemStack.get(INSTRUMENT)` is null for a `!minecraft:instrument`
+    /// removal patch: `InstrumentItem.getInstrument` is empty, so using the
+    /// horn fails instead of playing the prototype's ponder horn.
+    #[test]
+    fn a_removed_instrument_leaves_no_goat_horn_instrument() {
+        let mut horn = ItemStack::new("minecraft:goat_horn", 1);
+        assert_eq!(
+            instrument_id(&horn).as_deref(),
+            Some("minecraft:ponder_goat_horn")
+        );
+        horn.data_mut().set_other(
+            "!minecraft:instrument",
+            Some(horizon_core::nbt::Tag::compound(Vec::<(
+                &str,
+                horizon_core::nbt::Tag,
+            )>::new())),
+        );
+        assert_eq!(instrument_id(&horn), None);
     }
 
     #[test]
