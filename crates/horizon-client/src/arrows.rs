@@ -1011,10 +1011,9 @@ impl Ticker<'_, '_, '_, '_> {
         let owner = self.p.owner;
         let scene = self.scene;
         for (who, b) in targets {
-            if (Some(*who) == self.p.collision_owner() && !self.p.left_owner)
-                || !self
-                    .p
-                    .can_hit_entity(*who, |target| scene.can_attack.can_attack(owner, target))
+            if !self
+                .p
+                .can_hit_entity(*who, |target| scene.can_attack.can_attack(owner, target))
                 || !b.intersects(area)
             {
                 continue;

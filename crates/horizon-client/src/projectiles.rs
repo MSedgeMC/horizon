@@ -1369,9 +1369,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if (Some(*who) == self.collision_owner() && !self.left_owner)
-                || !self.target_allowed(w, *who)
-            {
+            if !self.target_allowed(w, *who) {
                 continue;
             }
             if let Some(at) = b.inflate(Vec3::new(margin, margin, margin)).clip(from, end) {
@@ -1689,14 +1687,15 @@ impl Projectile {
         f64::from(((self.age as i32 - 2) as f32 / 20.0).clamp(0.0, 0.3))
     }
     /// `Projectile.canHitEntity`: whether the projectile may strike `who`.
-    /// The shooter itself is refused until the projectile has left it, and
-    /// `AbstractArrow.canHitEntity` exempts a no-physics arrow (a loyalty
-    /// trident's return) or a deflected one. Otherwise `can_attack` is the
-    /// shooter's own rule, so a projectile is never spent on an entity its
-    /// shooter cannot attack.
+    /// The shooter and the non-living vehicle it was shot from are refused
+    /// until the projectile has left them, and `AbstractArrow.canHitEntity`
+    /// exempts a no-physics arrow (a loyalty trident's return) or a deflected
+    /// one from that owner check. Otherwise `can_attack` is the shooter's own
+    /// rule, so a projectile is never spent on an entity its shooter cannot
+    /// attack.
     pub fn can_hit_entity(&self, who: Who, can_attack: impl FnOnce(Who) -> bool) -> bool {
-        if Some(who) == self.owner {
-            return self.left_owner || self.owner_hit_exempt();
+        if Some(who) == self.owner || Some(who) == self.collision_owner() {
+            return self.left_owner || (Some(who) == self.owner && self.owner_hit_exempt());
         }
         can_attack(who)
     }
@@ -1775,9 +1774,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if (Some(*who) == self.collision_owner() && !self.left_owner)
-                || !self.target_allowed(w, *who)
-            {
+            if !self.target_allowed(w, *who) {
                 continue;
             }
             let inflated = b.inflate(Vec3::new(margin, margin, margin));
