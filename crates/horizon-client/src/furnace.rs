@@ -93,7 +93,10 @@ impl FurnaceCooking for Furnace {
         if lit || has_fuel && has_ingredient {
             if let Some(ingredient) = self.items[0].clone() {
                 if let Some(recipe) = recipes.cook(context, self.kind.recipe_type(), &ingredient) {
-                    let max = items.get(&recipe.result.item).map_or(64, |i| i.max_stack);
+                    // `canBurn`: `min(entity.getMaxStackSize(), burnResult.getMaxStackSize())`.
+                    // The furnace's own `Container` limit is 99; the result stack's
+                    // own `max_stack_size` component (a removal patch is 1) caps the slot.
+                    let max = crate::menu::item_max_stack(items, &recipe.result).min(99);
                     let can_burn = match &self.items[2] {
                         None => true,
                         Some(out) => {
@@ -238,13 +241,23 @@ mod tests {
             br#"{"type":"minecraft:smelting","ingredient":"test:ore","result":{"id":"test:ingot"}}"#,
         )
         .unwrap();
+        fs::write(
+            root.join("data/minecraft/recipe/test_bead.json"),
+            br#"{"type":"minecraft:smelting","ingredient":"test:gem","result":{"id":"test:bead","components":{"minecraft:max_stack_size":2}}}"#,
+        )
+        .unwrap();
+        fs::write(
+            root.join("data/minecraft/recipe/test_bead_locked.json"),
+            br#"{"type":"minecraft:smelting","ingredient":"test:shard","result":{"id":"test:bead","components":{"!minecraft:max_stack_size":{}}}}"#,
+        )
+        .unwrap();
         fs::create_dir_all(root.join("data/minecraft/loot_table")).unwrap();
         let fuel_component =
             r#"{"minecraft:cooking_fuel": {"burn_time": 200, "speed_multiplier": 1.0}}"#;
         fs::write(
             root.join("items.json"),
             format!(
-                r#"{{"test:ore": {{}}, "test:ingot": {{}}, "test:coal": {fuel_component}, "test:cell": {fuel_component}, "test:husk": {{}}}}"#
+                r#"{{"test:ore": {{}}, "test:ingot": {{}}, "test:gem": {{}}, "test:shard": {{}}, "test:bead": {{}}, "test:coal": {fuel_component}, "test:cell": {fuel_component}, "test:husk": {{}}}}"#
             ),
         )
         .unwrap();
@@ -457,6 +470,74 @@ mod tests {
             Some(true)
         );
         assert_ne!(format!("{busy:?}"), before);
+    }
+
+
+    /// `AbstractFurnaceBlockEntity.canBurn`: an output stack may take the result
+    /// only up to `min(getMaxStackSize(), burnResult.getMaxStackSize())`, so the
+    /// recipe result's own `max_stack_size` component caps it (a removal patch
+    /// is vanilla's default of 1, not the item's).
+    #[test]
+    fn output_capacity_reads_the_results_own_max_stack_size() {
+        let (items, recipes, providers) = data("result-max-stack");
+        let context = crate::test_resources::server_loop_context();
+        let remainder =
+            |s: &ItemStack| crate::crafting::CraftingRemainder::crafting_remainder(&items, s);
+        let furnace = |input: &str, output| Furnace {
+            kind: FurnaceKind::Furnace,
+            items: [
+                Some(ItemStack::new(input, 1)),
+                Some(ItemStack::new("test:coal", 1)),
+                output,
+            ],
+            lit_remaining: 0,
+            lit_total: 0,
+            cooking_timer: 0,
+            cooking_total: 200,
+            speed: 1.0,
+            recipes_used: HashMap::new(),
+        };
+        let cooked = |input: &str| {
+            recipes
+                .cook(
+                    context,
+                    FurnaceKind::Furnace.recipe_type(),
+                    &ItemStack::new(input, 1),
+                )
+                .expect("the fixture recipe cooks")
+                .result
+                .clone()
+        };
+        let gem = cooked("test:gem");
+        // The result stacks to 2: one leaves room, a full stack does not.
+        let at = |count| Some(ItemStack { count, ..gem.clone() });
+        for (output, eligible) in [(None, true), (at(1), true), (at(2), false)] {
+            let mut f = furnace("test:gem", output.clone());
+            let mut drops = Vec::new();
+            assert_eq!(
+                f.tick(&context, &recipes, &items, &providers, &mut drops, &remainder),
+                eligible.then_some(true),
+                "max_stack_size 2, output {output:?}"
+            );
+            assert!(drops.is_empty());
+        }
+        // A removal patch leaves the result at 1: even one more does not fit.
+        let shard = cooked("test:shard");
+        let mut f = furnace("test:shard", None);
+        let mut drops = Vec::new();
+        assert_eq!(
+            f.tick(&context, &recipes, &items, &providers, &mut drops, &remainder),
+            Some(true)
+        );
+        assert!(drops.is_empty());
+        let mut f = furnace("test:shard", Some(shard.clone()));
+        let mut drops = Vec::new();
+        assert_eq!(
+            f.tick(&context, &recipes, &items, &providers, &mut drops, &remainder),
+            None,
+            "removed max_stack_size caps the output at 1"
+        );
+        assert!(drops.is_empty());
     }
 
     /// A furnace with `fuel` x `count` burning `test:ore` into `test:ingot` ([`data`]).
