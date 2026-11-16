@@ -1135,7 +1135,13 @@ fn template_from(tag: &Tag) -> Option<ItemStack> {
             if !(1..=99).contains(&count) {
                 return None;
             }
-            let (damage, extra) = decode_components(tag.get("components"));
+            let (damage, mut extra) = decode_components(tag.get("components"));
+            if let Some(data) = extra.as_deref_mut() {
+                elide_prototype_fireworks(&id, data);
+                if data.is_empty() {
+                    extra = None;
+                }
+            }
             Some(ItemStack {
                 item: Arc::from(id.as_str()),
                 count: count as u32,
@@ -1713,8 +1719,7 @@ pub fn decode_components(components: Option<&Tag>) -> (u32, Option<Box<StackData
                     _ => Vec::new(),
                 };
                 (flight, explosions)
-            })
-            .filter(|(flight, explosions)| !(*flight == 1 && explosions.is_empty())),
+            }),
         firework_explosion: seen.firework_explosion.map(explosion_from),
         dyed_color: seen
             .dyed_color
@@ -1814,6 +1819,16 @@ pub fn decode_components(components: Option<&Tag>) -> (u32, Option<Box<StackData
         data.other.sort_by(|a, b| a.0.cmp(&b.0));
     }
     (damage, (!data.is_empty()).then(|| Box::new(data)))
+}
+
+/// `PatchedDataComponentMap.applyPatch` leaves a component out of the patch
+/// when it equals the item prototype. `Items.FIREWORK_ROCKET` carries
+/// `Fireworks(1, [])`, so that exact value is the prototype's, not the
+/// stack's; the same value on any other item is the stack's own component.
+pub(crate) fn elide_prototype_fireworks(item: &str, data: &mut StackData) {
+    if item == "minecraft:firework_rocket" && data.fireworks == Some((1, Vec::new())) {
+        data.fireworks = None;
+    }
 }
 
 /// The `[id=value,...]` component list of an item argument (`ItemParser`)
@@ -2927,6 +2942,35 @@ mod tests {
         let book = ItemStack::new("minecraft:book", 1).transmute("minecraft:enchanted_book", 1);
         assert!(book.extra.is_none());
     }
+    /// `Items.FIREWORK_ROCKET` carries `Fireworks(1, [])`, so a patch holding
+    /// that value equals the prototype and `PatchedDataComponentMap.applyPatch`
+    /// drops it; on any other item the same component belongs to the stack.
+    #[test]
+    fn a_fireworks_component_equal_to_the_rocket_prototype_is_the_rockets() {
+        let fireworks = horizon_core::nbt::parse_snbt(r#"{flight_duration:1}"#)
+            .unwrap()
+            .0;
+        let stack = |item: &str| {
+            crate::item_nbt::item_from_nbt(&Tag::compound([
+                ("id", Tag::String(item.into())),
+                (
+                    "components",
+                    Tag::compound([("minecraft:fireworks", fireworks.clone())]),
+                ),
+            ]))
+            .unwrap()
+        };
+        assert_eq!(
+            stack("minecraft:paper").data().unwrap().fireworks,
+            Some((1, Vec::new()))
+        );
+        assert!(
+            stack("minecraft:firework_rocket")
+                .data()
+                .is_none_or(|d| d.fireworks.is_none())
+        );
+    }
+
     #[test]
     fn command_components_decode_fireworks() {
         let tag = command_components(
@@ -3075,8 +3119,7 @@ mod tests {
                         _ => Vec::new(),
                     };
                     (flight, explosions)
-                })
-                .filter(|(flight, explosions)| !(*flight == 1 && explosions.is_empty())),
+                }),
             firework_explosion: c.get("minecraft:firework_explosion").map(explosion_from),
             dyed_color: c
                 .get("minecraft:dyed_color")
