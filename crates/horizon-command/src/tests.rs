@@ -223,6 +223,19 @@ fn reader_matches_brigadier() {
     assert_eq!(r.read_string().unwrap(), "q\"x");
     r.skip();
     assert!(r.read_boolean().unwrap());
+    // `StringReader.isAllowedInUnquotedString` admits only 0-9, A-Z, a-z,
+    // `_`, `-`, `.` and `+`, so ':' and '/' end an unquoted string.
+    let mut r = Reader::new("https://example.com/a.zip");
+    assert_eq!(r.read_string().unwrap(), "https");
+    assert_eq!(r.remaining(), "://example.com/a.zip");
+    let mut r = Reader::new("abc:def");
+    assert_eq!(r.read_string().unwrap(), "abc");
+    assert_eq!(r.remaining(), ":def");
+    // A quoted string carries the whole URL, as `StringArgumentType.string`
+    // requires of `/serverpack push`.
+    let mut r = Reader::new("\"https://example.com/a.zip\"");
+    assert_eq!(r.read_string().unwrap(), "https://example.com/a.zip");
+    assert_eq!(r.remaining(), "");
     let e = Reader::new("1.5").read_int().unwrap_err();
     assert_eq!(e.message.plain(), "parsing.int.invalid");
     assert_eq!(e.context().unwrap(), "<--[HERE]");
@@ -385,16 +398,17 @@ fn parses_vanilla_commands() {
 fn serverpack_is_registered_only_in_development_builds() {
     assert!(vanilla::build_with(false).find("serverpack").is_none());
     assert!(vanilla::build_with(true).find("serverpack").is_some());
-    let (id, args) = run("serverpack push https://example.com/a.zip").unwrap();
+    let (id, args) = run("serverpack push \"https://example.com/a.zip\"").unwrap();
     assert_eq!(id, "serverpack.push");
     assert_eq!(args, ["url"]);
-    let (id, args) =
-        run("serverpack push https://example.com/a.zip 123e4567-e89b-12d3-a456-426614174000")
-            .unwrap();
+    let (id, args) = run(
+        "serverpack push \"https://example.com/a.zip\" 123e4567-e89b-12d3-a456-426614174000",
+    )
+    .unwrap();
     assert_eq!(id, "serverpack.push");
     assert_eq!(args, ["url", "uuid"]);
     let (id, args) = run(
-        "serverpack push https://example.com/a.zip 123e4567-e89b-12d3-a456-426614174000 deadbeef",
+        "serverpack push \"https://example.com/a.zip\" 123e4567-e89b-12d3-a456-426614174000 deadbeef",
     )
     .unwrap();
     assert_eq!(id, "serverpack.push");
@@ -406,15 +420,26 @@ fn serverpack_is_registered_only_in_development_builds() {
         "serverpack.pop"
     );
     // ServerPackCommand.requires(Commands.hasPermission(LEVEL_GAMEMASTERS)).
-    let reg = Registries {
+    let denied = Registries {
         permission: 1,
         ..reg()
     };
     assert!(
         vanilla::dispatcher()
-            .parse("serverpack push https://example.com/a.zip", &reg)
+            .parse("serverpack push \"https://example.com/a.zip\"", &denied)
             .executable()
             .is_err()
+    );
+    // The URL keeps its `:` and `/` only because it is quoted; an unquoted
+    // read stops at the colon, as Brigadier's `readUnquotedString` does.
+    let parse = vanilla::build_with(true).parse(
+        "serverpack push \"https://example.com/a.zip\" 123e4567-e89b-12d3-a456-426614174000",
+        &reg(),
+    );
+    let (ctx, _) = parse.executable().unwrap();
+    assert_eq!(
+        ctx.get("url"),
+        Some(&Arg::Str("https://example.com/a.zip".into()))
     );
 }
 

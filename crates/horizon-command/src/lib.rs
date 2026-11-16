@@ -254,28 +254,6 @@ impl<'a> Reader<'a> {
         }
         Err(CommandError::tr_at("parsing.quote.expected.end", &[], self))
     }
-    /// `StringReader.readUnquotedString`: everything up to the next
-    /// whitespace, so a URL's `:` or `/` stays part of the argument.
-    pub fn read_unquoted_phrase(&mut self) -> &'a str {
-        let start = self.cursor;
-        while self.can_read() && !self.peek().is_whitespace() {
-            self.skip();
-        }
-        &self.string[start..self.cursor]
-    }
-    /// Brigadier's `readString` (StringArgumentType.string): a quoted phrase,
-    /// or an unquoted one up to whitespace.
-    pub fn read_string_arg(&mut self) -> CmdResult<String> {
-        if !self.can_read() {
-            return Ok(String::new());
-        }
-        let next = self.peek();
-        if next == '"' || next == '\'' {
-            self.skip();
-            return self.read_string_until(next);
-        }
-        Ok(self.read_unquoted_phrase().to_owned())
-    }
     pub fn read_string(&mut self) -> CmdResult<String> {
         if !self.can_read() {
             return Ok(String::new());

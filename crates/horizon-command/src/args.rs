@@ -1334,7 +1334,7 @@ impl ArgType {
                 Arg::Double(v)
             }
             ArgType::Word => Arg::Str(reader.read_unquoted_string().to_owned()),
-            ArgType::Str => Arg::Str(reader.read_string_arg()?),
+            ArgType::Str => Arg::Str(reader.read_string()?),
             // ResourceLocationArgument: the longest run of identifier characters, canonicalised
             // to `namespace:path`; an upper-case or two-colon token is `argument.id.invalid`.
             ArgType::Identifier => Arg::Str(read_id(reader)?),

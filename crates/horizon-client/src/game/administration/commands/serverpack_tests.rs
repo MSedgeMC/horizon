@@ -99,7 +99,7 @@ fn serverpack_push_and_pop_reach_every_connection() {
     let url = "https://example.com/pack.zip";
 
     // No uuid: UUID.nameUUIDFromBytes(url), no hash.
-    dev_command(&mut game, &format!("serverpack push {url}"));
+    dev_command(&mut game, &format!("serverpack push \"{url}\""));
     assert_eq!(
         sent(&rx),
         [C::ResourcePackPush(ResourcePackPush {
@@ -115,7 +115,7 @@ fn serverpack_push_and_pop_reach_every_connection() {
     // The explicit uuid and hash are the packet's.
     let uuid = "123e4567-e89b-12d3-a456-426614174000";
     let id = 0x123e_4567_e89b_12d3_a456_4266_1417_4000;
-    dev_command(&mut game, &format!("serverpack push {url} {uuid} deadbeef"));
+    dev_command(&mut game, &format!("serverpack push \"{url}\" {uuid} deadbeef"));
     assert_eq!(
         sent(&rx),
         [C::ResourcePackPush(ResourcePackPush {
