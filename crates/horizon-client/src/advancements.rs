@@ -664,6 +664,28 @@ pub struct MovementView {
     pub fall_distance: f64,
 }
 
+/// A `MobEffectInstance` as `MobEffectsPredicate.MobEffectInstancePredicate`
+/// compares it: the effect id, its amplifier and remaining duration, and the
+/// two flags a predicate may ask about (`MobEffectInstance.isAmbient` and
+/// `isVisible`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EffectView {
+    pub id: String,
+    pub amplifier: i32,
+    pub duration: i32,
+    pub ambient: bool,
+    pub visible: bool,
+}
+
+/// What `RaiderPredicate` reads of a `Raider`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RaiderView {
+    /// `Raider.hasRaid`: the current raid, or an active one at its block.
+    pub has_raid: bool,
+    /// `Raider.isCaptain`: the patrol leader's ominous banner.
+    pub is_captain: bool,
+}
+
 /// An entity as predicates see it.
 #[derive(Clone, Debug, Default)]
 pub struct EntityView {
@@ -678,6 +700,13 @@ pub struct EntityView {
     pub flying: bool,
     pub baby: bool,
     pub on_ground: bool,
+    /// `Entity.isInWater` (`wasTouchingWater`).
+    pub in_water: bool,
+    /// `LivingEntity.isFallFlying` (gliding).
+    pub fall_flying: bool,
+    /// `Entity.tickCount`, for `PeriodicEntityTickPredicate`; `None` where the
+    /// view has no count.
+    pub tick_count: Option<i32>,
     /// mainhand, offhand, head, chest, legs, feet, body.
     pub equipment: [Option<ItemView>; 7],
     pub vehicle: Option<Box<EntityView>>,
@@ -685,7 +714,7 @@ pub struct EntityView {
     pub passengers: Vec<EntityView>,
     /// Player: what it looks at within 100 blocks (`PlayerPredicate.lookingAt`).
     pub looking_at: Option<Box<EntityView>>,
-    pub effects: Vec<(String, i32, i32)>,
+    pub effects: Vec<EffectView>,
     /// Player: game mode name.
     pub gamemode: Option<String>,
     /// Player: the sneak input is held (`Input.shift`, what `input.sneak`
@@ -699,6 +728,14 @@ pub struct EntityView {
     /// Lightning: blocks it set on fire (`LightningBolt.blocksSetOnFire`).
     pub blocks_set_on_fire: i32,
     pub fishing_open_water: Option<bool>,
+    /// Sheep: `Sheep.isSheared`; `None` for every other entity, which
+    /// `SheepPredicate` fails.
+    pub sheep_sheared: Option<bool>,
+    /// Slime, magma cube and sulfur cube: `AbstractCubeMob.getSize`; `None`
+    /// for every other entity, which `CubeMobPredicate` fails.
+    pub cube_size: Option<i32>,
+    /// Raider: its raid and captain state; `None` for every other entity.
+    pub raider: Option<RaiderView>,
     pub variant: Option<String>,
     /// The data components the entity reports (`Entity.get`): id and value.
     pub components: Vec<(String, String)>,
@@ -1100,14 +1137,18 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             "minecraft:distance" => distance(p, e.position, origin),
             "minecraft:movement" => e.movement.is_some_and(|m| movement(p, m)),
             "minecraft:flags" => {
+                // `EntityFlagsPredicate.matches`; `is_flying` is a gliding
+                // `LivingEntity` or a player in creative flight.
                 let f = |k: &str, have: bool| p[k].as_bool().is_none_or(|want| want == have);
                 f("is_on_fire", e.on_fire)
                     && f("is_sneaking", e.sneaking)
                     && f("is_sprinting", e.sprinting)
                     && f("is_swimming", e.swimming)
-                    && f("is_flying", e.flying)
+                    && f("is_flying", e.flying || e.fall_flying)
                     && f("is_baby", e.baby)
                     && f("is_on_ground", e.on_ground)
+                    && f("is_in_water", e.in_water)
+                    && f("is_fall_flying", e.fall_flying)
             }
             "minecraft:equipment" => {
                 let slots = [
@@ -1130,11 +1171,15 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                 .iter()
                 .any(|passenger| entity(p, passenger, w, origin)),
             "minecraft:effects" => p.as_object().is_some_and(|m| {
+                // `MobEffectsPredicate.matches`: every listed effect instance
+                // exists and passes its amplifier, duration and flags.
                 m.iter().all(|(id, want)| {
-                    e.effects.iter().any(|(eid, amp, dur)| {
-                        *eid == full(id)
-                            && range_i(&want["amplifier"], i64::from(*amp))
-                            && range_i(&want["duration"], i64::from(*dur))
+                    e.effects.iter().any(|have| {
+                        have.id == *full(id)
+                            && range_i(&want["amplifier"], i64::from(have.amplifier))
+                            && range_i(&want["duration"], i64::from(have.duration))
+                            && want["ambient"].as_bool().is_none_or(|b| b == have.ambient)
+                            && want["visible"].as_bool().is_none_or(|b| b == have.visible)
                     })
                 })
             }),
@@ -1162,7 +1207,10 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                     && player_facts(p, &e.player_facts)
             }
             "minecraft:type_specific/lightning" => {
-                range_i(&p["blocks_set_on_fire"], i64::from(e.blocks_set_on_fire))
+                // `LightningBoltPredicate.matches`: only a bolt, then the
+                // blocks it set on fire and any entity it struck.
+                e.kind == "minecraft:lightning_bolt"
+                    && range_i(&p["blocks_set_on_fire"], i64::from(e.blocks_set_on_fire))
                     && (p["entity_struck"].is_null()
                         || e.struck
                             .iter()
@@ -1171,6 +1219,28 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             "minecraft:type_specific/fishing_hook" => p["in_open_water"]
                 .as_bool()
                 .is_none_or(|want| e.fishing_open_water == Some(want)),
+            // `SheepPredicate.matches`: only a sheep, then the optional
+            // `sheared` flag (an omitted one asks nothing).
+            "minecraft:type_specific/sheep" => e
+                .sheep_sheared
+                .is_some_and(|have| p["sheared"].as_bool().is_none_or(|want| want == have)),
+            // `CubeMobPredicate.matches`: only a slime, magma cube or sulfur
+            // cube, then the `size` bounds on `AbstractCubeMob.getSize`.
+            "minecraft:type_specific/cube_mob" => e
+                .cube_size
+                .is_some_and(|size| range_i(&p["size"], i64::from(size))),
+            // `RaiderPredicate.matches`: only a raider, then both flags
+            // (they default to false in the codec).
+            "minecraft:type_specific/raider" => e.raider.is_some_and(|raider| {
+                p["has_raid"].as_bool().unwrap_or(false) == raider.has_raid
+                    && p["is_captain"].as_bool().unwrap_or(false) == raider.is_captain
+            }),
+            // `PeriodicEntityTickPredicate.matches`: `entity.tickCount`
+            // modulo the period, a positive integer in the codec.
+            "minecraft:periodic_tick" => {
+                let period = p.as_i64().filter(|n| *n > 0);
+                period.is_some_and(|n| e.tick_count.is_some_and(|t| i64::from(t) % n == 0))
+            }
             "minecraft:components" => components(p, e),
             // `TeamPredicate.matches`: a non-null effective team whose name
             // equals the string exactly.
@@ -2496,6 +2566,284 @@ mod tests {
             [0.0; 3]
         ));
     }
+    /// `MobEffectsPredicate.MobEffectInstancePredicate`: an expected `ambient`
+    /// or `visible` must equal the instance's flag; an omitted one asks
+    /// nothing, and the instance still has to exist.
+    #[test]
+    fn entity_effects_predicate_reads_ambient_and_visible() {
+        let player = EntityView {
+            kind: "minecraft:player".into(),
+            effects: vec![
+                EffectView {
+                    id: "minecraft:speed".into(),
+                    amplifier: 0,
+                    duration: 100,
+                    ambient: true,
+                    visible: false,
+                },
+                EffectView {
+                    id: "minecraft:regeneration".into(),
+                    amplifier: 1,
+                    duration: 200,
+                    ambient: false,
+                    visible: true,
+                },
+            ],
+            ..Default::default()
+        };
+        let ask = |v: Value| entity(&v, &player, &Flat, [0.0; 3]);
+        assert!(ask(serde_json::json!({"minecraft:effects": {
+            "minecraft:speed": {"ambient": true, "visible": false}
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:effects": {
+            "minecraft:speed": {"ambient": false}
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:effects": {
+            "minecraft:speed": {"visible": true}
+        }})));
+        // An omitted flag asks nothing of the instance.
+        assert!(ask(serde_json::json!({"minecraft:effects": {
+            "minecraft:regeneration": {"amplifier": 1}
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:effects": {
+            "minecraft:slowness": {"ambient": true}
+        }})));
+    }
+    /// `EntityFlagsPredicate.matches`: `is_in_water` reads `isInWater`,
+    /// `is_fall_flying` reads `isFallFlying`, and `is_flying` is a glide or a
+    /// player's creative flight.
+    #[test]
+    fn entity_flags_predicate_reads_water_and_fall_flying() {
+        let o = [0.0; 3];
+        let zombie = EntityView {
+            in_water: true,
+            fall_flying: true,
+            ..mob("minecraft:zombie")
+        };
+        let ask = |v: Value| entity(&v, &zombie, &Flat, o);
+        assert!(ask(serde_json::json!({"minecraft:flags": {
+            "is_in_water": true, "is_fall_flying": true, "is_flying": true
+        }})));
+        assert!(!ask(
+            serde_json::json!({"minecraft:flags": {"is_in_water": false}})
+        ));
+        assert!(!ask(
+            serde_json::json!({"minecraft:flags": {"is_fall_flying": false}})
+        ));
+        // Creative flight is flying without a glide.
+        let player = EntityView {
+            flying: true,
+            ..mob("minecraft:player")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:flags": {"is_flying": true, "is_fall_flying": false}}),
+            &player,
+            &Flat,
+            o
+        ));
+        // A non-living entity passes `is_fall_flying: false`, as vanilla's
+        // `instanceof LivingEntity` arm does.
+        assert!(entity(
+            &serde_json::json!({"minecraft:flags": {"is_fall_flying": false, "is_in_water": false}}),
+            &mob("minecraft:item"),
+            &Flat,
+            o
+        ));
+    }
+    /// `SheepPredicate.matches`: only a sheep, then the optional `sheared`
+    /// flag.
+    #[test]
+    fn sheep_predicate_reads_the_sheared_flag() {
+        let o = [0.0; 3];
+        let sheep = EntityView {
+            sheep_sheared: Some(true),
+            ..mob("minecraft:sheep")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/sheep": {"sheared": true}}),
+            &sheep,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/sheep": {"sheared": false}}),
+            &sheep,
+            &Flat,
+            o
+        ));
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/sheep": {}}),
+            &sheep,
+            &Flat,
+            o
+        ));
+        // Not a sheep, so even an empty predicate fails.
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/sheep": {}}),
+            &mob("minecraft:cow"),
+            &Flat,
+            o
+        ));
+    }
+    /// `CubeMobPredicate.matches`: only a cube mob, then the `size` bounds.
+    #[test]
+    fn cube_mob_predicate_reads_the_size() {
+        let o = [0.0; 3];
+        let slime = EntityView {
+            cube_size: Some(2),
+            ..mob("minecraft:slime")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/cube_mob": {"size": 2}}),
+            &slime,
+            &Flat,
+            o
+        ));
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/cube_mob": {
+                "size": {"min": 2, "max": 3}
+            }}),
+            &slime,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/cube_mob": {"size": {"max": 1}}}),
+            &slime,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/cube_mob": {}}),
+            &mob("minecraft:zombie"),
+            &Flat,
+            o
+        ));
+    }
+    /// `RaiderPredicate.matches`: only a raider, then `has_raid` and
+    /// `is_captain`, both false unless the data says otherwise.
+    #[test]
+    fn raider_predicate_reads_raid_and_captain() {
+        let o = [0.0; 3];
+        let captain = EntityView {
+            raider: Some(RaiderView {
+                has_raid: false,
+                is_captain: true,
+            }),
+            ..mob("minecraft:pillager")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/raider": {
+                "has_raid": false, "is_captain": true
+            }}),
+            &captain,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/raider": {"is_captain": false}}),
+            &captain,
+            &Flat,
+            o
+        ));
+        let plain = EntityView {
+            raider: Some(RaiderView {
+                has_raid: false,
+                is_captain: false,
+            }),
+            ..mob("minecraft:pillager")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/raider": {}}),
+            &plain,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/raider": {"has_raid": true}}),
+            &plain,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/raider": {}}),
+            &mob("minecraft:zombie"),
+            &Flat,
+            o
+        ));
+    }
+    /// `PeriodicEntityTickPredicate.matches`: `entity.tickCount` modulo the
+    /// period, which the codec keeps positive.
+    #[test]
+    fn periodic_tick_predicate_reads_the_tick_count() {
+        let o = [0.0; 3];
+        let zombie = EntityView {
+            tick_count: Some(20),
+            ..mob("minecraft:zombie")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:periodic_tick": 20}),
+            &zombie,
+            &Flat,
+            o
+        ));
+        assert!(entity(
+            &serde_json::json!({"minecraft:periodic_tick": 5}),
+            &zombie,
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:periodic_tick": 3}),
+            &zombie,
+            &Flat,
+            o
+        ));
+        // A zero period never matches; the codec only accepts positive ones.
+        assert!(!entity(
+            &serde_json::json!({"minecraft:periodic_tick": 0}),
+            &zombie,
+            &Flat,
+            o
+        ));
+        // No known tick count fails rather than inventing one.
+        assert!(!entity(
+            &serde_json::json!({"minecraft:periodic_tick": 20}),
+            &mob("minecraft:item"),
+            &Flat,
+            o
+        ));
+    }
+    /// `LightningBoltPredicate.matches` needs a lightning bolt before it reads
+    /// the blocks set on fire or the entities struck.
+    #[test]
+    fn lightning_predicate_needs_a_bolt() {
+        let o = [0.0; 3];
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/lightning": {}}),
+            &mob("minecraft:lightning_bolt"),
+            &Flat,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:type_specific/lightning": {}}),
+            &mob("minecraft:zombie"),
+            &Flat,
+            o
+        ));
+        let bolt = EntityView {
+            blocks_set_on_fire: 3,
+            ..mob("minecraft:lightning_bolt")
+        };
+        assert!(entity(
+            &serde_json::json!({"minecraft:type_specific/lightning": {
+                "blocks_set_on_fire": {"min": 1}
+            }}),
+            &bolt,
+            &Flat,
+            o
+        ));
+    }
     /// `entity_killed_player` by a mob's melee hit: the mob is the killer and
     /// the blow's causing and direct entity.
     #[test]
@@ -2746,7 +3094,13 @@ mod tests {
         let player = EntityView {
             kind: "minecraft:player".into(),
             position: [0.5, 64.0, 0.5],
-            effects: vec![("minecraft:speed".into(), 0, 100)],
+            effects: vec![EffectView {
+                id: "minecraft:speed".into(),
+                amplifier: 0,
+                duration: 100,
+                ambient: false,
+                visible: true,
+            }],
             ..Default::default()
         };
         let stone = ItemView {

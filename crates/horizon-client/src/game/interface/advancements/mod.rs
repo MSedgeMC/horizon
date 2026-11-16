@@ -497,6 +497,8 @@ impl Game<'_> {
                     position: g.position,
                     sneaking: g.sneaking,
                     input_sneak: g.input & 32 != 0,
+                    fall_flying: g.fall_flying,
+                    tick_count: Some(g.ticks as i32),
                     team: self
                         .score
                         .board
@@ -696,6 +698,9 @@ impl Game<'_> {
             swimming: p.pose == horizon_client::pose::Pose::Swimming,
             flying: p.flying,
             on_ground: p.ground.on_ground,
+            in_water: p.fluids.was_touching_water,
+            fall_flying: p.fall_flying,
+            tick_count: Some(p.health.tick_count),
             equipment: eq,
             vehicle,
             effects: self
@@ -703,9 +708,12 @@ impl Game<'_> {
                 .effects
                 .list
                 .iter()
-                .map(|e| {
-                    let id = horizon_client::brewing::namespaced(e.id);
-                    (id.to_owned(), e.amplifier, e.duration)
+                .map(|e| adv::EffectView {
+                    id: horizon_client::brewing::namespaced(e.id).to_owned(),
+                    amplifier: e.amplifier,
+                    duration: e.duration,
+                    ambient: e.ambient,
+                    visible: e.visible,
                 })
                 .collect(),
             gamemode: Some(self.mode.name().to_owned()),
@@ -752,6 +760,8 @@ impl Game<'_> {
             position: [e.position.x, e.position.y, e.position.z],
             on_ground: e.on_ground,
             on_fire: e.fire_ticks > 0,
+            in_water: e.was_touching_water,
+            tick_count: Some(e.ticks as i32),
             ..Default::default()
         }
     }
@@ -826,18 +836,37 @@ impl Game<'_> {
             on_fire: m.fire_ticks > 0,
             baby: m.is_baby(),
             on_ground: m.on_ground,
+            in_water: m.fluids.in_water,
+            fall_flying: m.extra.fall_flying,
+            tick_count: Some(m.age as i32),
             equipment,
             // LivingEntity.getActiveEffectsMap supplies the active predicate instances.
             effects: m
                 .extra
                 .effects
                 .iter()
-                .map(|effect| {
-                    let (id, duration, amplifier) = (effect.id, effect.duration, effect.amplifier);
-                    let id = horizon_client::brewing::namespaced(id);
-                    (id.to_owned(), amplifier, duration)
+                .map(|effect| adv::EffectView {
+                    id: horizon_client::brewing::namespaced(effect.id).to_owned(),
+                    amplifier: effect.amplifier,
+                    duration: effect.duration,
+                    ambient: m.extra.ambient_effects.contains(&effect.id),
+                    visible: !m.extra.hidden_effects.contains(&effect.id),
                 })
                 .collect(),
+            sheep_sheared: (m.species() == horizon_client::mobs::Species::Sheep)
+                .then_some(m.extra.sheared),
+            cube_size: matches!(
+                m.species(),
+                horizon_client::mobs::Species::Slime
+                    | horizon_client::mobs::Species::MagmaCube
+                    | horizon_client::mobs::Species::SulfurCube
+            )
+            .then(|| m.extra.size.max(1)),
+            raider: horizon_client::mobs::raider::is_raider(m.species()).then(|| adv::RaiderView {
+                has_raid: horizon_client::mobs::raider::in_raid(m)
+                    || horizon_client::mobs::raider::state(m).is_some_and(|s| s.raided),
+                is_captain: horizon_client::mobs::raider::is_captain(m),
+            }),
             components: horizon_client::mobs::finalize::variant_component(m)
                 .map(|(id, value)| (id.to_owned(), value))
                 .into_iter()
@@ -2981,7 +3010,13 @@ mod tests {
         );
         assert_eq!(
             game.entity_view_of(Target::Mob(32300)).effects,
-            vec![("minecraft:speed".to_owned(), 2, -1)]
+            vec![adv::EffectView {
+                id: "minecraft:speed".into(),
+                amplifier: 2,
+                duration: -1,
+                ambient: false,
+                visible: false,
+            }]
         );
         assert!(matches(&game, 32300, speed_two));
         assert!(!matches(
