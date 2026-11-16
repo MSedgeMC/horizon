@@ -64,6 +64,40 @@ impl Title {
             phases(crate::screen_draw::RenderPhase::Foreground, batch);
             return;
         }
+        if self.gpu_warning_visible() {
+            let warning = self.gpu_warning.as_ref().expect("gpu_warning_visible");
+            crate::ui::menu_background(batch, atlas, 0.0, 0.0, w, h, false);
+            phases(crate::screen_draw::RenderPhase::Background, batch);
+            // `UnsupportedGraphicsWarningScreen`: the adapter it names, Continue and
+            // the "Don't show again" choice that persists `skipGpuWarning`.
+            let title = Text::literal(lang::get_or(
+                "options.graphics.warning.title",
+                "Graphics Card Unsupported",
+            ));
+            let message = Text::literal(format!(
+                "Your graphics card ({}) from {} is not fully compatible with Horizon's renderer. You can still play, but the game may render wrongly or run slowly.",
+                warning.renderer, warning.vendor
+            ));
+            let choice =
+                crate::confirm_screen::Choice::new(&atlas.font, (w, h), &title, &message, 2, 150.0);
+            for (line, x, y) in &choice.lines {
+                batch.text_styled(atlas, line, *x, *y, u32::MAX, true);
+            }
+            let labels = [
+                Text::literal(lang::get_or("options.graphics.warning.accept", "Continue")),
+                Text::literal(lang::get_or(
+                    "options.graphics.warning.checkbox",
+                    "Do not show this message again",
+                )),
+            ];
+            for ((bx, by), label) in choice.buttons.iter().zip(&labels) {
+                let hover = crate::ui::hovered(cursor, *bx, *by, 150.0, 20.0);
+                crate::ui::button(batch, atlas, *bx, *by, 150.0, 20.0, label, true, hover);
+            }
+            self.gpu_buttons.set([choice.buttons[0], choice.buttons[1]]);
+            phases(crate::screen_draw::RenderPhase::Foreground, batch);
+            return;
+        }
         if let Some(screen) = self.confirm_experiments.borrow().as_ref() {
             return screen.draw(batch, atlas, cursor, phases);
         }
