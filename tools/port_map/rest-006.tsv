@@ -83,9 +83,11 @@ BlockPosArgument.getSpawnablePos	missing		minor: no spawnable-bounds check for /
 BlockPosArgument.parse	port	crates/horizon-command/src/args.rs::ArgType::parse	ArgType::BlockPos arm
 BlockPosArgument.listSuggestions	port	crates/horizon-command/src/args.rs::suggest_coordinates	3D block coordinates
 ColumnPosArgument.getColumnPos	port	crates/horizon-client/src/game/administration/commands/mod.rs::Game::block_pos_arg	gap: minor: returns the full block position; callers drop y
+ColumnPosArgument.parse	port	crates/horizon-command/src/args.rs::ArgType::parse	ArgType::ColumnPos arm: a 2D block position
 ColumnPosArgument.listSuggestions	port	crates/horizon-command/src/args.rs::suggest_coordinates	2D coordinates
 LocalCoordinates.apply	port	crates/horizon-command/src/args.rs::Coordinates::position	Local arm: ^ offsets from the source position and rotation
 Vec2Argument.getVec2	port	crates/horizon-client/src/game/administration/commands/mod.rs::Game::resolve_coords	gap: minor: returns the 3D position; callers keep x and z
+Vec2Argument.parse	port	crates/horizon-command/src/args.rs::ArgType::parse	ArgType::Vec2 arm: an empty position is argument.pos2d.incomplete
 Vec2Argument.listSuggestions	port	crates/horizon-command/src/args.rs::suggest_coordinates	2D coordinates
 Vec3Argument.vec3	skip:java		builder: Horizon names ArgType::Vec3 in the command tree
 Vec3Argument.parse	port	crates/horizon-command/src/args.rs::ArgType::parse	ArgType::Vec3 arm (local or world)

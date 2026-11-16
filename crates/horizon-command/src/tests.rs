@@ -1812,3 +1812,18 @@ fn a_servers_own_profiler_keeps_its_node_and_is_not_horizons() {
     assert_eq!(offered, ["open"]);
     assert!(!vanilla::game_dispatcher().has_horizon_profiler());
 }
+
+#[test]
+fn a_two_dimensional_position_needs_a_first_coordinate() {
+    // Vec2Argument.parse and ColumnPosArgument.parse refuse an empty reader
+    // with argument.pos2d.incomplete before reading a coordinate; the
+    // coordinate helpers' missing.int/missing.double errors belong after a
+    // space.
+    let reg = reg();
+    for ty in [ArgType::Vec2, ArgType::ColumnPos] {
+        let mut r = Reader::new("");
+        let e = ty.parse(&mut r, &reg).unwrap_err();
+        assert_eq!(e.message.plain(), "argument.pos2d.incomplete");
+        assert_eq!(e.cursor, 0);
+    }
+}

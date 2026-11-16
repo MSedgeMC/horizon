@@ -1783,6 +1783,15 @@ impl ArgType {
             ArgType::FloatRange => Arg::DoubleRange(read_double_bounds(reader)?),
             ArgType::Name(_) => Arg::Str(reader.read_string()?),
             ArgType::Vec2 | ArgType::ColumnPos => {
+                // Vec2Argument.parse and ColumnPosArgument.parse reject an
+                // empty position before reading a coordinate.
+                if !reader.can_read() {
+                    return Err(CommandError::tr_at(
+                        "argument.pos2d.incomplete",
+                        &[],
+                        reader,
+                    ));
+                }
                 let block = matches!(self, ArgType::ColumnPos);
                 let one = |reader: &mut Reader| {
                     if block {
