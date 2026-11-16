@@ -787,6 +787,17 @@ impl Mob {
             (r.max * r.mob_factor, r.min * r.mob_factor)
         })
     }
+    /// `TargetGoal.canReach`: a path to the target, else a melee attack in
+    /// reach with line of sight. Only a must-reach target goal asks.
+    pub fn reaches_target(&mut self, w: &MobWorld, who: Who, at: [f64; 3]) -> bool {
+        if self.create_path_to_entity(w, at, 0).is_some() {
+            return true;
+        }
+        let Some(t) = w.target_info(who) else {
+            return false;
+        };
+        self.within_melee_range(w, &t) && self.sees(w, who)
+    }
     /// `LivingEntity.getActiveItem`: the item being used, else the main hand's.
     pub fn active_item(&self) -> Option<&str> {
         if super::spear_use::is_using_item(self) && self.extra.using_off_hand {
@@ -1744,6 +1755,10 @@ pub struct NearestTarget {
     pub label: Option<&'static str>,
     found: Option<Who>,
     target_goal: TargetState,
+    /// `TargetGoal.canReach`'s answer: 0 unknown, 1 can, 2 cannot.
+    reach_cache: u8,
+    /// Ticks the answer above is reused for.
+    reach_cache_time: i32,
 }
 #[derive(Clone, Debug)]
 pub struct TargetState {
@@ -1777,6 +1792,8 @@ impl NearestTarget {
                 unseen_memory: 60,
                 ..Default::default()
             },
+            reach_cache: 0,
+            reach_cache_time: 0,
         }
     }
     pub fn player(must_see: bool) -> Self {
@@ -1867,6 +1884,23 @@ pub fn target_continue(st: &mut TargetState, must_see: bool, m: &mut Mob, cx: &m
     m.set_ai_target(cx.w, Some(who));
     true
 }
+impl NearestTarget {
+    /// `TargetGoal.canAttack`'s must-reach arm: the answer is computed and
+    /// reused for `reduced(10)` ticks (vanilla's reach cache).
+    fn reach_ok(&mut self, m: &mut Mob, cx: &mut Cx, who: Who, at: [f64; 3]) -> bool {
+        if !self.must_reach {
+            return true;
+        }
+        if self.reach_cache_time > 0 {
+            self.reach_cache_time -= 1;
+            return self.reach_cache == 1;
+        }
+        self.reach_cache_time = reduced(10);
+        let ok = m.reaches_target(cx.w, who, at);
+        self.reach_cache = if ok { 1 } else { 2 };
+        ok
+    }
+}
 impl Goal for NearestTarget {
     goal_clone!();
     fn name(&self) -> &'static str {
@@ -1892,44 +1926,50 @@ impl Goal for NearestTarget {
         let range = m.attrs.follow_range * self.target_goal.follow_scale;
         self.found = None;
         // NearestAttackableTargetGoal.findTarget: TargetingConditions.forCombat()
-        // always checks the line of sight; mustSee and mustReach only matter
-        // to TargetGoal.canContinueToUse and canAttack.
-        match &self.prey {
-            Prey::Player => {
-                if m.can_target_player(cx.w, range, true) {
-                    self.found = Some(Who::Player);
-                }
+        // always checks the line of sight; mustSee and mustReach matter to
+        // TargetGoal.canContinueToUse and canAttack (`canReach`).
+        let player_prey = matches!(self.prey, Prey::Player);
+        if player_prey {
+            let at = cx.w.selected_player().map(|p| p.position);
+            if let Some(at) = at
+                && m.can_target_player(cx.w, range, true)
+                && self.reach_ok(m, cx, Who::Player, [at.x, at.y, at.z])
+            {
+                self.found = Some(Who::Player);
             }
-            prey => {
-                let pos = Vec3::new(m.position.x, m.eye_y(), m.position.z);
-                let id = m.id;
-                let attacker = m.species();
-                let candidates: Vec<(u32, Vec3)> =
-                    cx.w.nearby(pos, range, move |s| {
-                        s.id != id
-                            && !s.playing_dead
-                            && !illager_spares(attacker, s)
-                            && match prey {
-                                Prey::Species(list) => list.contains(&s.species),
-                                Prey::Filter(f) => f(s),
-                                Prey::Player => false,
-                            }
-                    })
-                    .map(|s| (s.id, s.position))
-                    .collect();
-                for (cid, cpos) in candidates {
-                    if m.distance_sqr(cpos) > cx.w.reach_sqr(cid, m, range) {
-                        continue;
-                    }
-                    if self.beyond_sqr.is_some_and(|d| m.distance_sqr(cpos) <= d) {
-                        continue;
-                    }
-                    if !m.sees(cx.w, Who::Mob(cid)) {
-                        continue;
-                    }
-                    self.found = Some(Who::Mob(cid));
-                    break;
+        } else {
+            let prey = self.prey.clone();
+            let pos = Vec3::new(m.position.x, m.eye_y(), m.position.z);
+            let id = m.id;
+            let attacker = m.species();
+            let candidates: Vec<(u32, Vec3)> =
+                cx.w.nearby(pos, range, move |s| {
+                    s.id != id
+                        && !s.playing_dead
+                        && !illager_spares(attacker, s)
+                        && match &prey {
+                            Prey::Species(list) => list.contains(&s.species),
+                            Prey::Filter(f) => f(s),
+                            Prey::Player => false,
+                        }
+                })
+                .map(|s| (s.id, s.position))
+                .collect();
+            for (cid, cpos) in candidates {
+                if m.distance_sqr(cpos) > cx.w.reach_sqr(cid, m, range) {
+                    continue;
                 }
+                if self.beyond_sqr.is_some_and(|d| m.distance_sqr(cpos) <= d) {
+                    continue;
+                }
+                if !m.sees(cx.w, Who::Mob(cid)) {
+                    continue;
+                }
+                if !self.reach_ok(m, cx, Who::Mob(cid), [cpos.x, cpos.y, cpos.z]) {
+                    continue;
+                }
+                self.found = Some(Who::Mob(cid));
+                break;
             }
         }
         self.found.is_some()
@@ -4649,3 +4689,7 @@ mod breed_continue_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "target_reach_tests.rs"]
+mod target_reach_tests;
