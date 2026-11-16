@@ -1725,11 +1725,29 @@ packet!(
 );
 packet!(PickItemFromBlock { pos: [i32; 3] => Pos, include_data: bool => Bool });
 packet!(PickItemFromEntity { id: i32 => VarInt, include_data: bool => Bool });
+/// `ServerboundPlayerActionPacket.Action` has nine values: 0 start destroy,
+/// 1 change destroy direction, 2 abort destroy, 3 stop destroy, 4 drop all,
+/// 5 drop item, 6 release use item, 7 swap offhand and 8 stab. Vanilla reads
+/// it with `readEnum`, which indexes the enum's `values()` array and throws
+/// past the end.
+struct PlayerActionOrdinal;
+impl Codec<i32> for PlayerActionOrdinal {
+    fn read(r: &mut Reader) -> Result<i32> {
+        let action = r.varint()?;
+        if !(0..9).contains(&action) {
+            return Err(Error::new(format!("invalid player action {action}")));
+        }
+        Ok(action)
+    }
+    fn write(v: &i32, w: &mut Writer) {
+        w.varint(*v);
+    }
+}
 packet!(
     /// ServerboundPlayerActionPacket.Action: 0 start destroy, 1 change destroy
     /// direction, 2 abort, 3 stop destroy, 4 drop all, 5 drop item, 6 release
     /// use item, 7 swap offhand, 8 stab. Direction is the 3D data value.
-    PlayerAction { action: i32 => VarInt, pos: [i32; 3] => Pos, direction: u8 => UByte, sequence: i32 => VarInt }
+    PlayerAction { action: i32 => PlayerActionOrdinal, pos: [i32; 3] => Pos, direction: u8 => UByte, sequence: i32 => VarInt }
 );
 packet!(
     /// ServerboundPlayerCommandPacket.Action: 0 stop sleeping, 1 start sprinting,
@@ -3294,6 +3312,41 @@ mod tests {
         });
         assert_eq!(&beacon.encode()[1..], &[1, 2, 0]);
         round_trip(beacon, Serverbound::encode, Serverbound::decode);
+    }
+
+    #[test]
+    fn a_player_action_ordinal_must_name_a_known_action() {
+        // ServerboundPlayerActionPacket.Action.values(): 0 start destroy,
+        // 1 change destroy direction, 2 abort destroy, 3 stop destroy,
+        // 4 drop all, 5 drop item, 6 release use item, 7 swap offhand and
+        // 8 stab. Vanilla reads it with readEnum, which indexes the enum's
+        // nine values and throws past the end.
+        let payload = |action: i32| {
+            let mut w = Writer::new();
+            PlayerAction::write(
+                &PlayerAction {
+                    action,
+                    pos: [0, 64, 0],
+                    direction: 1,
+                    sequence: 0,
+                },
+                &mut w,
+            );
+            w.data
+        };
+        let decode = |action: i32| {
+            Serverbound::decode(
+                crate::ids::play::serverbound::PLAYER_ACTION,
+                &payload(action),
+            )
+        };
+        for action in 0..9 {
+            assert!(decode(action).is_ok());
+        }
+        for action in [9, -1] {
+            let err = decode(action).unwrap_err();
+            assert!(err.to_string().contains("invalid player action"), "{err}");
+        }
     }
 
     #[test]
