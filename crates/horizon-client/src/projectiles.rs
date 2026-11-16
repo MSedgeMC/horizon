@@ -3125,10 +3125,7 @@ mod can_hit_entity_tests {
     /// the crystal first.
     #[test]
     fn a_wind_charge_flies_through_an_end_crystal() {
-        assert_eq!(
-            hit_who(&mut shot(ProjectileKind::WindCharge)),
-            Who::Mob(7)
-        );
+        assert_eq!(hit_who(&mut shot(ProjectileKind::WindCharge)), Who::Mob(7));
         assert_eq!(
             hit_who(&mut shot(ProjectileKind::SmallFireball)),
             Who::Mob(END_CRYSTAL_IDS)
