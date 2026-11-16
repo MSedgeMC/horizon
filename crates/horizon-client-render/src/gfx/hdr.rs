@@ -7,7 +7,7 @@
 //! tiers, up to its scene peak), and the tone curve alone fits it to the display's peak
 //! (docs/design/hdr-linear-light.md, step 6a). Lit surfaces get no gain: diffuse white stays at
 //! paper white, and HDR's range above it is the light sources' and the sun's. The sun's disc
-//! alone follows the display past the scene's peak (`SUN_CAP`).
+//! alone follows the display past the scene's peak (`HDR_SUN_CAP`).
 
 /// The swapchain HDR output presents to.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -117,18 +117,12 @@ struct Layered {
     params: wgpu::Buffer,
 }
 
-/// The scene's peak, in multiples of paper white: just above the brightest light the world
-/// writes (the sun's disc, white at the very bright tier's 4), and what the tone curve maps
-/// onto the display's peak; light past it (where the sky adds onto the sun) is held at it. The
-/// world is mastered for a 1000-nit display at ITU-R BT.2408's 203-nit reference white, as
-/// HDR10 content usually is: there it shows as written, a dimmer display eases its highlights
-/// into its peak (BT.2390's EETF), and a brighter one shows it as at 1000, but for the sun's
-/// disc (`SUN_CAP`).
+/// The look's scene peak and its sun's cap, in multiples of paper white, as the tests expect
+/// them of the shaders (hdr_look.wgsl `HDR_SCENE_PEAK`, `HDR_SUN_CAP`): the renderer itself
+/// reads neither.
+#[cfg(test)]
 pub const SCENE_PEAK: f32 = 1000.0 / 203.0;
-/// How far the sun's disc may pass the scene's peak, in multiples of paper white: on a display
-/// above `SCENE_PEAK` its white is the display's peak, up to this, 2000 nits at a paper white of
-/// 203. Nothing else the world writes passes the scene's peak, so a brighter display shows a
-/// brighter sun and the same world.
+#[cfg(test)]
 pub const SUN_CAP: f32 = 2000.0 / 203.0;
 
 /// Which pixels of a light source's sprite may shine (`hdr_stats.wgsl`), as a fraction of
@@ -814,12 +808,6 @@ impl Hdr {
         })
     }
 
-    /// The sun's disc's white, in multiples of paper white: the scene's peak, and on a display
-    /// above it the display's, up to `SUN_CAP`.
-    fn sun_peak(&self) -> f32 {
-        (self.peak / self.paper_white.max(1.0)).clamp(SCENE_PEAK, SUN_CAP)
-    }
-
     /// The display's headroom: its peak over paper white, at least 1.
     fn headroom(&self) -> f32 {
         (self.peak / self.paper_white.max(1.0)).max(1.0)
@@ -838,13 +826,9 @@ impl Hdr {
     /// hdr.wgsl's `Params`.
     fn params(&self, world: bool, pq: bool) -> [f32; 12] {
         let paper = self.paper_white.max(1.0);
-        // Only Horizon's lifted world is known to end at the scene's peak; elsewhere (HDR
-        // Lighting off, a pack's own light, the title) the curve's source follows the display.
-        let (scene_peak, sun_peak) = if world && self.lighting {
-            (SCENE_PEAK, self.sun_peak())
-        } else {
-            (0.0, 0.0)
-        };
+        // Only Horizon's lifted world is known to end at the look's scene peak; elsewhere (the
+        // Vanilla look, a pack's own light, the title) the curve's source follows the display.
+        let look = f32::from(u8::from(world && self.lighting));
         let c = self.calibration;
         [
             paper / 80.0,
@@ -852,9 +836,9 @@ impl Hdr {
             f32::from(u8::from(pq)),
             self.black.clamp(0.0, paper),
             self.ui,
-            scene_peak,
-            sun_peak,
-            // Pads `calibration` to its 16-byte alignment.
+            look,
+            // Pad `calibration` to its 16-byte alignment.
+            0.0,
             0.0,
             c.map_or(0.0, |c| c.step as f32),
             c.map_or(0.0, |c| c.nits),
@@ -943,6 +927,7 @@ mod tests {
 
     #[test]
     fn shared_light_matches_the_original_for_every_mark() {
+        let _gpu = crate::gfx::test_gpu::lock();
         use wgpu::util::DeviceExt;
         let Some((device, queue)) = gpu() else {
             eprintln!("HDR equivalence GPU unavailable");
@@ -1044,6 +1029,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn coverage_target_resizes_resets_and_shows_in_the_debug_view() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let instance = crate::gfx::test_gpu::instance();
         let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
             return;
@@ -1196,26 +1182,26 @@ var<private> params: ReferenceParams;
     }
 
     /// The world's writers read no gain from the display (docs/design/hdr-linear-light.md, step
-    /// 6a). Of the display only its headroom reaches them, for the sun's disc's peak, as the
-    /// tone curve holds light at it: the scene's up to a display at it, so there nothing
-    /// differs; above it the display's, up to `SUN_CAP`.
+    /// 6a). Of the display only its headroom reaches them, for the sun's disc's peak, and the
+    /// tone curve, which holds light at that peak: the look works both out of the headroom
+    /// (hdr_look.wgsl `hdr_sun_peak`), so the renderer says only whether the look is on.
     #[test]
     fn the_writers_light_is_the_same_on_every_display_but_the_suns_disc() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             return;
         };
         let mut hdr = Hdr::with_debug(&device, &queue, F::Rgba16Float, Output::Pq, true, None);
-        let (scene, cap) = (super::SCENE_PEAK, super::SUN_CAP);
-        for (paper, peak, sun) in [
-            (203.0, 300.0, scene),
-            (203.0, 600.0, scene),
-            (203.0, 1000.0, scene),
-            (400.0, 600.0, scene),
-            (480.0, 200.0, scene),
-            (203.0, 1500.0, 1500.0 / 203.0),
-            (203.0, 2000.0, cap),
-            (203.0, 4000.0, cap),
-            (80.0, 10000.0, cap),
+        for (paper, peak) in [
+            (203.0, 300.0),
+            (203.0, 600.0),
+            (203.0, 1000.0),
+            (400.0, 600.0),
+            (480.0, 200.0),
+            (203.0, 1500.0),
+            (203.0, 2000.0),
+            (203.0, 4000.0),
+            (80.0, 10000.0),
         ] {
             (hdr.paper_white, hdr.peak) = (paper, peak);
             assert_eq!(
@@ -1224,7 +1210,11 @@ var<private> params: ReferenceParams;
                 "{paper}/{peak}"
             );
             let params = hdr.params(true, false);
-            assert_eq!((params[5], params[6]), (scene, sun), "{paper}/{peak}");
+            assert_eq!(
+                (params[1], params[5]),
+                ((peak / paper).max(1.0), 1.0),
+                "{paper}/{peak}"
+            );
         }
         // The title, and frames Horizon doesn't light (the Vanilla look, a pack drawing):
         // nothing says where their light ends, so the curve's source follows the display.
@@ -1238,6 +1228,7 @@ var<private> params: ReferenceParams;
     /// from the shader, in f64 from SMPTE ST 2084 and BT.2390.
     #[test]
     fn the_tone_curve_maps_the_scene_peak_onto_the_display() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             return;
         };
@@ -1436,6 +1427,7 @@ var<private> params: ReferenceParams;
     /// and the HDR10 picture after the switch back are the ones before it.
     #[test]
     fn a_switched_encoding_keeps_the_tuning_and_shows_the_same_light() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             eprintln!("HDR encoding switch GPU skipped: no adapter");
             return;
@@ -1524,6 +1516,7 @@ var<private> params: ReferenceParams;
     /// BT.2020, is HDR10's.
     #[test]
     fn the_black_level_lift_follows_bt2390_in_pq_and_scrgb() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             return;
         };
@@ -1640,6 +1633,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn a_scaled_screenshot_shoots_at_its_size_and_leaves_the_window_its_own_targets() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             eprintln!("scaled screenshot GPU unavailable");
             return;
@@ -1666,6 +1660,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn sdr_screenshots_keep_the_world_up_to_white_and_the_hud_as_drawn() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             eprintln!("SDR screenshot GPU unavailable");
             return;
@@ -1748,7 +1743,10 @@ var<private> params: ReferenceParams;
         // SDR picture, clipped at white.
         hdr.lighting = false;
         for gamma in [0.5f32, 0.9, 1.0] {
-            let w = [gamma, gamma / 2.0, 0.0];
+            // fs_keep reads the stored half-float world before writing the 8-bit HUD
+            // backdrop. Quantize first here too: 0.9 rounds to a half-float below
+            // the 8-bit rounding boundary; the original f32 can round to a different code.
+            let w = [gamma, gamma / 2.0, 0.0].map(|v| half::f16::from_f32(v).to_f32());
             // Uncovered, the HUD's target holds the world as drawn; the icon ignores the HUD.
             let got = shoot(&mut hdr, w.map(f64::from), w.map(f64::from), 0.0, false);
             assert_eq!(got[..3], w.map(|v| half::f16::from_f32(v).to_f32()));
@@ -1842,6 +1840,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn the_hud_lays_over_the_worlds_light_by_its_coverage() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             return;
         };
@@ -1898,6 +1897,7 @@ var<private> params: ReferenceParams;
     /// paper white, the HUD it drew included, whatever its alpha and UI Brightness.
     #[test]
     fn a_frame_without_the_huds_layer_shows_at_paper_white() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             return;
         };
@@ -1938,6 +1938,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn the_menu_blur_keeps_the_light_it_blurs() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let Some((device, queue)) = gpu() else {
             return;
         };
@@ -1965,6 +1966,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn hdr_shaders_validate() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let entity = super::super::entity_shader();
         for source in [
             &super::shader(),
@@ -1998,6 +2000,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn hdr10_first_then_scrgb() {
+        let _gpu = crate::gfx::test_gpu::lock();
         let both = caps(&[
             (F::Bgra8UnormSrgb, S::SRGB),
             (F::Rgb10a2Unorm, S::BT2100_PQ | S::BT2100_HLG),
@@ -2013,6 +2016,7 @@ var<private> params: ReferenceParams;
 
     #[test]
     fn offscreen_offers_only_the_named_output() {
+        let _gpu = crate::gfx::test_gpu::lock();
         assert_eq!(named(Some("pq")), Some(Output::Pq));
         assert_eq!(named(Some("scrgb")), Some(Output::ScRgb));
         assert_eq!(named(Some("hdr10")), None);
