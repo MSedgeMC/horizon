@@ -494,8 +494,9 @@ impl StructureState {
     /// outposts, bastions, ancient cities, trial chambers, trail ruins) is loaded from its
     /// saved pieces (`PoolPiece::from_saved`); a start whose pieces read their own tags (the
     /// mineshaft, fortress and stronghold families and the swamp hut) loads them the same way
-    /// (`saved_legacy::read`). Another structure's pieces have no loader yet:
-    /// it is the start this generator makes in the chunk when that one has the same name and the
+    /// (`saved_legacy::read`). A child that does not decode is dropped, as
+    /// `PiecesContainer.load` does, and the rest of the start is kept: another
+    /// structure's pieces have no loader yet, so it is the start this generator makes in the chunk when that one has the same name and the
     /// same pieces' box (the same layout from the same seed), else the name and box alone (found
     /// by `/locate` and maps, but not placed).
     fn saved_starts_at(
@@ -510,14 +511,8 @@ impl StructureState {
             .filter_map(|start| {
                 let index = (self.registry.structures.iter()).position(|s| s.name == start.name)?;
                 let def = &self.registry.structures[index];
-                if !start.pieces.is_empty()
-                    && let Some(pieces) = start
-                        .pieces
-                        .iter()
-                        .map(|piece| self.saved_piece(piece, def))
-                        .collect::<Option<Vec<_>>>()
-                {
-                    return Some(Arc::new(StructureStart::new(index, def, chunk, pieces)));
+                if let Some(start) = self.saved_start(index, def, chunk, &start.pieces) {
+                    return Some(Arc::new(start));
                 }
                 if let Some(bounds) = start.bounds {
                     let made = generated.get_or_insert_with(|| {
@@ -573,11 +568,30 @@ impl StructureState {
             .ok()
             .map(Piece::Pool)
     }
+    /// A saved start's readable pieces, as `PiecesContainer.load` keeps the
+    /// children it can decode and logs the others. `None` when none of them
+    /// decode, which leaves the whole start to the fallback above.
+    fn saved_start(
+        &self,
+        index: usize,
+        def: &StructureDef,
+        chunk: ChunkPos,
+        pieces: &[horizon_core::nbt::Tag],
+    ) -> Option<StructureStart> {
+        let pieces: Vec<Piece> = pieces
+            .iter()
+            .filter_map(|piece| self.saved_piece(piece, def))
+            .collect();
+        if pieces.is_empty() {
+            return None;
+        }
+        Some(StructureStart::new(index, def, chunk, pieces))
+    }
     /// A saved piece, as `StructureStart.loadStaticStart` loads it: a jigsaw
     /// piece from `PoolPiece::from_saved`, a vanilla legacy piece that reads its
     /// own tags from `saved_legacy::read`, a mod type's piece from its
     /// `load_piece` (the `StructurePieceType` is the loader), none otherwise.
-    /// `None` leaves the whole start to the fallback above.
+    /// `None` for a child `saved_start` drops and keeps the rest.
     fn saved_piece(&self, piece: &horizon_core::nbt::Tag, def: &StructureDef) -> Option<Piece> {
         if let Some(pool) = self.saved_pool_piece(piece) {
             return Some(pool);
@@ -1438,5 +1452,184 @@ mod tests {
                 serial(seed.wrapping_add(1), 20, 5, 40, &preferred)
             );
         }
+    }
+
+    /// An old chunk's saved nether fortress start keeps the pieces it can
+    /// decode when one of its children is not a piece Horizon knows, as
+    /// `PiecesContainer.load` drops the unreadable child and keeps the rest.
+    #[test]
+    fn an_old_chunks_saved_fortress_keeps_its_readable_pieces() {
+        use crate::{
+            heightmap::HeightmapType,
+            registry::BlockRegistry,
+            worldgen::{
+                biome::BiomeId,
+                blending::SavedStart,
+                block_feature::FeatureBlockBindings,
+                structure::{
+                    StateTransforms, StructureResources,
+                    fortress::FortressPiece,
+                    jigsaw::JigsawContext,
+                    start::{NoiseColumnTarget, StartContext, StructureRegistry},
+                },
+            },
+        };
+        use horizon_core::position::ChunkPos;
+
+        let raw = BTreeMap::from([(
+            "minecraft:fortress".to_owned(),
+            r#"{"type":"minecraft:fortress"}"#.to_owned(),
+        )]);
+        let registry = StructureRegistry::new(
+            &raw,
+            &BTreeMap::new(),
+            BTreeMap::new(),
+            &|_| Ok(BTreeSet::new()),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let (mut block_tag, _) = horizon_core::nbt::parse_snbt(
+            r#"{DataVersion:0,states:[{id:"minecraft:air"},{id:"minecraft:cave_air"},{id:"minecraft:void_air"}],defaults:{"minecraft:air":0,"minecraft:cave_air":1,"minecraft:void_air":2}}"#,
+        )
+        .unwrap();
+        *block_tag.get_mut("DataVersion").unwrap() =
+            horizon_core::nbt::Tag::Int(crate::DATA_VERSION);
+        let blocks: &'static BlockRegistry =
+            Box::leak(Box::new(BlockRegistry::from_nbt(&block_tag).unwrap()));
+        let resources = Arc::new(StructureResources::new(
+            blocks,
+            StateTransforms::default(),
+            std::path::Path::new("unused"),
+            BTreeMap::new(),
+            &BTreeMap::new(),
+        ));
+        let bindings = FeatureBlockBindings::new(blocks, BTreeSet::new()).unwrap();
+        let state = StructureState {
+            registry,
+            resources,
+            bindings,
+            possible_sets: Vec::new(),
+            by_step: vec![Vec::new(); crate::worldgen::structure::start::STEPS.len()],
+            starts: StartCache::new(),
+            saved: OnceLock::new(),
+            start_work: ChunkWork::new(),
+            rings: Arc::new(OnceLock::new()),
+            ring_work: OnceLock::new(),
+            ring_seed: None,
+            fixed_biome: false,
+            zone_reach: 0,
+        };
+        struct Ctx {
+            saved: Vec<SavedStart>,
+        }
+        impl JigsawContext for Ctx {
+            fn min_y(&self) -> i32 {
+                -64
+            }
+            fn max_y(&self) -> i32 {
+                320
+            }
+            fn base_height(&mut self, _x: i32, _z: i32, _kind: HeightmapType) -> i32 {
+                64
+            }
+            fn column_has_valid_biome(
+                &mut self,
+                _x: i32,
+                _z: i32,
+                _min_y: i32,
+                _max_y: i32,
+            ) -> bool {
+                true
+            }
+        }
+        impl StartContext for Ctx {
+            fn is_old_chunk(&self, _chunk: ChunkPos) -> bool {
+                true
+            }
+            fn saved_starts(&self, _chunk: ChunkPos) -> Vec<SavedStart> {
+                self.saved.clone()
+            }
+            fn seed(&self) -> i64 {
+                1234
+            }
+            fn sea_level(&self) -> i32 {
+                63
+            }
+            fn base_column(&mut self, _x: i32, _z: i32, _kind: HeightmapType) -> Vec<bool> {
+                unimplemented!()
+            }
+            fn base_columns_by(
+                &mut self,
+                _x: i32,
+                _z: i32,
+                _count: usize,
+                _kind: &dyn Fn(usize) -> HeightmapType,
+            ) -> Vec<Vec<bool>> {
+                unimplemented!()
+            }
+            fn noise_column_into(&mut self, _x: i32, _z: i32, _column: &mut dyn NoiseColumnTarget) {
+                unimplemented!()
+            }
+            fn cold_enough_to_snow(&mut self, _biome: BiomeId, _pos: [i32; 3]) -> bool {
+                false
+            }
+            fn generation(&self) -> crate::worldgen::anchor::WorldGenerationContext {
+                unimplemented!()
+            }
+            fn noise_biome(&mut self, _quart: [i32; 3]) -> BiomeId {
+                BiomeId(0)
+            }
+            fn noise_biomes(&mut self, quarts: &[[i32; 3]]) -> Vec<BiomeId> {
+                vec![BiomeId(0); quarts.len()]
+            }
+            fn set_valid_biomes(&mut self, _biomes: Option<&BTreeSet<BiomeId>>) {}
+        }
+
+        let piece = FortressPiece::saved_test_pieces().swap_remove(0);
+        let saved_piece = piece.save().expect("a savable fortress piece");
+        let unreadable = horizon_core::nbt::Tag::compound([(
+            "id",
+            horizon_core::nbt::Tag::String("minecraft:future_fortress_piece".into()),
+        )]);
+        let mut ctx = Ctx {
+            saved: vec![SavedStart {
+                name: "minecraft:fortress".into(),
+                bounds: Some([0, 60, 0, 16, 80, 16]),
+                pieces: vec![
+                    horizon_core::nbt::Tag::Compound(saved_piece.clone()),
+                    unreadable.clone(),
+                ],
+            }],
+        };
+        let starts = state.saved_starts_at(&mut ctx, ChunkPos::new(0, 0));
+        assert_eq!(starts.len(), 1);
+        assert_eq!(
+            starts[0].pieces.len(),
+            1,
+            "the readable fortress piece survives the unknown child"
+        );
+        assert_eq!(
+            starts[0].pieces[0].save(),
+            Some(saved_piece),
+            "it keeps its saved state"
+        );
+
+        let mut fallback = Ctx {
+            saved: vec![SavedStart {
+                name: "minecraft:fortress".into(),
+                bounds: Some([0, 60, 0, 16, 80, 16]),
+                pieces: vec![unreadable],
+            }],
+        };
+        let starts = state.saved_starts_at(&mut fallback, ChunkPos::new(0, 0));
+        assert_eq!(starts.len(), 1);
+        assert!(
+            starts[0].pieces.is_empty(),
+            "a start with no readable child keeps the old fallback"
+        );
+        assert_eq!(
+            starts[0].bounding_box,
+            horizon_core::bounding_box::BoundingBox::new([0, 60, 0], [16, 80, 16])
+        );
     }
 }
