@@ -827,9 +827,25 @@ impl Codec<(i32, Option<(String, Option<f32>)>)> for SoundHolder {
         }
     }
 }
+/// `SoundSource` has eleven values: 0 master through 10 ui. Vanilla reads it
+/// with `readEnum`, which indexes the enum's `values()` array and throws past
+/// the end.
+struct SoundSource;
+impl Codec<i32> for SoundSource {
+    fn read(r: &mut Reader) -> Result<i32> {
+        let source = r.varint()?;
+        if !(0..11).contains(&source) {
+            return Err(Error::new(format!("invalid sound source {source}")));
+        }
+        Ok(source)
+    }
+    fn write(v: &i32, w: &mut Writer) {
+        w.varint(*v);
+    }
+}
 packet!(Sound {
     sound: (i32, Option<(String, Option<f32>)>) => SoundHolder,
-    source: i32 => VarInt,
+    source: i32 => SoundSource,
     x: i32 => Int,
     y: i32 => Int,
     z: i32 => Int,
@@ -1031,7 +1047,7 @@ packet!(
 );
 packet!(SoundEntity {
     sound: (i32, Option<(String, Option<f32>)>) => SoundHolder,
-    source: i32 => VarInt,
+    source: i32 => SoundSource,
     id: i32 => VarInt,
     volume: f32 => Float,
     pitch: f32 => Float,
@@ -3859,5 +3875,71 @@ mod tests {
             Serverbound::encode,
             Serverbound::decode,
         );
+    }
+
+    #[test]
+    fn a_sound_source_ordinal_must_name_a_known_source() {
+        // SoundSource.values(): 0 master through 10 ui. Vanilla reads it with
+        // readEnum, which indexes the enum's eleven values and throws past the
+        // end; both sound packets carry it.
+        let sound = |source: i32| {
+            let mut w = Writer::new();
+            Sound::write(
+                &Sound {
+                    sound: (-1, Some(("minecraft:block.note_block.harp".into(), None))),
+                    source,
+                    x: 0,
+                    y: 64,
+                    z: 0,
+                    volume: 1.0,
+                    pitch: 1.0,
+                    seed: 0,
+                },
+                &mut w,
+            );
+            w.data
+        };
+        let sound_entity = |source: i32| {
+            let mut w = Writer::new();
+            SoundEntity::write(
+                &SoundEntity {
+                    sound: (-1, Some(("minecraft:block.note_block.harp".into(), None))),
+                    source,
+                    id: 2,
+                    volume: 1.0,
+                    pitch: 1.0,
+                    seed: 0,
+                },
+                &mut w,
+            );
+            w.data
+        };
+        let decode = |id, payload: &[u8]| Clientbound::decode(id, payload);
+        for id in [
+            crate::ids::play::clientbound::SOUND,
+            crate::ids::play::clientbound::SOUND_ENTITY,
+        ] {
+            let payload = if id == crate::ids::play::clientbound::SOUND {
+                sound(0)
+            } else {
+                sound_entity(0)
+            };
+            assert!(decode(id, &payload).is_ok());
+            let last = if id == crate::ids::play::clientbound::SOUND {
+                sound(10)
+            } else {
+                sound_entity(10)
+            };
+            assert!(decode(id, &last).is_ok());
+            for bad in [11, -1] {
+                let payload = if id == crate::ids::play::clientbound::SOUND {
+                    sound(bad)
+                } else {
+                    sound_entity(bad)
+                };
+                let err = decode(id, &payload).unwrap_err();
+                assert!(err.to_string().contains("invalid sound source"), "{err}");
+            }
+        }
     }
 }
