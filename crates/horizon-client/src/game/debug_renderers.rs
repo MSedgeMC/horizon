@@ -38,11 +38,8 @@ const BREEZE_TARGET_LINE: u32 = 0xFF64_FFFF;
 const BREEZE_JUMP_FILL: u32 = 0xFFFF_0000;
 /// `BreezeDebugRenderer`: the circles' radii and colours, and
 /// `CircleGizmo.CIRCLE_VERTICES`' 20 segments.
-const BREEZE_CIRCLES: [(f64, u32); 3] = [
-    (4.0, 0xFF00_FF00),
-    (8.0, 0xFFFF_A500),
-    (24.0, 0xFFFF_0000),
-];
+const BREEZE_CIRCLES: [(f64, u32); 3] =
+    [(4.0, 0xFF00_FF00), (8.0, 0xFFFF_A500), (24.0, 0xFFFF_0000)];
 const CIRCLE_SEGMENTS: usize = 20;
 
 /// `SharedConstants.debugFlag`: a debug view is on when `MC_DEBUG_ENABLED`
