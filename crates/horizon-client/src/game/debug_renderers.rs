@@ -73,10 +73,7 @@ fn cube(center: [i32; 3], radius: i32) -> impl Iterator<Item = [i32; 3]> {
 
 /// `RaidDebugRenderer`: the raid centres nearer than [`RAID_MAX_DIST`] of
 /// the camera's block, in the raids' order.
-fn raid_centers_within(
-    centers: impl Iterator<Item = [i32; 3]>,
-    eye: [i32; 3],
-) -> Vec<[i32; 3]> {
+fn raid_centers_within(centers: impl Iterator<Item = [i32; 3]>, eye: [i32; 3]) -> Vec<[i32; 3]> {
     let eye = eye.map(f64::from);
     centers
         .filter(|c| {
