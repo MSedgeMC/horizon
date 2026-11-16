@@ -1580,7 +1580,9 @@ impl ArgType {
                 } else {
                     v
                 };
-                Arg::Int(rgb as i32)
+                // ARGB.color(red, green, blue): the channels with an opaque alpha,
+                // the value the waypoint icon stores.
+                Arg::Int((rgb | 0xFF00_0000) as i32)
             }
             ArgType::Uuid => {
                 // UuidArgument: the longest run of [-A-Fa-f0-9] must be a UUID.

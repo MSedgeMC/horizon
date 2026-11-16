@@ -407,6 +407,31 @@ fn gamemode_parses_the_shared_game_type() {
 }
 
 #[test]
+fn hex_color_keeps_argb_opaque_alpha() {
+    // HexColorArgument.parse: ARGB.color(red, green, blue) sets the opaque
+    // alpha byte, and /waypoint modify ... color hex stores that integer.
+    let reg = reg();
+    for (text, argb) in [
+        ("fff", 0xFFFF_FFFFu32),
+        ("abc", 0xFFAA_BBCCu32),
+        ("123456", 0xFF12_3456u32),
+        ("000000", 0xFF00_0000u32),
+    ] {
+        let mut reader = Reader::new(text);
+        assert_eq!(
+            ArgType::HexColor.parse(&mut reader, &reg).unwrap(),
+            Arg::Int(argb as i32),
+            "{text}"
+        );
+        assert_eq!(reader.cursor, text.len(), "{text}");
+    }
+    // A length that is neither 3 nor 6 is the length error, before any channel.
+    let mut reader = Reader::new("1234");
+    let e = ArgType::HexColor.parse(&mut reader, &reg).unwrap_err();
+    assert_eq!(e.message.plain(), "argument.hexcolor.invalid");
+}
+
+#[test]
 fn vanilla_error_messages() {
     let e = run("foo").unwrap_err();
     assert_eq!(e.message.plain(), "command.unknown.command");

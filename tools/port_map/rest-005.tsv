@@ -146,4 +146,5 @@ GameModeArgument.parse	port	crates/horizon-command/src/args.rs::ArgType::parse	g
 GameModeArgument.listSuggestions	port	crates/horizon-command/src/args.rs::ArgType::suggest	game mode suggestions
 GameProfileArgument.listSuggestions	port	crates/horizon-command/src/args.rs::ArgType::suggest	player name suggestions
 GameProfileArgument.SelectorResult.getNames	port	crates/horizon-client/src/game/administration/commands/profiles.rs::Game::game_profiles	the selector's players only, a playerless selector is `argument.entity.notfound.player`; op, deop, ban and pardon are in the tree, whitelist is not
+HexColorArgument.parse	port	crates/horizon-command/src/args.rs::ArgType::parse	the channels with ARGB.color's opaque alpha; a bad digit escapes the dispatcher as command.exception
 HeightmapTypeArgument.keptTypes	port	crates/horizon-command/src/network.rs::argument_type	heightmap type choices
