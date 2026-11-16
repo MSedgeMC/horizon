@@ -312,10 +312,13 @@ impl PoolElement {
                 placement_priority: 0,
                 selection_priority: 0,
             }],
-            Self::List { elements, .. } => elements
-                .first()
-                .map(|e| e.shuffled_jigsaws(resources, position, rotation, random))
-                .unwrap_or_default(),
+            Self::List { elements, .. } => {
+                let mut jigsaws = Vec::new();
+                for element in elements {
+                    jigsaws.extend(element.shuffled_jigsaws(resources, position, rotation, random));
+                }
+                jigsaws
+            }
             Self::Single { template, .. } => {
                 let mut jigsaws = template_jigsaws(resources, template, position, rotation);
                 shuffle(&mut jigsaws, random);
@@ -1631,5 +1634,47 @@ mod tests {
         assert_eq!(below[..2], [0, 0]);
         assert_eq!(below[2..], [101, 100]);
         assert_eq!(tried(&target, &fallback, &counts, 0, false), [101, 100]);
+    }
+
+    /// Vanilla's ListPoolElement.getShuffledJigsawBlocks concatenates the
+    /// jigsaw blocks of every element, not only the first one's.
+    #[test]
+    fn a_lists_jigsaws_come_from_every_element() {
+        let rows = serde_json::json!([
+            ["minecraft:air", true, false, "", {"id": "minecraft:air", "properties": {}}],
+            ["minecraft:stone", false, false, "", {"id": "minecraft:stone", "properties": {}}]
+        ]);
+        let facts = serde_json::json!({
+            "states": rows,
+            "defaults": {"minecraft:air": 0, "minecraft:stone": 1}
+        });
+        let registry: &'static crate::registry::BlockRegistry = Box::leak(Box::new(
+            crate::registry::BlockRegistry::from_facts_json(facts.to_string().as_bytes()).unwrap(),
+        ));
+        let resources: &'static StructureResources = Box::leak(Box::new(StructureResources::new(
+            registry,
+            crate::worldgen::structure::StateTransforms::default(),
+            std::path::Path::new("unused"),
+            BTreeMap::new(),
+            &BTreeMap::new(),
+        )));
+        let element = PoolElement::List {
+            elements: vec![
+                PoolElement::Empty,
+                PoolElement::Feature {
+                    feature: "minecraft:oak".into(),
+                    projection: Projection::TerrainMatching,
+                },
+                PoolElement::Feature {
+                    feature: "minecraft:birch".into(),
+                    projection: Projection::TerrainMatching,
+                },
+            ],
+            projection: Projection::TerrainMatching,
+        };
+        let mut random = LegacyRandom::new(7);
+        let jigsaws = element.shuffled_jigsaws(resources, [3, 64, -5], Rotation::None, &mut random);
+        assert_eq!(jigsaws.len(), 2);
+        assert!(jigsaws.iter().all(|j| j.pos == [3, 64, -5]));
     }
 }
