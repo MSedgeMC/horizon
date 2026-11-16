@@ -174,7 +174,8 @@ fn a_waxed_sign_or_a_click_command_keeps_the_adventure_click() {
 #[test]
 #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
 fn a_sign_this_player_cannot_edit_keeps_the_click_for_the_item() {
-    let Some(mut game) = game() else {
+    let mut resources = None;
+    let Some(mut game) = game(&mut resources) else {
         return;
     };
     let planks = game
