@@ -962,6 +962,34 @@ mod tests {
         assert_eq!(o.cost_a_count(&items), 1);
     }
 
+    /// `MerchantOffer.getModifiedCostCount` clamps to
+    /// `cost.itemStack().getMaxStackSize()`: a cost stack whose
+    /// `max_stack_size` component is removed holds one, so demand cannot raise
+    /// the asked price past one (the item's default of 64 would let it).
+    #[test]
+    fn a_removed_max_stack_size_caps_the_demanded_price() {
+        let items = items();
+        let mut o = offer(4, None);
+        o.base_cost_a.stack.data_mut().set_other(
+            "!minecraft:max_stack_size",
+            Some(horizon_core::nbt::Tag::Compound(Default::default())),
+        );
+        o.uses = 12;
+        o.update_demand();
+        assert_eq!(o.demand, 12);
+        assert_eq!(o.cost_a_count(&items), 1);
+        // An explicit component caps it too: demand would ask for 13.
+        o.base_cost_a.stack.data_mut().set_other(
+            "!minecraft:max_stack_size",
+            None,
+        );
+        o.base_cost_a.stack.data_mut().set_other(
+            "minecraft:max_stack_size",
+            Some(horizon_core::nbt::Tag::Int(2)),
+        );
+        assert_eq!(o.cost_a_count(&items), 2);
+    }
+
     #[test]
     fn restocks_twice_a_day() {
         let mut t = Trader {

@@ -39,8 +39,10 @@ pub struct MerchantOffer {
     pub xp: i32,
 }
 impl MerchantOffer {
+    /// `ItemStack.getMaxStackSize`: the cost stack's own `max_stack_size`
+    /// component (a removed one is vanilla's default of one), else the item's.
     fn max_stack(items: &Items, s: &ItemStack) -> u32 {
-        items.get(&s.item).map_or(64, |i| i.max_stack)
+        crate::menu::item_max_stack(items, s).max(1)
     }
     /// `getModifiedCostCount` for cost A.
     pub fn cost_a_count(&self, items: &Items) -> u32 {
