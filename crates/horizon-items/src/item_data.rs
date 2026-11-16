@@ -1145,6 +1145,29 @@ fn template_from(tag: &Tag) -> Option<ItemStack> {
         }
     }
 }
+/// `ItemContainerContents.CODEC` `fromSlots`: the encoded list files each stack
+/// by its slot index, a repeated index keeping the last stack, and the
+/// component holds the slots in ascending order.
+fn container_slots(tag: Option<&Tag>) -> Vec<(u8, ItemStack)> {
+    let Some(Tag::List(list)) = tag else {
+        return Vec::new();
+    };
+    let mut seen = [false; 256];
+    let mut slots: Vec<(u8, ItemStack)> = list
+        .iter()
+        .rev()
+        .filter_map(|entry| {
+            let slot = entry.get("slot").and_then(int)?.clamp(0, 255) as u8;
+            let stack = template_from(entry.get("item")?)?;
+            if std::mem::replace(&mut seen[slot as usize], true) {
+                return None;
+            }
+            Some((slot, stack))
+        })
+        .collect();
+    slots.sort_by_key(|(slot, _)| *slot);
+    slots
+}
 /// The stack a `show_item` hover event holds (`HoverEvent.ShowItem`): its
 /// `{id, count?, components?}` object.
 pub fn stack_from_hover(event: &serde_json::Value) -> Option<ItemStack> {
@@ -1754,18 +1777,7 @@ pub fn decode_components(components: Option<&Tag>) -> (u32, Option<Box<StackData
                 .collect(),
             _ => Vec::new(),
         },
-        container: match seen.container {
-            Some(Tag::List(list)) => list
-                .iter()
-                .filter_map(|e| {
-                    Some((
-                        e.get("slot").and_then(int)?.clamp(0, 255) as u8,
-                        template_from(e.get("item")?)?,
-                    ))
-                })
-                .collect(),
-            _ => Vec::new(),
-        },
+        container: container_slots(seen.container),
         ominous_banner: seen
             .item_name
             .and_then(|n| n.get("translate"))
@@ -3116,18 +3128,7 @@ mod tests {
                     .collect(),
                 _ => Vec::new(),
             },
-            container: match c.get("minecraft:container") {
-                Some(Tag::List(list)) => list
-                    .iter()
-                    .filter_map(|e| {
-                        Some((
-                            e.get("slot").and_then(int)?.clamp(0, 255) as u8,
-                            template_from(e.get("item")?)?,
-                        ))
-                    })
-                    .collect(),
-                _ => Vec::new(),
-            },
+            container: container_slots(c.get("minecraft:container")),
             ominous_banner: c
                 .get("minecraft:item_name")
                 .and_then(|n| n.get("translate"))
@@ -3217,6 +3218,45 @@ mod tests {
             ),
         ]
     }
+    /// `ItemContainerContents.CODEC` files slots by index: `fromSlots` sets each
+    /// slot in list order (a repeated index keeps its last stack) and the
+    /// component holds them ascending, so another list order of the same slots
+    /// is the same component.
+    #[test]
+    fn container_slots_decode_by_index_and_keep_the_last() {
+        let stack = parse_stack(
+            r#"{id:"minecraft:shulker_box",count:1,components:{"minecraft:container":[{slot:2,item:{id:"minecraft:dirt",count:1}},{slot:0,item:{id:"minecraft:stone",count:3}},{slot:2,item:{id:"minecraft:sand",count:2}}]}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        let data = stack.data().expect("the container component");
+        let slots: Vec<(u8, &str)> = data
+            .container
+            .iter()
+            .map(|(slot, held)| (*slot, &*held.item))
+            .collect();
+        assert_eq!(
+            slots,
+            [(0, "minecraft:stone"), (2, "minecraft:sand")],
+            "slots by index, the repeated one keeping its last stack"
+        );
+        let said = encode_components(&stack).expect("components");
+        let saved: Vec<i64> = match said.get("minecraft:container") {
+            Some(Tag::List(list)) => list
+                .iter()
+                .filter_map(|slot| slot.get("slot").and_then(int))
+                .collect(),
+            other => panic!("container: {other:?}"),
+        };
+        assert_eq!(saved, [0, 2], "the saved list is in slot order");
+        let reordered = parse_stack(
+            r#"{id:"minecraft:shulker_box",count:1,components:{"minecraft:container":[{slot:2,item:{id:"minecraft:sand",count:2}},{slot:0,item:{id:"minecraft:stone",count:3}}]}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(stack.same_item_same_components(&reordered));
+    }
+
     /// One pass over the compound decodes every shape the per-ID lookups did,
     /// including IDs kept in `other` and keys that are not ASCII.
     #[test]
