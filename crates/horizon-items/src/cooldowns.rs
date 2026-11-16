@@ -60,8 +60,16 @@ impl UseCooldown {
 }
 
 /// The component a stack carries: its own patch first (`ItemStack.get`), then
-/// the item's default from `items.json` (`ItemInfo::use_cooldown`).
+/// the item default from `items.json` (`ItemInfo::use_cooldown`). A
+/// `!minecraft:use_cooldown` removal patch leaves the lookup empty, so the
+/// default does not come back.
 pub fn component(stack: &ItemStack, default: Option<&UseCooldown>) -> Option<UseCooldown> {
+    if stack
+        .data()
+        .is_some_and(|d| d.other("!minecraft:use_cooldown").is_some())
+    {
+        return None;
+    }
     stack
         .data()
         .and_then(|d| d.other("minecraft:use_cooldown"))
@@ -182,6 +190,23 @@ mod tests {
         assert_eq!(&*group(&grouped, Some(&default)), "minecraft:pearls");
         // An item without the component has no cooldown.
         assert!(component(&stack("minecraft:dirt"), None).is_none());
+    }
+
+    /// `ItemStack.get(USE_COOLDOWN)` is null for a `!minecraft:use_cooldown`
+    /// removal patch: `ItemCooldowns.addCooldown` starts nothing, and the group
+    /// falls back to the item id rather than the removed component.
+    #[test]
+    fn a_removed_use_cooldown_starts_no_cooldown() {
+        let default =
+            UseCooldown::from_json(&json!({"seconds": 1.0, "cooldown_group": "minecraft:pearls"}))
+                .expect("the component");
+        let mut pearl = stack("minecraft:ender_pearl");
+        pearl.data_mut().other.push((
+            "!minecraft:use_cooldown".into(),
+            Tag::compound([] as [(&str, Tag); 0]),
+        ));
+        assert!(component(&pearl, Some(&default)).is_none());
+        assert_eq!(&*group(&pearl, Some(&default)), "minecraft:ender_pearl");
     }
 
     #[test]
