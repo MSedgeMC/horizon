@@ -3161,7 +3161,13 @@ mod can_hit_entity_tests {
         };
         let mut hit = snowball;
         assert!(
-            matches!(hit.tick(&enemy).1, Hit::Entity { who: Who::Mob(7), .. }),
+            matches!(
+                hit.tick(&enemy).1,
+                Hit::Entity {
+                    who: Who::Mob(7),
+                    ..
+                }
+            ),
             "a non-ally is hit"
         );
         // The owner is refused while the arrow is inside it, unless deflected.
@@ -3185,7 +3191,13 @@ mod can_hit_entity_tests {
         assert_eq!(blocked.tick(&own).1, Hit::None, "the shooter is not hit");
         arrow.arrow.as_mut().unwrap().deflected = true;
         assert!(
-            matches!(arrow.tick(&own).1, Hit::Entity { who: Who::Player, .. }),
+            matches!(
+                arrow.tick(&own).1,
+                Hit::Entity {
+                    who: Who::Player,
+                    ..
+                }
+            ),
             "a deflected arrow hits its owner"
         );
     }
