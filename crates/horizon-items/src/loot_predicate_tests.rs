@@ -115,10 +115,7 @@ fn the_games_own_silk_touch_predicate_still_drops_stone() {
 /// stack with that many items (an int or a `{min, max}` range).
 #[test]
 fn a_match_tool_predicate_reads_the_stack_count() {
-    let root = std::env::temp_dir().join(format!(
-        "horizon-loot-tool-count-{}",
-        std::process::id()
-    ));
+    let root = std::env::temp_dir().join(format!("horizon-loot-tool-count-{}", std::process::id()));
     let _ = fs::remove_dir_all(&root);
     fs::create_dir_all(root.join("data/minecraft/loot_table/blocks")).unwrap();
     fs::write(root.join("items.json"), "{}").unwrap();
@@ -134,7 +131,12 @@ fn a_match_tool_predicate_reads_the_stack_count() {
     let registry = BlockRegistry::from_facts_json(&facts[..]).unwrap();
     let drops = |held: &ItemStack| {
         items
-            .block_drops(&registry, BlockStateId(1), Some(held), &mut LegacyRandom::new(7))
+            .block_drops(
+                &registry,
+                BlockStateId(1),
+                Some(held),
+                &mut LegacyRandom::new(7),
+            )
             .len()
     };
     assert_eq!(drops(&ItemStack::new("minecraft:stick", 1)), 0);

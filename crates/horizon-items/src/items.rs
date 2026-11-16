@@ -2148,8 +2148,14 @@ impl LootContext<'_> {
                     Value::Null => true,
                     Value::Number(n) => n.as_i64() == Some(have),
                     Value::Object(range) => {
-                        range.get("min").and_then(Value::as_i64).is_none_or(|m| have >= m)
-                            && range.get("max").and_then(Value::as_i64).is_none_or(|m| have <= m)
+                        range
+                            .get("min")
+                            .and_then(Value::as_i64)
+                            .is_none_or(|m| have >= m)
+                            && range
+                                .get("max")
+                                .and_then(Value::as_i64)
+                                .is_none_or(|m| have <= m)
                     }
                     _ => false,
                 };
