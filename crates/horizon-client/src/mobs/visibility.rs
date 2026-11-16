@@ -93,7 +93,7 @@ impl MobWorld<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mobs::goals::{Cx, Goal, NearestTarget};
+    use crate::mobs::goals::{Cx, Goal, LookAtPlayer, NearestTarget};
     use crate::mobs::world::with_test_world;
     use crate::mobs::{Mob, MobHooks, PlayerView};
     use horizon_core::geometry::Vec3;
@@ -185,6 +185,54 @@ mod tests {
             golem_targets(1.5, |_| {}, Some(&HideZombies)),
             Some(false),
             "the floor is 2 blocks"
+        );
+    }
+
+    /// `LookAtPlayerGoal` finds a mob with `TargetingConditions.forNonCombat()`
+    /// too, so `TargetingConditions.test` shrinks that look distance by the
+    /// target's visibility as well: a ravager does not look at an invisible cow
+    /// five blocks away, while a visible one and one within two blocks are
+    /// looked at.
+    #[test]
+    fn a_look_at_mob_goal_scales_its_range_by_visibility() {
+        let looks_at = |invisible: bool, distance: f64| {
+            let mut seen = None;
+            with_test_world(&[], |_, types| {
+                let kind = std::sync::Arc::new(types.types["minecraft:cow"].clone());
+                let mut cow = Mob::new(2, kind, Vec3::new(0.5 + distance, 64.0, 0.5), 0.0);
+                cow.invisible = invisible;
+                seen = Some(cow.seen(None, &crate::items::Items::empty()));
+            });
+            let seen = seen?;
+            let mut result = None;
+            with_test_world(&[seen], |w, types| {
+                let kind = std::sync::Arc::new(types.types["minecraft:ravager"].clone());
+                let mut ravager = Mob::new(1, kind, Vec3::new(0.5, 64.0, 0.5), 0.0);
+                let mut goal = LookAtPlayer::mobs(8.0).probability(1.0);
+                let (mut test_level, mut events) = (crate::health::TestLevel::new(0), Vec::new());
+                let level = &mut test_level.level();
+                let mut cx = Cx {
+                    w,
+                    level,
+                    events: &mut events,
+                };
+                result = Some(goal.can_use(&mut ravager, &mut cx));
+            });
+            result
+        };
+        let Some(visible) = looks_at(false, 5.0) else {
+            return;
+        };
+        assert!(visible, "a visible cow five blocks away is looked at");
+        assert_eq!(
+            looks_at(true, 5.0),
+            Some(false),
+            "an invisible one is not: 8 x 0.07, floored to 2 blocks"
+        );
+        assert_eq!(
+            looks_at(true, 1.5),
+            Some(true),
+            "an invisible cow within the two block floor is looked at"
         );
     }
 }

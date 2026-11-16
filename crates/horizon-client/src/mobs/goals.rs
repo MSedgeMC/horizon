@@ -1413,8 +1413,11 @@ impl Goal for LookAtPlayer {
                 .collect();
         let mut best: Option<(u32, f64)> = None;
         for (cid, pos) in candidates {
-            let reach = range.max(2.0);
-            if m.distance_sqr(pos) > reach * reach || !m.sees(cx.w, Who::Mob(cid)) {
+            // `TargetingConditions.test` scales the look distance by the
+            // target's visibility too, with the two-block floor.
+            if m.distance_sqr(pos) > cx.w.reach_sqr(cid, m, range)
+                || !m.sees(cx.w, Who::Mob(cid))
+            {
                 continue;
             }
             let d = pos.distance_squared(at);
