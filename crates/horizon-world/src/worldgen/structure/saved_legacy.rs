@@ -7,9 +7,10 @@ use super::{
     fortress::FortressPiece,
     legacy::{LegacyPiece, PieceFrame},
     mineshaft::MineshaftPiece,
-    simple::SwampHutPiece,
+    simple::{BuriedTreasurePiece, SwampHutPiece},
     start::{StructureDef, StructureKind},
     stronghold::StrongholdPiece,
+    temple::{DesertPyramidPiece, JungleTemplePiece},
 };
 use crate::{
     datafix::dynamic::{Number, as_number},
@@ -79,6 +80,11 @@ pub(crate) fn read(id: &str, tag: &Tag, def: &StructureDef) -> Option<Box<dyn Le
             let piece = SwampHutPiece::from_saved(tag, frame);
             Some(Box::new(piece) as Box<dyn LegacyPiece>)
         }
+        "tedp" => {
+            Some(Box::new(DesertPyramidPiece::from_saved(tag, frame)) as Box<dyn LegacyPiece>)
+        }
+        "tejp" => Some(Box::new(JungleTemplePiece::from_saved(tag, frame)) as Box<dyn LegacyPiece>),
+        "btp" => Some(Box::new(BuriedTreasurePiece::from_saved(frame)) as Box<dyn LegacyPiece>),
         _ if id.starts_with("ne") => FortressPiece::from_saved(id, tag, frame, depth)
             .map(|p| Box::new(p) as Box<dyn LegacyPiece>),
         _ if id.starts_with("sh") => StrongholdPiece::from_saved(id, tag, frame, depth)
