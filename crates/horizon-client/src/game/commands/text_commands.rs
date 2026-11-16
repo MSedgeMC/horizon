@@ -435,9 +435,11 @@ mod tests {
             r#"summon minecraft:pig 2.5 200 1.5 {UUID:[I;31,1,1,2],NoAI:1b,Silent:1b,CustomName:"B"}"#
         ));
         game.chat_capture = Some(Vec::new());
-        assert!(game.run_command(
-            r#"tellraw @a {"selector":"@e[type=minecraft:pig]","separator":" | "}"#
-        ));
+        assert!(
+            game.run_command(
+                r#"tellraw @a {"selector":"@e[type=minecraft:pig]","separator":" | "}"#
+            )
+        );
         let said = game.chat_capture.take().unwrap_or_default();
         assert_eq!(said.len(), 1, "{said:?}");
         let line = said[0].plain();
