@@ -22,6 +22,7 @@ pub(super) mod pregen;
 mod profiles;
 mod raid;
 mod selector_bounds;
+mod spawn_armor_trims;
 mod summon;
 mod targets;
 mod terrain_cmds;
@@ -1008,6 +1009,7 @@ impl Game<'_> {
             "weather" => self.cmd_weather(ctx),
             "kill" => self.cmd_kill(ctx),
             "summon" => self.cmd_summon(ctx),
+            "spawn_armor_trims" | "spawn_armor_trims.all" => self.cmd_spawn_armor_trims(id, ctx),
             "effect.give" => self.cmd_effect_give(ctx),
             "effect.clear" => self.cmd_effect_clear(ctx),
             "enchant" => self.cmd_enchant(ctx),

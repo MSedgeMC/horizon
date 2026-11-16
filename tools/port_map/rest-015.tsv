@@ -146,10 +146,10 @@ SetPlayerIdleTimeoutCommand.register	port	crates/horizon-client/src/game/adminis
 SetPlayerIdleTimeoutCommand.setIdleTimeout	port	crates/horizon-client/src/game/administration/commands/profiles.rs::Game::cmd_setidle_timeout	the minutes go to the live sweep and to server.properties; the reply names them, or says the timeout is off, and the result is the minute count
 SetSpawnCommand.setSpawn	port	crates/horizon-client/src/game/administration/commands/mod.rs::Game::cmd_spawnpoint	forced spawn per target, overworld spawn or respawn anchor by dimension
 SetWorldSpawnCommand.setSpawn	port	crates/horizon-client/src/game/administration/commands/mod.rs::Game::cmd_setworldspawn	world spawn with angle and the fallback respawn update
-SpawnArmorTrimsCommand.register	missing		minor: no /spawn_armor_trims literal (test command for trim patterns)
-SpawnArmorTrimsCommand.spawnArmorTrim	missing		minor: no armor stands are spawned for trim patterns
-SpawnArmorTrimsCommand.spawnArmorTrims	missing		minor: no armor stands are spawned for trim patterns
-SpawnArmorTrimsCommand.findEquippableItemsWithAssets	missing		minor: no scan of equippable armor items for trims
+SpawnArmorTrimsCommand.register	port	crates/horizon-command/src/vanilla.rs::registered_with_features	spawn_armor_trims literal under the development gate, GAMEMASTERS, with the pattern argument and the *_lag_my_game form
+SpawnArmorTrimsCommand.spawnArmorTrim	port	crates/horizon-client/src/game/administration/commands/spawn_armor_trims.rs::Game::cmd_spawn_armor_trims	the named pattern form validates the trim_pattern registry and spawns that one pattern
+SpawnArmorTrimsCommand.spawnArmorTrims	port	crates/horizon-client/src/game/administration/commands/spawn_armor_trims.rs::Game::cmd_spawn_armor_trims	material rows by 3 blocks and pattern columns by 10 around the player, yaw 180, no gravity, named first item and invisible others, success feedback
+SpawnArmorTrimsCommand.findEquippableItemsWithAssets	inline	crates/horizon-client/src/game/administration/commands/spawn_armor_trims.rs::Game::cmd_spawn_armor_trims	humanoid armor slots with an asset id, in item registry order
 SpreadPlayersCommand.spreadPlayers	port	crates/horizon-client/src/game/administration/commands/world_cmds.rs::Game::cmd_spreadplayers	spreads targets around the centre with spread distance, max range and max height
 SpreadPlayersCommand.getNumberOfTeams	inline	crates/horizon-client/src/game/administration/commands/world_cmds.rs::Game::cmd_spreadplayers	team count via team_of in respectTeams mode
 SpreadPlayersCommand.spreadPositions	inline	crates/horizon-client/src/game/administration/commands/world_cmds.rs::Game::cmd_spreadplayers	collision loop with the 10000-iteration cap, clamp and safe-spot check

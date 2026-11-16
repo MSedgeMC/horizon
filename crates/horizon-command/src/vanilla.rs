@@ -401,6 +401,14 @@ fn registered_with_features(
         let set = d.literal(tracker, "set");
         let level = d.argument(set, "warning_level", ArgType::Integer { min: 0, max: 4 });
         d.executes(level, "warden_spawn_tracker.set");
+
+        // spawn_armor_trims (*_lag_my_game | <pattern>)
+        let spawn = d.literal(root, "spawn_armor_trims");
+        d.requires(spawn, GAMEMASTERS);
+        let all = d.literal(spawn, "*_lag_my_game");
+        d.executes(all, "spawn_armor_trims.all");
+        let pattern = d.argument(spawn, "pattern", ArgType::ResKey("minecraft:trim_pattern"));
+        d.executes(pattern, "spawn_armor_trims");
     }
 
     // say / me / msg / list
