@@ -1268,7 +1268,7 @@ impl ArgType {
                 Arg::Double(v)
             }
             ArgType::Word => Arg::Str(reader.read_unquoted_string().to_owned()),
-            ArgType::Str => Arg::Str(reader.read_string()?),
+            ArgType::Str => Arg::Str(reader.read_string_arg()?),
             ArgType::Greedy => {
                 let s = reader.remaining().to_owned();
                 reader.cursor = reader.string.len();

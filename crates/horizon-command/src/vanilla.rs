@@ -446,6 +446,9 @@ fn registered_with_features(dev: bool, minecart_improvements: bool) -> Dispatche
     super::tree_misc::register(&mut d, root);
     super::tree_world::register(&mut d, root);
     super::tree_extra::register(&mut d, root);
+    if dev {
+        super::tree_extra::register_dev(&mut d, root);
+    }
     d
 }
 

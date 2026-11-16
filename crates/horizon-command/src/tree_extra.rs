@@ -209,6 +209,25 @@ pub fn register(d: &mut Dispatcher, root: usize) {
     d.executes(depth, "test.create");
 }
 
+/// The commands vanilla registers only in development builds
+/// (`SharedConstants.DEBUG_DEV_COMMANDS` or `IS_RUNNING_IN_IDE`): `/raid` and
+/// `/warden_spawn_tracker` are in `vanilla`, and `/serverpack` here.
+pub fn register_dev(d: &mut Dispatcher, root: usize) {
+    // ServerPackCommand
+    let sp = d.literal(root, "serverpack");
+    d.requires(sp, GAMEMASTERS);
+    let push = d.literal(sp, "push");
+    let url = d.argument(push, "url", ArgType::Str);
+    d.executes(url, "serverpack.push");
+    let uuid = d.argument(url, "uuid", ArgType::Uuid);
+    d.executes(uuid, "serverpack.push");
+    let hash = d.argument(uuid, "hash", ArgType::Word);
+    d.executes(hash, "serverpack.push");
+    let pop = d.literal(sp, "pop");
+    let uuid = d.argument(pop, "uuid", ArgType::Uuid);
+    d.executes(uuid, "serverpack.pop");
+}
+
 /// The commands only a dedicated server registers
 /// (`Commands.CommandSelection.includeDedicated`): an integrated server, and
 /// so single player and a LAN world, has none of them.

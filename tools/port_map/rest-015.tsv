@@ -136,10 +136,10 @@ ScoreboardCommand.setRenderType	port	crates/horizon-client/src/scoreboard_cmd.rs
 ScoreboardCommand.removeObjective	port	crates/horizon-client/src/scoreboard_cmd.rs::scoreboard	objectives remove branch
 ScoreboardCommand.addObjective	port	crates/horizon-client/src/scoreboard_cmd.rs::scoreboard	objectives add branch
 SeedCommand.register	port	crates/horizon-command/src/vanilla.rs::registered	seed literal; the seed text is the seed arm of execute_command
-ServerPackCommand.register	missing		minor: no /serverpack literal
-ServerPackCommand.sendToAllConnections	missing		minor: no pack packets are sent to connected clients by any command
-ServerPackCommand.pushPack	missing		minor: no push; ResourcePackPush exists only in horizon-protocol
-ServerPackCommand.popPack	missing		minor: no pop; ResourcePackPop exists only in horizon-protocol
+ServerPackCommand.register	port	crates/horizon-command/src/tree_extra.rs::register_dev	development-only serverpack literal with push and pop, at LEVEL_GAMEMASTERS
+ServerPackCommand.sendToAllConnections	inline	crates/horizon-client/src/game/commands/extra.rs::Game::cmd_serverpack_push	push and pop go to every placed connection through Hub::broadcast
+ServerPackCommand.pushPack	port	crates/horizon-client/src/game/commands/extra.rs::Game::cmd_serverpack_push	url with optional uuid and hash; the id defaults to the URL's name UUID and the hash to empty
+ServerPackCommand.popPack	port	crates/horizon-client/src/game/commands/extra.rs::Game::cmd_serverpack_pop	the uuid's ResourcePackPop to every connection
 SetBlockCommand.register	port	crates/horizon-command/src/vanilla.rs::registered	setblock literal with destroy, keep, replace and strict
 SetBlockCommand.setBlock	port	crates/horizon-client/src/game/commands.rs::Game::cmd_setblock	destroy, keep, replace, strict and block entity NBT
 SetPlayerIdleTimeoutCommand.register	port	crates/horizon-client/src/game/commands.rs::Game::execute_command	the node (the literal, its permission level and the `minutes` argument from 0) comes from the data generator's commands.json through lan/commands.rs, which lists `setidletimeout` as dedicated-only; this branch is its execute

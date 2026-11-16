@@ -1144,6 +1144,8 @@ impl Game<'_> {
             "debug" => self.cmd_debug(ctx),
             "jfr" => self.cmd_jfr(ctx),
             "version" => self.cmd_version(),
+            "serverpack.push" => self.cmd_serverpack_push(ctx),
+            "serverpack.pop" => self.cmd_serverpack_pop(ctx),
             id if id.starts_with("test.") => self.cmd_test(id, ctx),
             "compute" => self.cmd_compute(ctx),
             "place" => self.cmd_place(ctx),
@@ -4364,6 +4366,8 @@ fn difficulty_names(from: u8, to: u8) -> (&'static str, &'static str) {
 
 #[cfg(test)]
 mod clone_writes_tests;
+#[cfg(test)]
+mod serverpack_tests;
 
 #[cfg(test)]
 mod air_filter_tests;

@@ -217,6 +217,43 @@ fn parses_vanilla_commands() {
     assert!(ctx.has("strict") && ctx.has("filtered") && ctx.has("force") && !ctx.has("move"));
 }
 #[test]
+fn serverpack_is_registered_only_in_development_builds() {
+    assert!(vanilla::build_with(false).find("serverpack").is_none());
+    assert!(vanilla::build_with(true).find("serverpack").is_some());
+    let (id, args) = run("serverpack push https://example.com/a.zip").unwrap();
+    assert_eq!(id, "serverpack.push");
+    assert_eq!(args, ["url"]);
+    let (id, args) =
+        run("serverpack push https://example.com/a.zip 123e4567-e89b-12d3-a456-426614174000")
+            .unwrap();
+    assert_eq!(id, "serverpack.push");
+    assert_eq!(args, ["url", "uuid"]);
+    let (id, args) = run(
+        "serverpack push https://example.com/a.zip 123e4567-e89b-12d3-a456-426614174000 deadbeef",
+    )
+    .unwrap();
+    assert_eq!(id, "serverpack.push");
+    assert_eq!(args, ["url", "uuid", "hash"]);
+    assert_eq!(
+        run("serverpack pop 123e4567-e89b-12d3-a456-426614174000")
+            .unwrap()
+            .0,
+        "serverpack.pop"
+    );
+    // ServerPackCommand.requires(Commands.hasPermission(LEVEL_GAMEMASTERS)).
+    let reg = Registries {
+        permission: 1,
+        ..reg()
+    };
+    assert!(
+        vanilla::dispatcher()
+            .parse("serverpack push https://example.com/a.zip", &reg)
+            .executable()
+            .is_err()
+    );
+}
+
+#[test]
 fn vanilla_error_messages() {
     let e = run("foo").unwrap_err();
     assert_eq!(e.message.plain(), "command.unknown.command");

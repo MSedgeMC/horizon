@@ -13,6 +13,7 @@ use horizon_client::{
 };
 use horizon_protocol::packets::{
     Empty,
+    configuration::{ResourcePackPop, ResourcePackPush},
     play::{self, Clientbound as C, DialogHolder},
 };
 use horizon_world::nbt::{JavaString, Tag};
@@ -779,6 +780,49 @@ impl Game<'_> {
         ])
     }
 
+    // ---- /serverpack (ServerPackCommand) --------------------------------
+
+    /// `ServerPackCommand.pushPack`: every connection is offered the pack,
+    /// named by its UUID or the URL's name UUID, with the hash or an empty
+    /// one; the pack is not required and carries no prompt.
+    pub(super) fn cmd_serverpack_push(&mut self, ctx: &Context) -> R<i32> {
+        let url = match ctx.get("url") {
+            Some(Arg::Str(url)) => url.clone(),
+            _ => return Ok(0),
+        };
+        let id = match ctx.get("uuid") {
+            Some(Arg::Str(uuid)) => uuid_id(uuid)?,
+            _ => horizon_server_files::properties::name_uuid(url.as_bytes()),
+        };
+        let hash = match ctx.get("hash") {
+            Some(Arg::Str(hash)) => hash.clone(),
+            _ => String::new(),
+        };
+        if let Some(lan) = &self.lan {
+            lan.hub.broadcast(&C::ResourcePackPush(ResourcePackPush {
+                id,
+                url,
+                hash,
+                required: false,
+                prompt: None,
+            }));
+        }
+        Ok(0)
+    }
+
+    /// `ServerPackCommand.popPack`: every connection takes that pack away.
+    pub(super) fn cmd_serverpack_pop(&mut self, ctx: &Context) -> R<i32> {
+        let Some(Arg::Str(uuid)) = ctx.get("uuid") else {
+            return Ok(0);
+        };
+        let id = uuid_id(uuid)?;
+        if let Some(lan) = &self.lan {
+            lan.hub
+                .broadcast(&C::ResourcePackPop(ResourcePackPop { id: Some(id) }));
+        }
+        Ok(0)
+    }
+
     // ---- /kick ----------------------------------------------------------
 
     /// `KickCommand.kickPlayers`: only guests of a published world can be
@@ -1439,4 +1483,10 @@ mod waypoint_icon_save_tests {
             Tag::compound([("locator_bar_icon", Tag::compound([("color", Tag::Int(5))]))]);
         assert_eq!(WaypointIcon::from_saved(Some(&no_style)), None);
     }
+}
+
+/// `UuidArgument.getUuid`: the parsed UUID.
+fn uuid_id(text: &str) -> R<u128> {
+    horizon_client::command::selector::java_uuid(text)
+        .ok_or_else(|| err("argument.uuid.invalid", &[]))
 }
