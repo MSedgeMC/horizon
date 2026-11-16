@@ -2552,6 +2552,11 @@ impl Goal for FollowParent {
         if m.extra.age >= 0 {
             return false;
         }
+        // FollowParentGoal.canUse: only one tick in `reduced(400)` looks for
+        // a parent, and the draw comes before the scan.
+        if m.random.next_int_bound(reduced(400)).unwrap_or(1) != 0 {
+            return false;
+        }
         let species = m.species();
         let pos = m.position;
         let mut best: Option<(u32, f64)> = None;
@@ -4649,3 +4654,7 @@ mod breed_continue_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "follow_parent_interval_tests.rs"]
+mod follow_parent_interval_tests;
