@@ -347,7 +347,7 @@ fn frame_events_move_the_epochs_they_reset() {
     let Some((device, _)) = device() else {
         return;
     };
-    let hud = crate::hud::HudBatch::new([4, 4]);
+    let hud = crate::hud::HudBatch::scratch([4, 4]);
     let mut frame = crate::gfx::pack_uniforms::initial_history_tests::frame(&hud);
     let mut native =
         super::super::NativeFrame::new(&device, None, Vec::new(), Default::default(), None, false);
@@ -639,7 +639,7 @@ impl Chain {
     /// screen's first pixel.
     fn run(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, size: [u32; 2]) -> [u8; 4] {
         let mut encoder = device.create_command_encoder(&Default::default());
-        self.post.before_world(device, &mut encoder);
+        self.post.before_world(device, &mut encoder, None);
         queue.submit([encoder.finish()]);
         let surface = &self.frame.surface_view;
         (self.screen).show((device, queue), &mut self.post, surface, size)
@@ -926,7 +926,7 @@ fn through_pack(manifest: &str, files: &[(&str, &str)], wants: &[f32]) {
     let (mut pack, _) = built.unwrap();
     install(&device, Some(&mut pack.post), None);
     let screen = Screen::new(&device);
-    let hud = crate::hud::HudBatch::new([4, 4]);
+    let hud = crate::hud::HudBatch::scratch([4, 4]);
     let mut frame = crate::gfx::pack_uniforms::initial_history_tests::frame(&hud);
     let scope = device.push_error_scope(wgpu::ErrorFilter::Validation);
     for (n, &want) in (1..).zip(wants) {
@@ -936,7 +936,7 @@ fn through_pack(manifest: &str, files: &[(&str, &str)], wants: &[f32]) {
         let display = crate::gfx::output::DisplayValues::SDR;
         pack.write(&queue, &frame, [4, 4], display, None);
         let mut encoder = device.create_command_encoder(&Default::default());
-        pack.before_world(&device, &mut encoder);
+        pack.before_world(&device, &mut encoder, None);
         queue.submit([encoder.finish()]);
         let post = &mut pack.post;
         let got = screen.show((&device, &queue), post, &pack.frame.surface_view, [4, 4]);
