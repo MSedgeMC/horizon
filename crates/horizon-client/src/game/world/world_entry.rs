@@ -18,9 +18,10 @@ impl Game<'_> {
         }
         self.perf.world_opening();
         if self.title.is_none() {
-            let title = self
+            let mut title = self
                 .new_title(std::env::current_dir()?.join("saves"))
                 .with_user(|| self.options.player_name());
+            title.set_skip_gpu_warning(self.settings.file.bool("skipGpuWarning"));
             self.show_title(title);
         }
         self.pending_entry = Some(entry);
