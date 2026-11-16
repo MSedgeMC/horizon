@@ -1611,3 +1611,74 @@ fn leaves_count_their_distance_from_a_log_and_decay_only_at_seven() {
         );
     }
 }
+
+/// `TripWireBlock.checkPressed` schedules a tick only while the wire is
+/// pressed, and `entityInside` re-checks an unpressed wire whatever tick is
+/// still queued for it: a released wire schedules nothing further, and an
+/// entity that steps back on presses it again on that same tick.
+#[test]
+fn a_released_tripwire_keeps_no_tick_and_presses_again_at_once() {
+    use std::cell::Cell;
+
+    /// A level whose entity count, as the wire sees it, the test sets.
+    struct Occupied {
+        inner: TestLevel,
+        occupants: Cell<usize>,
+    }
+    impl crate::level::BlockEntityNeighbors for Occupied {}
+    impl LevelAccess for Occupied {
+        fn block_state(&self, pos: BlockPos) -> BlockStateId {
+            self.inner.block_state(pos)
+        }
+        fn set_raw(&mut self, pos: BlockPos, state: BlockStateId) -> Option<BlockStateId> {
+            self.inner.set_raw(pos, state)
+        }
+        fn is_loaded(&self, pos: BlockPos) -> bool {
+            self.inner.is_loaded(pos)
+        }
+        fn random(&mut self) -> &mut horizon_core::random::LegacyRandom {
+            self.inner.random()
+        }
+        fn game_time(&self) -> i64 {
+            self.inner.game_time()
+        }
+        fn count_entities(
+            &self,
+            _area: horizon_core::geometry::Aabb,
+            _query: crate::level::EntityQuery,
+        ) -> usize {
+            self.occupants.get()
+        }
+    }
+
+    let w = world!();
+    let pos = BlockPos::new(0, 1, 0);
+    let wire = w.id("tripwire", &[("powered", "false")]);
+    let b = w.b();
+    let block = b.block(wire);
+    let mut level = Occupied {
+        inner: w.level,
+        occupants: Cell::new(1),
+    };
+    let mut ticks = w.ticks;
+    let _ = level.inner.set_raw(pos, wire);
+    let powered = |level: &Occupied| {
+        let state = level.block_state(pos);
+        b.table.bool(state, b.props.powered)
+    };
+    b.entity_inside(&mut level, &mut ticks, pos);
+    assert!(powered(&level), "an entity inside presses the wire");
+    level.occupants.set(0);
+    for _ in 0..10 {
+        level.inner.time += 1;
+        b.tick_scheduled(&mut level, &mut ticks);
+    }
+    assert!(!powered(&level), "the wire releases after its 10-tick tick");
+    assert!(
+        !ticks.has_block_tick(pos, block),
+        "a released wire schedules no further tick"
+    );
+    level.occupants.set(1);
+    b.entity_inside(&mut level, &mut ticks, pos);
+    assert!(powered(&level), "the wire presses again on this tick");
+}

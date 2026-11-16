@@ -632,8 +632,6 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         }
         if pressed {
             self.schedule_tick(pos, block, 10);
-        } else if was {
-            self.schedule_tick(pos, block, 1);
         }
     }
     fn tripwire_hook_notify(&mut self, block: BlockId, pos: BlockPos, direction: Direction) {

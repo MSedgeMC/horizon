@@ -595,10 +595,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             {
                 self.button_check_pressed(pos, state);
             }
-        } else if data.is(Class::TripWire)
-            && !b.table.bool(state, b.props.powered)
-            && !self.ticks.has_block_tick(pos, b.block(state))
-        {
+        } else if data.is(Class::TripWire) && !b.table.bool(state, b.props.powered) {
             self.tripwire_check_pressed(pos);
         }
     }
