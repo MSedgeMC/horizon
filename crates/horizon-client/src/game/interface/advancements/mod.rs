@@ -496,6 +496,8 @@ impl Game<'_> {
                     kind: self.target_type(t),
                     position: g.position,
                     sneaking: g.sneaking,
+                    in_water: g.motion.as_ref().is_some_and(|m| m.fluids.was_touching_water),
+                    fall_flying: g.fall_flying,
                     input_sneak: g.input & 32 != 0,
                     team: self
                         .score
@@ -696,6 +698,8 @@ impl Game<'_> {
             swimming: p.pose == horizon_client::pose::Pose::Swimming,
             flying: p.flying,
             on_ground: p.ground.on_ground,
+            in_water: p.fluids.was_touching_water,
+            fall_flying: p.fall_flying,
             equipment: eq,
             vehicle,
             effects: self
@@ -826,6 +830,8 @@ impl Game<'_> {
             on_fire: m.fire_ticks > 0,
             baby: m.is_baby(),
             on_ground: m.on_ground,
+            in_water: m.fluids.in_water,
+            fall_flying: m.fall_flying,
             equipment,
             // LivingEntity.getActiveEffectsMap supplies the active predicate instances.
             effects: m

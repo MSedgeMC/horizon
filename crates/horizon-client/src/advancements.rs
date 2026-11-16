@@ -678,6 +678,10 @@ pub struct EntityView {
     pub flying: bool,
     pub baby: bool,
     pub on_ground: bool,
+    /// `Entity.isInWater` (`wasTouchingWater`): the last fluid update touched water.
+    pub in_water: bool,
+    /// `Entity.isFallFlying`: the shared fall-flying flag (gliding).
+    pub fall_flying: bool,
     /// mainhand, offhand, head, chest, legs, feet, body.
     pub equipment: [Option<ItemView>; 7],
     pub vehicle: Option<Box<EntityView>>,
@@ -1108,6 +1112,8 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                     && f("is_flying", e.flying)
                     && f("is_baby", e.baby)
                     && f("is_on_ground", e.on_ground)
+                    && f("is_in_water", e.in_water)
+                    && f("is_fall_flying", e.fall_flying)
             }
             "minecraft:equipment" => {
                 let slots = [
@@ -2494,6 +2500,32 @@ mod tests {
             &mob("minecraft:zombie"),
             &Flat,
             [0.0; 3]
+        ));
+    }
+    /// `EntityFlagsPredicate.matches`: the water and glide flags read the
+    /// entity's own fluid and fall-flying state, and an absent one is no
+    /// condition.
+    #[test]
+    fn entity_flags_read_water_and_fall_flying() {
+        let check = |v: serde_json::Value, e: &EntityView| {
+            super::entity(&serde_json::json!({"minecraft:flags": v}), e, &Flat, [0.0; 3])
+        };
+        let mut zombie = mob("minecraft:zombie");
+        assert!(check(serde_json::json!({"is_in_water": false}), &zombie));
+        assert!(!check(serde_json::json!({"is_in_water": true}), &zombie));
+        assert!(check(serde_json::json!({"is_fall_flying": false}), &zombie));
+        assert!(!check(serde_json::json!({"is_fall_flying": true}), &zombie));
+        zombie.in_water = true;
+        assert!(check(serde_json::json!({"is_in_water": true}), &zombie));
+        assert!(!check(serde_json::json!({"is_fall_flying": true}), &zombie));
+        zombie.fall_flying = true;
+        assert!(check(
+            serde_json::json!({"is_in_water": true, "is_fall_flying": true}),
+            &zombie
+        ));
+        assert!(!check(
+            serde_json::json!({"is_in_water": true, "is_on_fire": true}),
+            &zombie
         ));
     }
     /// `entity_killed_player` by a mob's melee hit: the mob is the killer and
