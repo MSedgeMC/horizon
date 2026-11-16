@@ -2428,7 +2428,10 @@ mod tests {
         // encodes far past it.
         let mut big = written_book_from_tag(&book(page(6000)));
         assert_eq!(big.pages[0].chars().count(), 6000);
-        assert!(!big.resolve(|_| None), "the encoded page is over 32767 characters");
+        assert!(
+            !big.resolve(|_| None),
+            "the encoded page is over 32767 characters"
+        );
         // A short styled page still resolves.
         let mut small = written_book_from_tag(&book(page(2)));
         assert!(small.resolve(|_| None));
