@@ -371,6 +371,13 @@ impl Component {
                 let (title, title_filtered) = filterable(r, |r| r.string(32))?;
                 let author = r.string(32767)?;
                 let generation = r.varint()?;
+                // WrittenBookContent's constructor rejects a generation outside 0..=3, so
+                // WrittenBookContent.STREAM_CODEC refuses the value.
+                if !(0..=3).contains(&generation) {
+                    return Err(crate::Error::new(format!(
+                        "book generation {generation}, expected 0 to 3"
+                    )));
+                }
                 let n = r.count(r.remaining())?;
                 let mut pages = (0..n)
                     .map(|_| filterable(r, |r| r.nbt()))
@@ -2318,6 +2325,37 @@ mod tests {
             let mut w = Writer::new();
             Slot::write(&stack, &mut w);
             assert_eq!(w.data, bytes);
+        }
+    }
+
+    #[test]
+    fn a_written_book_generation_outside_0_to_3_is_refused() {
+        // WrittenBookContent's constructor rejects a generation outside 0..=3, so its
+        // STREAM_CODEC refuses one: the component value must not decode.
+        let book = |generation: i32| {
+            let mut w = Writer::new();
+            for v in [1, 1, 1, 0, component::WRITTEN_BOOK_CONTENT] {
+                w.varint(v);
+            }
+            w.string("title");
+            w.bool(false);
+            w.string("author");
+            w.varint(generation);
+            w.varint(0);
+            w.bool(false);
+            w.data
+        };
+        for generation in [0, 3] {
+            assert!(
+                Slot::read(&mut Reader::new(&book(generation))).is_ok(),
+                "generation {generation}"
+            );
+        }
+        for generation in [-1, 4] {
+            assert!(
+                Slot::read(&mut Reader::new(&book(generation))).is_err(),
+                "generation {generation}"
+            );
         }
     }
 }
