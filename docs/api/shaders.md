@@ -271,6 +271,10 @@ no shadow into a pack's shadow map yet, and the first-person hand has no stage.
 
 ## Changelog
 
+- 2026-11-15: API 0.2 (experimental): `frame.light_direction` is the sun by day and the moon by night also for a pack
+  without a `[shadow]` stage, where it now equals the frame's `sun_direction` or `moon_direction`; it read straight up
+  (0, 1, 0) at every time of day until now, so a pack that traced its shadows along it got them straight down. Packs
+  with `[shadow]` see the same value as before. A fix of a value; no WGSL name changes.
 - 2026-11-14: API 0.2 (**breaking**, experimental): the entity stage keeps the engine's coverage unless the pack
   declares it, with `[entity] coverage`, `"engine"` (the default) or `"pack"`. Under `"engine"` the texture's alpha
   times the layer's opacity is cut and blends, not the returned alpha, and `horizon-shader check` refuses a `discard`
@@ -283,9 +287,14 @@ no shadow into a pack's shadow map yet, and the first-person hand has no stage.
   the registry refuse a 0.1 pack with `needs shader API 0.1; this Horizon serves 0.2`; the game draws without it.
   [Moving a pack to 0.2](#shader-api-02-experimental) is described above; Golden Hour 2.0.0 is the moved example. The
   0.1 reference is gone, and the templates of `horizon-shader new` are 0.2 packs. API 0.2 is unchanged.
+- 2026-11-15: API 0.2 (additions, experimental): compute `[[post]]` and `[[before_world]]` files trace under
+  `[ray_tracing]`. One that calls a trace function gets `RayHit`, `trace`, `trace_any`, `trace_layers`,
+  `trace_any_layers`, `RAY_SOLID`, `RAY_TRANSLUCENT`, `hit_normal_map`, `hit_specular_map` and `block_pbr_maps`, as
+  a post pass does; one that calls none, and every pack without the key, composes as before. A `[[before_world]]`
+  pass traces this frame's scene. `[ray_tracing]` also takes a `[[before_world]]` pass as what traces. The game runs
+  kept resources and compute passes beside `[ray_tracing]`.
 - 2026-11-15: API 0.2 (experimental): the game runs kept resources, compute `[[post]]` entries and
-  `[[before_world]]` passes (#16011 item 4), which it refused until now. It still refuses a pack that has them beside
-  `[ray_tracing]`, as one that needs a later Horizon. The API is unchanged.
+  `[[before_world]]` passes (#16011 item 4), which it refused until now. The API is unchanged.
 - 2026-11-15: API 0.2 (additions, experimental): fixed-size kept textures (`[[resource]]` with a `size`) may take
   32 MiB together, both versions counted, as much as kept buffers; it was 1 MiB, one 256×256 `rgba16float` texture.
   A camera-centred trail or height map, a light cache or a lookup table can now be a texture rather than a buffer
@@ -447,7 +456,7 @@ no shadow into a pack's shadow map yet, and the first-person hand has no stage.
 - 2026-10-31: API 0.1 (additions): translucent terrain in the shadow pass: `shadow_map_translucent`
   and `shadow_color`, so a pack can tint the light that passes through water and stained glass.
 - 2026-10-31: API 0.1 (additions): `Frame.mods`, eight `vec4<f32>` a native mod hands the pack it bundles each
-  frame (`native_shader_params` in docs/native-mods.md), all 0 when no mod sets them.
+  frame (`native_shader_params` in docs/modding/src/how-to/native-mods.md), all 0 when no mod sets them.
 - 2026-10-31: API 0.1 (additions): `[shadow]`: the engine draws the solid terrain the light sees
   into a distorted depth map each frame, which the material and post stages read as `shadow_map`
   with `shadow_sampler` and the prelude's `shadow_position`; the frame's `light_direction`,
