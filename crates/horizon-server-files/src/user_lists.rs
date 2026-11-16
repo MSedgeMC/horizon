@@ -463,11 +463,14 @@ impl<E: Entry> UserList<E> {
     pub fn save(&self) -> std::io::Result<()> {
         std::fs::write(&self.file, self.to_json())
     }
-    /// StoredUserList.load: a missing file leaves the list as it is.
+    /// StoredUserList.load: a missing file leaves the list as it is, and a path that exists but
+    /// cannot be read as a file is an error (vanilla opens its reader before clearing the map), with
+    /// the list it holds left alone.
     pub fn load(&mut self) -> Result<(), String> {
-        let Ok(text) = read_utf8(&self.file) else {
+        if !self.file.exists() {
             return Ok(());
-        };
+        }
+        let text = read_utf8(&self.file).map_err(|e| format!("{}: {e}", self.file.display()))?;
         self.load_str(&text)
     }
     pub fn load_str(&mut self, text: &str) -> Result<(), String> {
@@ -721,6 +724,38 @@ mod tests {
             std::fs::read_to_string(dir.join("whitelist.json")).unwrap(),
             "[]"
         );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `StoredUserList.load` checks for a missing path and then opens its reader: a path that is
+    /// there but is not a readable file throws, before the map is cleared, where Horizon used to
+    /// treat every read error as a missing list and carry on with an empty one.
+    #[test]
+    fn an_unreadable_list_is_an_error_and_keeps_the_list() {
+        let dir =
+            std::env::temp_dir().join(format!("horizon-lists-unreadable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("whitelist.json");
+        // A missing file is the empty list, and load succeeds.
+        let mut white = WhiteList::new(&file);
+        assert_eq!(white.load(), Ok(()));
+        assert!(white.is_empty());
+        // A readable file loads.
+        std::fs::write(
+            &file,
+            r#"[{"uuid":"069a79f4-44e9-4726-a5be-fca90e38aaf5","name":"Notch"}]"#,
+        )
+        .unwrap();
+        white.load().unwrap();
+        assert_eq!(white.entries().len(), 1);
+        // A path that exists but is not a readable file is an error, not a missing list; the entry
+        // already loaded stays, as vanilla clears the map only after its reader is open.
+        std::fs::remove_file(&file).unwrap();
+        std::fs::create_dir(&file).unwrap();
+        let error = white.load().unwrap_err();
+        assert!(error.contains("whitelist.json"), "{error}");
+        assert_eq!(white.entries().len(), 1, "a failed load keeps the list");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
