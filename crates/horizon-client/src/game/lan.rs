@@ -1262,10 +1262,7 @@ fn prepare_chunks((cx, cz): (i32, i32)) -> impl Iterator<Item = (i32, i32)> {
 }
 
 /// The chunks round `center` still to load, from `lit`.
-fn spawn_chunks_missing(
-    center: (i32, i32),
-    lit: impl Fn(i32, i32) -> bool,
-) -> Vec<(i32, i32)> {
+fn spawn_chunks_missing(center: (i32, i32), lit: impl Fn(i32, i32) -> bool) -> Vec<(i32, i32)> {
     prepare_chunks(center)
         .filter(|&(cx, cz)| !lit(cx, cz))
         .collect()
