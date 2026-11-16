@@ -678,6 +678,9 @@ pub struct EntityView {
     pub flying: bool,
     pub baby: bool,
     pub on_ground: bool,
+    /// Sheep: `Sheep.isSheared`. Only a sheep fills it, so a non-sheep
+    /// entity never matches `type_specific/sheep`.
+    pub sheared: Option<bool>,
     /// mainhand, offhand, head, chest, legs, feet, body.
     pub equipment: [Option<ItemView>; 7],
     pub vehicle: Option<Box<EntityView>>,
@@ -1167,6 +1170,13 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                         || e.struck
                             .iter()
                             .any(|s| entity(&p["entity_struck"], s, w, origin)))
+            }
+            "minecraft:type_specific/sheep" => {
+                // `SheepPredicate.matches`: only a sheep (`instanceof
+                // Sheep`), then the optional `sheared` flag.
+                e.sheared.is_some_and(|sheared| {
+                    p["sheared"].as_bool().is_none_or(|want| want == sheared)
+                })
             }
             "minecraft:type_specific/fishing_hook" => p["in_open_water"]
                 .as_bool()
@@ -2144,6 +2154,33 @@ mod tests {
                 || (tag == "minecraft:is_projectile"
                     && matches!(id, "minecraft:fireball" | "minecraft:arrow"))
         }
+    }
+    /// `SheepPredicate.matches`: only a sheep answers, with the optional
+    /// `sheared` flag; an empty predicate asks only that it is a sheep.
+    #[test]
+    fn a_sheep_predicate_reads_the_sheared_flag() {
+        let sheep = |sheared: bool| EntityView {
+            kind: "minecraft:sheep".into(),
+            sheared: Some(sheared),
+            ..Default::default()
+        };
+        let asks = |p: Value, e: &EntityView| {
+            entity(
+                &serde_json::json!({"type_specific/sheep": p}),
+                e,
+                &Flat,
+                [0.0; 3],
+            )
+        };
+        assert!(asks(serde_json::json!({"sheared": true}), &sheep(true)));
+        assert!(!asks(serde_json::json!({"sheared": true}), &sheep(false)));
+        assert!(asks(serde_json::json!({"sheared": false}), &sheep(false)));
+        assert!(asks(serde_json::json!({}), &sheep(false)));
+        let cow = EntityView {
+            kind: "minecraft:cow".into(),
+            ..Default::default()
+        };
+        assert!(!asks(serde_json::json!({}), &cow));
     }
     /// `BlockPredicate.matchesBlockEntity`: an `nbt` test needs a block
     /// entity whose `saveWithFullMetadata` contains the pattern

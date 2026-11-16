@@ -826,6 +826,8 @@ impl Game<'_> {
             on_fire: m.fire_ticks > 0,
             baby: m.is_baby(),
             on_ground: m.on_ground,
+            // `Sheep.isSheared`: only a sheep answers `type_specific/sheep`.
+            sheared: (m.kind.id == "minecraft:sheep").then_some(m.extra.sheared),
             equipment,
             // LivingEntity.getActiveEffectsMap supplies the active predicate instances.
             effects: m
