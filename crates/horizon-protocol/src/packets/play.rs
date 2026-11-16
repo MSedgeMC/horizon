@@ -2,9 +2,9 @@
 use crate::{
     Error, Result,
     buf::{
-        Bool, Byte, BytesN, ChunkPos, Codec, Double, Float, Ident, Int, List, Long, LpVec3, Nbt,
-        Opt, OptVarInt, Pos, Reader, SectionPos, Short, Str, StrN, UByte, Uuid, VarInt, VarLong,
-        VarVec3i, Vec3d, Writer,
+        Bool, Byte, BytesN, ChunkPos, Codec, Double, Float, Ident, Int, List, ListN, Long, LpVec3,
+        Nbt, Opt, OptVarInt, Pos, Reader, SectionPos, Short, Str, StrN, UByte, Uuid, VarInt,
+        VarLong, VarVec3i, Vec3d, Writer,
     },
     chunk::{ChunkData, LightData},
     entity_data::{EntityData, Particle, Value},
@@ -1022,7 +1022,7 @@ packet!(
 );
 packet!(
     /// ClientboundUpdateAttributesPacket: an entity's synced attribute instances.
-    UpdateAttributes { id: i32 => VarInt, values: Vec<AttributeSnapshot> => List<AttributeSnapshot> }
+    UpdateAttributes { id: i32 => VarInt, values: Vec<AttributeSnapshot> => ListN<AttributeSnapshot, 128> }
 );
 packet!(
     /// ClientboundSwingAnimationPacket: hand (0 main, 1 off) and the swing
@@ -3553,6 +3553,33 @@ mod tests {
         assert_eq!(body, expected);
         assert_eq!(crate::ids::play::clientbound::UPDATE_ATTRIBUTES, 134);
         assert_eq!(Clientbound::decode(134, &body[2..]).unwrap(), p);
+    }
+
+    #[test]
+    fn an_update_attributes_list_holds_at_most_128() {
+        // ClientboundUpdateAttributesPacket applies ByteBufCodecs.list(128).
+        let attributes = |n: usize| {
+            Clientbound::UpdateAttributes(UpdateAttributes {
+                id: 1,
+                values: (0..n)
+                    .map(|i| AttributeSnapshot {
+                        attribute: i as i32,
+                        base: 0.0,
+                        modifiers: Vec::new(),
+                    })
+                    .collect(),
+            })
+        };
+        let decode = |packet: &Clientbound| {
+            let Clientbound::UpdateAttributes(attributes) = packet else {
+                unreachable!()
+            };
+            let mut w = Writer::new();
+            UpdateAttributes::write(attributes, &mut w);
+            Clientbound::decode(crate::ids::play::clientbound::UPDATE_ATTRIBUTES, &w.data)
+        };
+        assert!(decode(&attributes(128)).is_ok());
+        assert!(decode(&attributes(129)).is_err());
     }
 
     #[test]
