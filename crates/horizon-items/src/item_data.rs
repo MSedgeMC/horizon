@@ -1145,6 +1145,14 @@ fn template_from(tag: &Tag) -> Option<ItemStack> {
         }
     }
 }
+/// `ChargedProjectiles.CODEC`: an `ItemStackTemplate.CODEC` list, whose
+/// alternative spelling is the bare item id.
+fn charged_stacks(tag: Option<&Tag>) -> Vec<ItemStack> {
+    let Some(Tag::List(list)) = tag else {
+        return Vec::new();
+    };
+    list.iter().filter_map(template_from).collect()
+}
 /// The stack a `show_item` hover event holds (`HoverEvent.ShowItem`): its
 /// `{id, count?, components?}` object.
 pub fn stack_from_hover(event: &serde_json::Value) -> Option<ItemStack> {
@@ -1747,13 +1755,7 @@ pub fn decode_components(components: Option<&Tag>) -> (u32, Option<Box<StackData
             Some(t) => int(t).map(|v| v.clamp(0, 1) as u8),
             None => None,
         },
-        charged: match seen.charged_projectiles {
-            Some(Tag::List(list)) => list
-                .iter()
-                .filter_map(crate::item_nbt::item_from_nbt)
-                .collect(),
-            _ => Vec::new(),
-        },
+        charged: charged_stacks(seen.charged_projectiles),
         container: match seen.container {
             Some(Tag::List(list)) => list
                 .iter()
@@ -3109,13 +3111,7 @@ mod tests {
                 Some(t) => int(t).map(|v| v.clamp(0, 1) as u8),
                 None => None,
             },
-            charged: match c.get("minecraft:charged_projectiles") {
-                Some(Tag::List(list)) => list
-                    .iter()
-                    .filter_map(crate::item_nbt::item_from_nbt)
-                    .collect(),
-                _ => Vec::new(),
-            },
+            charged: charged_stacks(c.get("minecraft:charged_projectiles")),
             container: match c.get("minecraft:container") {
                 Some(Tag::List(list)) => list
                     .iter()
@@ -3472,6 +3468,33 @@ mod carried_component_tests {
 #[cfg(test)]
 mod charged_projectile_template_tests {
     use super::*;
+
+    /// `ItemStackTemplate.CODEC` is a `Codec.withAlternative`: a projectile
+    /// entry may be the bare item id, which decodes as that item at count one
+    /// and saves back as the full template.
+    #[test]
+    fn a_bare_item_id_decodes_as_a_projectile() {
+        let stack = parse_stack(
+            r#"{id:"minecraft:crossbow",count:1,components:{"minecraft:charged_projectiles":["minecraft:arrow"]}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        let charged = &stack.data().expect("the charged list").charged;
+        assert_eq!(charged.len(), 1);
+        assert_eq!(
+            (&*charged[0].item, charged[0].count),
+            ("minecraft:arrow", 1)
+        );
+        let saved = encode_components(&stack).expect("components");
+        let Tag::List(list) = saved.get("minecraft:charged_projectiles").unwrap() else {
+            panic!("projectile list")
+        };
+        assert_eq!(
+            list[0].get("id").and_then(string).as_deref(),
+            Some("minecraft:arrow")
+        );
+        assert_eq!(list[0].get("count"), None, "count one is the default");
+    }
 
     #[test]
     fn charged_templates_omit_default_count_and_keep_components() {
