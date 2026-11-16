@@ -137,7 +137,7 @@ EnchantmentsByCost.enchant	port	crates/horizon-world/src/loot.rs::LootData::sele
 SingleEnchantment.enchant	port	crates/horizon-world/src/loot.rs::enchant	one enchantment at a level
 VanillaEnchantmentProviders.bootstrap	skip:data		registry bootstrap
 ArmorMaterials.makeDefense	skip:data		armour defence values come from item data
-ArmorTrim.addToTooltip	port	crates/horizon-client/src/game/blocks/stations.rs::Game::stack_tooltip_lines	upgrade title, trim pattern and material lines
+ArmorTrim.addToTooltip	port	crates/horizon-client/src/item_tooltip.rs::detail_lines	upgrade title, trim pattern and material lines; an inline holder's own description is read from the stack
 TrimMaterials.bootstrap	skip:data		registry bootstrap
 TrimMaterials.register	skip:data		trim materials are read from data
 TrimPatterns.bootstrap	skip:data		registry bootstrap

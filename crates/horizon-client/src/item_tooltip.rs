@@ -1257,21 +1257,26 @@ pub fn detail_lines(
         );
     }
     lines.extend(jukebox_line(stack, info, &display, translate));
-    // Trim.addToTooltip.
-    if let Some((material, pattern)) = data
-        .and_then(|d| d.trim.as_ref())
-        .and_then(crate::item_data::trim::named)
-    {
-        let short = |s: &str| s.trim_start_matches("minecraft:").to_owned();
+    // Trim.addToTooltip: the upgrade title, the pattern's description, then
+    // the material's. Either holder can be inline, and then its description
+    // travels on the stack instead of naming a registry entry.
+    if let Some((material, pattern)) = data.and_then(|d| d.trim.as_ref()) {
+        use crate::item_data::trim::Holder;
+        let named = |id: &str, kind: &str| {
+            let short = id.trim_start_matches("minecraft:");
+            text(&format!("{kind}.minecraft.{short}"))
+        };
+        let pattern = match pattern {
+            Holder::Named(id) => named(id, "trim_pattern"),
+            Holder::Direct(pattern) => crate::component::name_text(&pattern.description).plain(),
+        };
+        let material = match material {
+            Holder::Named(id) => named(id, "trim_material"),
+            Holder::Direct(material) => crate::component::name_text(&material.description).plain(),
+        };
         lines.push(text("item.minecraft.smithing_template.upgrade"));
-        lines.push(format!(
-            " {}",
-            text(&format!("trim_pattern.minecraft.{}", short(pattern)))
-        ));
-        lines.push(format!(
-            " {}",
-            text(&format!("trim_material.minecraft.{}", short(material)))
-        ));
+        lines.push(format!(" {pattern}"));
+        lines.push(format!(" {material}"));
     }
     lines.extend(
         enchantment_lines(stack, &display, enchantments)
@@ -1531,6 +1536,35 @@ mod tests {
             .iter()
             .any(|l| l == "Music Disc - 5")
         );
+    }
+
+    #[test]
+    fn an_inline_trim_shows_its_own_descriptions() {
+        use crate::item_data::trim::{Holder, Material, Pattern};
+        let mut stack = ItemStack::new("minecraft:iron_chestplate", 1);
+        stack.data_mut().trim = Some((
+            Holder::Direct(Material {
+                palette_id: "minecraft:gold".into(),
+                description: Tag::String("Gold".into()),
+            }),
+            Holder::Direct(Pattern {
+                asset_id: "minecraft:coast".into(),
+                description: Tag::String("Coast Armor Trim".into()),
+                decal: false,
+            }),
+        ));
+        let translate = |k: &str| {
+            (k == "item.minecraft.smithing_template.upgrade").then(|| "Upgrade".to_owned())
+        };
+        let lines = detail_lines(
+            &stack,
+            None,
+            &NoAttributeListener,
+            &Enchantments::default(),
+            &translate,
+            &|_| None,
+        );
+        assert_eq!(lines, ["Upgrade", " Coast Armor Trim", " Gold"]);
     }
 
     #[test]
