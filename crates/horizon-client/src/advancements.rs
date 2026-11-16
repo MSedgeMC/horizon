@@ -699,6 +699,12 @@ pub struct EntityView {
     /// Lightning: blocks it set on fire (`LightningBolt.blocksSetOnFire`).
     pub blocks_set_on_fire: i32,
     pub fishing_open_water: Option<bool>,
+    /// Raider: `Raider.isCaptain` (a patrol leader's ominous banner);
+    /// `None` for every other entity, which no raider predicate matches.
+    pub captain: Option<bool>,
+    /// Raider: `Raider.hasRaid()` (an assigned raid, or an active raid at
+    /// the raider's block, `ServerLevel.getRaidAt`).
+    pub has_raid: bool,
     pub variant: Option<String>,
     /// The data components the entity reports (`Entity.get`): id and value.
     pub components: Vec<(String, String)>,
@@ -1171,6 +1177,12 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             "minecraft:type_specific/fishing_hook" => p["in_open_water"]
                 .as_bool()
                 .is_none_or(|want| e.fishing_open_water == Some(want)),
+            // `RaiderPredicate.matches`: only a raider matches, and both flags
+            // default to false (`Codec.BOOL.optionalFieldOf`).
+            "minecraft:type_specific/raider" => e.captain.is_some_and(|captain| {
+                captain == p["is_captain"].as_bool().unwrap_or(false)
+                    && e.has_raid == p["has_raid"].as_bool().unwrap_or(false)
+            }),
             "minecraft:components" => components(p, e),
             // `TeamPredicate.matches`: a non-null effective team whose name
             // equals the string exactly.
@@ -2363,6 +2375,49 @@ mod tests {
         assert!(!super::entity(&want, &boat, &Flat, [0.0; 3]));
         boat.passengers.push(entity("minecraft:goat"));
         assert!(super::entity(&want, &boat, &Flat, [0.0; 3]));
+    }
+    /// `RaiderPredicate.matches`: a raider's captain flag and active raid;
+    /// the flags default to false, and any other entity never matches.
+    #[test]
+    fn a_raider_predicate_reads_its_captain_and_raid() {
+        let raider = |captain: bool, has_raid: bool| EntityView {
+            kind: "minecraft:pillager".into(),
+            captain: Some(captain),
+            has_raid,
+            ..Default::default()
+        };
+        let check = |p: serde_json::Value, e: &EntityView| super::entity(&p, e, &Flat, [0.0; 3]);
+        let predicate = |is_captain: Option<bool>, has_raid: Option<bool>| {
+            let mut p = serde_json::json!({"minecraft:type_specific/raider": {}});
+            if let Some(v) = is_captain {
+                p["minecraft:type_specific/raider"]["is_captain"] = v.into();
+            }
+            if let Some(v) = has_raid {
+                p["minecraft:type_specific/raider"]["has_raid"] = v.into();
+            }
+            p
+        };
+        let captain = raider(true, true);
+        assert!(check(predicate(Some(true), Some(true)), &captain));
+        for (is_captain, has_raid) in [(false, false), (true, false), (false, true)] {
+            assert!(
+                !check(predicate(Some(is_captain), Some(has_raid)), &captain),
+                "is_captain={is_captain} has_raid={has_raid} must not match a captain in a raid"
+            );
+        }
+        // Both flags default to false: an ordinary raider matches, and each
+        // written flag still has to agree with it.
+        assert!(check(predicate(None, None), &raider(false, false)));
+        assert!(!check(predicate(None, None), &captain));
+        assert!(!check(predicate(Some(false), None), &raider(false, true)));
+        assert!(check(predicate(None, Some(true)), &raider(false, true)));
+        assert!(!check(predicate(Some(true), None), &raider(false, false)));
+        // A non-raider never matches, even with both flags absent.
+        let zombie = EntityView {
+            kind: "minecraft:zombie".into(),
+            ..Default::default()
+        };
+        assert!(!check(predicate(None, None), &zombie));
     }
     /// `EntityNbtPredicate.matches`: the entity's saved compound holds the
     /// pattern (`NbtUtils.compareNbt(…, true)`); without one it fails.

@@ -66,7 +66,7 @@ PlayerPredicate.Builder.checkAdvancementDone	skip:java		builder
 PlayerPredicate.Builder.checkAdvancementCriterions	skip:java		builder
 PlayerPredicate.Builder.build	skip:java		builder
 PlayerPredicate.StatMatcher.createTypedCodec	skip:java		codec
-RaiderPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/raider arm: captain matches, and has_raid matches no raid running here; the advancement reader answers false for the key
+RaiderPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the advancement reader's minecraft:type_specific/raider arm: the is_captain flag and Raider.hasRaid (an assigned raid or an active raid at its block), both defaulting to false; the loot reader's Context::entity_matches keeps its arm (captain matches, and has_raid matches no raid there)
 SheepPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/sheep arm, the sheared flag; the advancement reader answers false for the key
 SteppingOnPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: no on-ground test; the block is read 0.5 below the feet
 TargetedEntityPredicate.matches	missing		minor: targeted_entity key is not read; no vanilla advancement uses it

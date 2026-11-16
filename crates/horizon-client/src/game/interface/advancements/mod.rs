@@ -819,6 +819,7 @@ impl Game<'_> {
             per_tick: [m.velocity.x, m.velocity.y, m.velocity.z],
             fall_distance: m.fall_distance,
         });
+        let is_raider = horizon_client::mobs::raider::is_raider(m.species());
         EntityView {
             movement,
             kind: m.kind.id.clone(),
@@ -843,6 +844,22 @@ impl Game<'_> {
                 .into_iter()
                 .collect(),
             custom_name: m.custom_name_text.as_ref().map(Text::component),
+            captain: is_raider.then(|| horizon_client::mobs::raider::is_captain(m)),
+            // `Raider.hasRaid`: an assigned raid, or an active one within
+            // `Raids.getNearbyRaid`'s 96-block radius (`ServerLevel.getRaidAt`).
+            has_raid: is_raider
+                && (m
+                    .extra
+                    .raider
+                    .as_deref()
+                    .is_some_and(|s| s.raid_id.is_some())
+                    || self
+                        .raiding_nearby([
+                            m.position.x.floor() as i32,
+                            m.position.y.floor() as i32,
+                            m.position.z.floor() as i32,
+                        ])
+                        .is_some()),
             passengers,
             nbt,
             team: self.mob_team_of(m).map(|t| t.name.clone()),
