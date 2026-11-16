@@ -362,8 +362,18 @@ fn is_json_number(s: &str) -> bool {
     i == b.len()
 }
 
+/// Gson's `JsonReader` skips one U+FEFF at the very start of its text, in the
+/// first buffer fill, and only there.
+fn reader(s: &[u16], mode: Mode) -> Reader<'_> {
+    Reader {
+        s,
+        pos: usize::from(s.first() == Some(&0xFEFF)),
+        mode,
+    }
+}
+
 fn parse_mode(s: &[u16], mode: Mode) -> Option<Json> {
-    let mut r = Reader { s, pos: 0, mode };
+    let mut r = reader(s, mode);
     let value = r.value(0).ok()?;
     // JsonParser.parseReader: the whole document must be consumed.
     if r.skip_ws().ok()?.is_some() {
@@ -387,13 +397,7 @@ pub fn parse_strict(s: &[u16]) -> Option<Json> {
 /// `GsonHelper.fromJson`: read one value without requiring the end of the document.
 /// Container and string syntax is strict; Gson's legacy case-insensitive keywords remain accepted.
 pub fn parse_prefix_strict(s: &[u16]) -> Option<Json> {
-    Reader {
-        s,
-        pos: 0,
-        mode: Mode::GsonPrefix,
-    }
-    .value(0)
-    .ok()
+    reader(s, Mode::GsonPrefix).value(0).ok()
 }
 
 /// `GsonHelper.toStableString`: keys in natural (UTF-16) order, Gson escaping.
@@ -640,6 +644,23 @@ mod tests {
             String::from_utf16(&to_stable_string(&j)).unwrap(),
             r#"{"color":"red","text":"a"}"#
         );
+    }
+    /// Gson JsonReader skips one byte-order mark at the start of its text.
+    #[test]
+    fn one_leading_byte_order_mark_is_skipped() {
+        assert_eq!(parse_strict(&w("\u{feff}[]")), Some(Json::Arr(Vec::new())));
+        assert_eq!(
+            parse_lenient(&w("\u{feff}{\"a\" = \"Apple\"}")),
+            Some(Json::object(vec![("a", Json::string("Apple"))]))
+        );
+        assert_eq!(
+            parse_prefix_strict(&w("\u{feff}{\"text\":\"x\"}")),
+            Some(Json::object(vec![("text", Json::string("x"))]))
+        );
+        // One mark, only at the very start: Gson strips it in the first fill.
+        for bad in ["\u{feff}\u{feff}[]", " \u{feff}[]", "[]\u{feff}"] {
+            assert!(parse_strict(&w(bad)).is_none(), "{bad:?}");
+        }
     }
     #[test]
     fn java_floating_point_strings() {
