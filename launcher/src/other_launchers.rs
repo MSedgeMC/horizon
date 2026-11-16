@@ -20,7 +20,9 @@
 //!   <https://support.curseforge.com/support/solutions/articles/9000238895-how-to-move-your-minecraft-modding-folder>,
 //!   <https://help.akliz.net/docs/make-a-curseforge-launcher-modpack-and-server-pack>
 //! - The Modrinth App: its folder (`ModrinthApp`, `com.modrinth.theseus` before 0.8.0) keeps each
-//!   instance's game folder in `profiles/<name>/`.
+//!   instance's game folder in `profiles/<name>/`; the `profile.json` an older App keeps there
+//!   names its game version and loader (`metadata.game_version`, `metadata.loader`,
+//!   `metadata.loader_version.id`, read by the App's own legacy converter).
 //!   <https://support.modrinth.com/en/articles/8797641-modrinth-app-storage-folder-location>,
 //!   <https://github.com/modrinth/code/issues/5825>
 //! - ATLauncher: no public page describes the files of an instance, so this follows what real
@@ -36,8 +38,8 @@
 //!   in a folder named `instances` (<https://github.com/Griefed/ServerPackCreator>, README).
 //!   Every other field is ignored.
 //!
-//! Neither the CurseForge app nor the Modrinth App describes where it records an instance's
-//! Minecraft version, so the player names it when copying one.
+//! The CurseForge app does not describe where it records an instance's Minecraft version, so the
+//! player names it when copying one; a Modrinth App profile with a `profile.json` names its own.
 use crate::instances::{self, Instance};
 use crate::loaders;
 use crate::sources::{self, Folders, Os};
@@ -351,9 +353,43 @@ fn with_curseforge_target(mut found: Found) -> Found {
     found
 }
 
-/// The Modrinth App's instances: in its folder's `profiles/`.
+/// A Modrinth App instance's `profile.json`: the game version and loader it records. An older
+/// profile (the `com.modrinth.theseus` folder) keeps one; a newer App keeps this in its database.
+fn modrinth_profile(dir: &Path) -> Option<(String, Option<Loader>)> {
+    let text = fs::read_to_string(dir.join("profile.json")).ok()?;
+    let json: Value = serde_json::from_str(&text).ok()?;
+    let metadata = json.get("metadata")?;
+    let minecraft = metadata.get("game_version")?.as_str()?.trim();
+    if minecraft.is_empty() {
+        return None;
+    }
+    let loader = metadata
+        .get("loader")
+        .and_then(Value::as_str)
+        .and_then(loader_of_name)
+        .and_then(|name| {
+            let version = metadata.get("loader_version")?.get("id")?.as_str()?.trim();
+            (!version.is_empty()).then(|| Loader {
+                name,
+                version: version.to_string(),
+            })
+        });
+    Some((minecraft.to_string(), loader))
+}
+
+/// The Modrinth App's instances: in its folder's `profiles/`, each with the game version and
+/// loader a `profile.json` records.
 pub fn modrinth_app_profiles(root: &Path) -> Vec<Found> {
     game_folders(&root.join("profiles"), MODRINTH_APP)
+        .into_iter()
+        .map(|mut found| {
+            if let Some((minecraft, loader)) = modrinth_profile(&found.game) {
+                found.minecraft = Some(minecraft);
+                found.loader = loader;
+            }
+            found
+        })
+        .collect()
 }
 
 /// The loader of an ATLauncher instance: its `launcher.loaderVersion` holds a `type` and a

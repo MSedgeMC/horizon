@@ -153,6 +153,62 @@ fn official_launcher_profiles() {
 }
 
 #[test]
+fn modrinth_app_profiles_name_their_game_and_loader() {
+    let root = scratch("modrinth");
+    let profile = |dir: &Path, profile: serde_json::Value| {
+        write(&dir.join("profile.json"), &profile.to_string());
+        write(&dir.join("mods/a.jar"), "jar");
+    };
+    let fabric = root.join("profiles/Fabric 1.21");
+    profile(
+        &fabric,
+        json!({"metadata": {
+            "name": "Fabric 1.21",
+            "game_version": "1.21.1",
+            "loader": "fabric",
+            "loader_version": {"id": "0.16.9"}
+        }}),
+    );
+    let vanilla = root.join("profiles/Vanilla");
+    profile(
+        &vanilla,
+        json!({"metadata": {"name": "Vanilla", "game_version": "1.20.1", "loader": "vanilla"}}),
+    );
+    // A loader with no version is dropped, as the App records vanilla.
+    let forge = root.join("profiles/Forge");
+    profile(
+        &forge,
+        json!({"metadata": {"name": "Forge", "game_version": "1.20.1", "loader": "forge"}}),
+    );
+    // A profile.json that cannot be read leaves the version unknown, as before.
+    let broken = root.join("profiles/Broken");
+    write(&broken.join("profile.json"), "{");
+    write(&broken.join("mods/b.jar"), "jar");
+
+    let found = modrinth_app_profiles(&root);
+    let short: Vec<_> = found
+        .iter()
+        .map(|f| {
+            (
+                f.name.as_str(),
+                f.minecraft.as_deref(),
+                f.loader.as_ref().map(|l| (l.name, l.version.as_str())),
+            )
+        })
+        .collect();
+    assert_eq!(
+        short,
+        [
+            ("Broken", None, None),
+            ("Fabric 1.21", Some("1.21.1"), Some(("fabric", "0.16.9"))),
+            ("Forge", Some("1.20.1"), None),
+            ("Vanilla", Some("1.20.1"), None),
+        ]
+    );
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn copies_an_instance_but_only_what_a_shared_folder_holds_for_one() {
     let root = scratch("copy");
     let game = root.join("game");
