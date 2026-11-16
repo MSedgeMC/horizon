@@ -237,7 +237,7 @@ impl Game<'_> {
                     if let Some(r) = self.remote.as_mut() {
                         r.decode_errors += 1;
                         if r.decode_errors <= 20 {
-                            log::warn!("Horizon: skipped undecodable packet {e}");
+                            log::warn!("Horizon: undecodable packet {e}; disconnecting");
                         }
                     }
                 }

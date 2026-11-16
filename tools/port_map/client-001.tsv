@@ -25,7 +25,7 @@ ClientChunkCache.Storage.refreshEmptySections	skip:java		empty-section bookkeepi
 ClientChunkCache.Storage.markSectionEmpty	skip:java		empty-section set update; see Storage.onSectionEmptinessChanged
 ClientChunkCache.Storage.markSectionNotEmpty	skip:java		empty-section set update; see Storage.onSectionEmptinessChanged
 ClientChunkCache.Storage.dumpChunks	skip:debug		writes a chunk list file for debugging
-ClientCommonPacketListenerImpl.onPacketError	missing		minor: Horizon logs an undecodable packet and carries on (Event::DecodeError) instead of disconnecting with a report
+ClientCommonPacketListenerImpl.onPacketError	inline	crates/horizon-client/src/net.rs::receive_play	an undecodable play packet logs and disconnects with disconnect.packetError; no report file (storeDisconnectionReport is skip:debug)
 ClientCommonPacketListenerImpl.createDisconnectionInfo	skip:debug		builds the disconnect crash report and its file
 ClientCommonPacketListenerImpl.storeDisconnectionReport	skip:debug		writes the disconnect report file under debug/
 ClientCommonPacketListenerImpl.shouldHandleMessage	inline	crates/horizon-client/src/net.rs::receive_play	minor: receive_play returns at Transfer, so nothing else is read after a transfer starts

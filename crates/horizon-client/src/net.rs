@@ -90,7 +90,8 @@ pub enum Event {
         name: String,
     },
     Packet(Box<play::Clientbound>),
-    /// A packet that failed to decode (skipped, like vanilla's skippable packets).
+    /// A packet that failed to decode. The connection is then closed with
+    /// `disconnect.packetError`, as `ClientCommonPacketListenerImpl.onPacketError` does.
     DecodeError(String),
     /// The server sent us back to configuration (`ClientboundStartConfigurationPacket`):
     /// the game shows `ServerReconfigScreen` until the server logs it in again.
@@ -988,8 +989,10 @@ fn receive_play(
                     id,
                 )
                 .unwrap_or("?");
+                // ClientCommonPacketListenerImpl.onPacketError: a packet that cannot be handled is
+                // logged and the connection is disconnected, not skipped.
                 let _ = send.send(Event::DecodeError(format!("{name}: {err}")));
-                continue;
+                return Ok(Reason::keyed("disconnect.packetError", lang));
             }
         };
         if let Some(rec) = recorder.lock().unwrap().as_ref()
@@ -1977,6 +1980,43 @@ mod tests {
         );
         writer.lock().unwrap().take().unwrap().shutdown();
         assert!(thread.join().unwrap().is_err());
+    }
+
+    #[test]
+    fn an_undecodable_play_packet_disconnects_with_the_packet_error_reason() {
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(writer)));
+        let (send, events) = channel();
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &AtomicBool::new(false),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                Path::new("."),
+                &Arc::new(Mutex::new(None)),
+            )
+        });
+        let mut server = Connection::local(server);
+        // ClientboundKeepAlive's eight-byte id, cut to seven: vanilla's decoder cannot make a packet
+        // of it, so onPacketError's disconnect is due rather than a skipped packet.
+        let keepalive = play::Clientbound::KeepAlive(cfg::KeepAlive { id: 9 }).encode();
+        server.send(&keepalive[..keepalive.len() - 1]).unwrap();
+        drop(server);
+        let reason = match thread.join().unwrap() {
+            Ok(reason) => reason,
+            Err(e) => panic!("the packet error was a retryable failure: {}", e.text),
+        };
+        assert_eq!(reason.key.as_deref(), Some("disconnect.packetError"));
+        assert!(matches!(
+            events.recv_timeout(Duration::from_secs(1)).unwrap(),
+            Event::DecodeError(_)
+        ));
     }
 
     #[test]
