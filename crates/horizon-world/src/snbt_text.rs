@@ -6,13 +6,16 @@ use horizon_core::nbt::Tag;
 use horizon_core::java_number::{double_to_string, float_to_string};
 
 /// `SnbtGrammar.escapeControlCharacters`.
-fn escape_control(c: char) -> Option<&'static str> {
+fn escape_control(c: char) -> Option<String> {
     Some(match c {
-        '\u{8}' => "b",
-        '\u{c}' => "f",
-        '\n' => "n",
-        '\r' => "r",
-        '\t' => "t",
+        '\u{8}' => "b".into(),
+        '\u{c}' => "f".into(),
+        '\n' => "n".into(),
+        '\r' => "r".into(),
+        '\t' => "t".into(),
+        // Every other character below U+0020 is written as `\xNN`; Java's
+        // `HexFormat` here uses uppercase digits.
+        _ if c < ' ' => format!("x{:02X}", c as u32),
         _ => return None,
     })
 }
@@ -27,7 +30,7 @@ pub fn quote_and_escape(input: &str) -> String {
             match escape_control(c) {
                 Some(e) => {
                     out.push('\\');
-                    out.push_str(e);
+                    out.push_str(&e);
                 }
                 None => out.push(c),
             }
@@ -179,5 +182,20 @@ mod tests {
                 assert_eq!(to_snbt(&Tag::Double(bits)), format!("{prefix}{expected}d"));
             }
         }
+    }
+
+    /// `SnbtGrammar.escapeControlCharacters`: `\b`, `\t`, `\n`, `\f` and
+    /// `\r` have named escapes; every other character below U+0020 is `\xNN`
+    /// with two uppercase hex digits, in values and in compound keys.
+    #[test]
+    fn control_characters_below_space_use_hex_escapes() {
+        assert_eq!(
+            quote_and_escape("a\u{0}b\u{1}c\u{b}d\u{1f}e"),
+            "\"a\\x00b\\x01c\\x0Bd\\x1Fe\""
+        );
+        assert_eq!(
+            to_snbt(&Tag::compound([("\u{2}", Tag::String("\u{3}".into()))])),
+            "{\"\\x02\":\"\\x03\"}"
+        );
     }
 }
