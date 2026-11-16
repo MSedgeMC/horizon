@@ -1540,11 +1540,27 @@ packet!(
     /// ServerboundJigsawGeneratePacket: the jigsaw block's Generate button.
     JigsawGenerate { pos: [i32; 3] => Pos, levels: i32 => VarInt, keep_jigsaws: bool => Bool }
 );
+/// `CommandBlockEntity.Mode` has three values: 0 sequence, 1 auto and
+/// 2 redstone. Vanilla reads it with `readEnum`, which indexes the enum's
+/// `values()` array and throws past the end.
+struct CommandBlockMode;
+impl Codec<i32> for CommandBlockMode {
+    fn read(r: &mut Reader) -> Result<i32> {
+        let mode = r.varint()?;
+        if !(0..3).contains(&mode) {
+            return Err(Error::new(format!("invalid command block mode {mode}")));
+        }
+        Ok(mode)
+    }
+    fn write(v: &i32, w: &mut Writer) {
+        w.varint(*v);
+    }
+}
 packet!(
     /// ServerboundSetCommandBlockPacket: the command block's command, its
     /// mode (`CommandBlockEntity.Mode` ordinal) and the track output (1),
     /// conditional (2) and automatic (4) flags.
-    SetCommandBlock { pos: [i32; 3] => Pos, command: String => Str, mode: i32 => VarInt, flags: i8 => Byte }
+    SetCommandBlock { pos: [i32; 3] => Pos, command: String => Str, mode: i32 => CommandBlockMode, flags: i8 => Byte }
 );
 packet!(
     /// ServerboundSetCommandMinecartPacket: the command minecart's entity id,
@@ -3702,6 +3718,42 @@ mod tests {
             w.data,
             [0xAC, 0x02, 6, b's', b'a', b'y', b' ', b'h', b'i', 1]
         );
+    }
+
+    #[test]
+    fn a_command_block_mode_ordinal_must_name_a_known_mode() {
+        // CommandBlockEntity.Mode.values(): 0 sequence, 1 auto, 2 redstone.
+        // Vanilla reads it with readEnum, which indexes the enum's three
+        // values and throws past the end.
+        let payload = |mode: i32| {
+            let mut w = Writer::new();
+            SetCommandBlock::write(
+                &SetCommandBlock {
+                    pos: [0, 64, 0],
+                    command: "say hi".into(),
+                    mode,
+                    flags: 0,
+                },
+                &mut w,
+            );
+            w.data
+        };
+        let decode = |mode: i32| {
+            Serverbound::decode(
+                crate::ids::play::serverbound::SET_COMMAND_BLOCK,
+                &payload(mode),
+            )
+        };
+        for mode in 0..3 {
+            assert!(decode(mode).is_ok());
+        }
+        for mode in [3, -1] {
+            let err = decode(mode).unwrap_err();
+            assert!(
+                err.to_string().contains("invalid command block mode"),
+                "{err}"
+            );
+        }
     }
 
     #[test]
