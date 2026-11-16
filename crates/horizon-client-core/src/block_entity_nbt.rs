@@ -669,13 +669,17 @@ pub fn canonical(tag: &Tag) -> Option<Tag> {
             }
         }
         "minecraft:beehive" => {
+            // `Occupant.LIST_CODEC` (`Occupant.CODEC.listOf()`): each entry's
+            // `entity_data` is a `TypedEntityData<EntityType>` (its `id` is
+            // required) and both tick counts are ints. One entry that fails
+            // fails the list, and `loadAdditional` then reads no bees at all.
             let bees = match tag.get("bees") {
                 Some(Tag::List(list)) => list
                     .iter()
-                    .filter_map(|bee| {
-                        let data = bee
-                            .get("entity_data")
-                            .filter(|d| matches!(d, Tag::Compound(_)))?;
+                    .map(|bee| {
+                        let data = bee.get("entity_data").filter(
+                            |d| matches!(d, Tag::Compound(c) if c.contains_key(&"id".into())),
+                        )?;
                         Some(Tag::compound([
                             ("entity_data", data.clone()),
                             ("ticks_in_hive", Tag::Int(int(bee.get("ticks_in_hive"))?)),
@@ -685,7 +689,8 @@ pub fn canonical(tag: &Tag) -> Option<Tag> {
                             ),
                         ]))
                     })
-                    .collect(),
+                    .collect::<Option<Vec<_>>>()
+                    .unwrap_or_default(),
                 _ => Vec::new(),
             };
             f.put("bees", Tag::List(bees));
@@ -898,6 +903,35 @@ mod tests {
         assert_eq!(
             picked.get("spawn_data"),
             Some(&snbt(r#"{entity:{id:"minecraft:skeleton"}}"#))
+        );
+    }
+
+    /// `BeehiveBlockEntity.Occupant.LIST_CODEC` is `Occupant.CODEC.listOf()`:
+    /// an entry whose `entity_data` has no `id`, or whose tick counts are
+    /// missing, fails its list, and `loadAdditional` then reads no bees at
+    /// all -- the well-formed entries do not survive alone.
+    #[test]
+    fn a_bee_list_with_one_invalid_entry_loads_none() {
+        let bees = |list: &str| {
+            canon(&format!(
+                "{{id:\"minecraft:beehive\",x:1,y:2,z:3,bees:{list}}}"
+            ))
+            .get("bees")
+            .cloned()
+        };
+        let bee = r#"{entity_data:{id:"minecraft:bee"},ticks_in_hive:0,min_ticks_in_hive:600}"#;
+        assert_eq!(bees(&format!("[{bee}]")), Some(Tag::List(vec![snbt(bee)])));
+        // No `id`: `TypedEntityData.codec(EntityType.CODEC)` fails.
+        assert_eq!(
+            bees(r#"[{entity_data:{},ticks_in_hive:0,min_ticks_in_hive:600}]"#),
+            Some(Tag::List(Vec::new()))
+        );
+        // A tick count that is not an int fails `Occupant.CODEC`.
+        assert_eq!(
+            bees(&format!(
+                r#"[{bee},{{entity_data:{{id:"minecraft:bee"}},ticks_in_hive:0}}]"#
+            )),
+            Some(Tag::List(Vec::new()))
         );
     }
 
