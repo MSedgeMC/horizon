@@ -36,9 +36,16 @@ impl Confirm {
             _ => Some(0),
         };
     }
-    /// Left or right arrow key focuses yes or no.
+    /// Left or right arrow key focuses yes or no: with no focus yet, the
+    /// arrow starts at the screen's edge behind it (`Screen`'s
+    /// `getBorderForArrowNavigation`), so Left lands on the rightmost button.
     pub fn arrow(&mut self, left: bool) {
-        self.focus = Some(if left { 0 } else { 1 });
+        self.focus = Some(match self.focus {
+            None if left => 1,
+            None => 0,
+            Some(_) if left => 0,
+            Some(_) => 1,
+        });
     }
     /// The answer of the currently focused button.
     pub fn answer(&self) -> Option<bool> {
@@ -187,7 +194,9 @@ impl Choice {
                     Some((cur + 1).min(count - 1))
                 }
             }
-            None => Some(if left { 0 } else { count - 1 }),
+            // `Screen`'s focus navigation: from no focus the arrow starts at
+            // the screen's edge behind it.
+            None => Some(if left { count - 1 } else { 0 }),
         };
     }
     /// The index of the currently focused button.
@@ -367,5 +376,26 @@ mod tests {
         assert_eq!(choice.focus, Some(1));
         choice.arrow(true);
         assert_eq!(choice.focus, Some(0));
+    }
+
+    /// `Screen.getBorderForArrowNavigation` with nothing focused: the start
+    /// is the screen's edge behind the arrow, so Left focuses the rightmost
+    /// button and Right the leftmost, on both the two-button and row forms.
+    #[test]
+    fn arrows_from_no_focus_start_at_the_screens_edge() {
+        let (title, message) = (Text::literal("Title"), Text::literal("Message"));
+        let mut confirm = Confirm::new(&font(), (480.0, 270.0), &title, &message);
+        confirm.arrow(true);
+        assert_eq!(confirm.focus, Some(1), "Left starts on the rightmost, No");
+        let mut confirm = Confirm::new(&font(), (480.0, 270.0), &title, &message);
+        confirm.arrow(false);
+        assert_eq!(confirm.focus, Some(0), "Right starts on the leftmost, Yes");
+
+        let mut choice = Choice::new(&font(), (480.0, 270.0), &title, &message, 3, 100.0);
+        choice.arrow(true);
+        assert_eq!(choice.focus, Some(2), "Left starts on the rightmost button");
+        let mut choice = Choice::new(&font(), (480.0, 270.0), &title, &message, 3, 100.0);
+        choice.arrow(false);
+        assert_eq!(choice.focus, Some(0), "Right starts on the leftmost button");
     }
 }
