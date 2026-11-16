@@ -12,7 +12,7 @@ Leashable.readLeashData	port	crates/horizon-client/src/mobs/leash.rs::pending_fr
 Leashable.restoreLeashFromSave	port	crates/horizon-client/src/game/entities/leads.rs::Game::tick_leads	holder found by UUID or knot block; a lead whose holder never shows up drops as an item after 100 ticks
 Leashable.angularFriction	inline	crates/horizon-client/src/mobs/leash.rs::tick	gap: minor: ground friction is a fixed 0.6 times 0.91, not the friction of the block under the mob (ice, slime)
 Leashable.checkElasticInteractions	port	crates/horizon-client/src/mobs/leash.rs::tick	live mob dispatch selects shared quad physics only when both holder and leashee support it; llama remains single
-Leashable.getHolderMovement	port	crates/horizon-client/src/mobs/leash.rs::holder_state	gap: minor: the holder's velocity is always used; a NoAI mob holder should count as standing still
+Leashable.getHolderMovement	port	crates/horizon-client/src/mobs/leash.rs::holder_state	
 Leashable.computeElasticInteraction	port	crates/horizon-client/src/mobs/leash.rs::spring	gap: minor: single attachment pair (0, 0.5, 0.5 of the mob and 0, 0.5, 0 of the holder); the four-point version is missing
 Leashable.createQuadLeashOffsets	port	crates/horizon-client/src/mobs/leash.rs::Holder::create_quad_leash_offsets	four attachment points around an entity, front-left first, clockwise from above
 Leashable.leashableLeashedTo	port	crates/horizon-client/src/game/entities/leads.rs::Game::player_leashed	only the player as holder (box of 32); mob and knot holders are filtered inline in interact_leash and interact_knot

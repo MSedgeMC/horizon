@@ -2739,6 +2739,7 @@ impl Mob {
             alive: m.alive(),
             removed: m.removed,
             invulnerable: m.is_invulnerable(),
+            no_ai: m.no_ai,
             baby: m.is_baby(),
             // A villager is "in love" when it is willing to breed (`canBreed`).
             in_love: if villager {

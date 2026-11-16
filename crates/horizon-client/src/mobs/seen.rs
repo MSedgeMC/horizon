@@ -21,6 +21,9 @@ pub struct Seen {
     /// arismoko/horizon#916), which `asValidTarget` refuses a target by (arismoko/horizon#1175): a
     /// valid-target rule the tick's view asks.
     pub invulnerable: bool,
+    /// `Mob.isNoAi`: `Leashable.getHolderMovement` treats such a holder as
+    /// standing still, whatever its body's movement is.
+    pub no_ai: bool,
     pub baby: bool,
     pub in_love: bool,
     pub tame: bool,

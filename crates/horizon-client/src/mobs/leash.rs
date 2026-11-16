@@ -127,7 +127,9 @@ pub fn holder_state(w: &MobWorld, holder: Holder) -> Option<HolderState> {
                 width: hi.x - lo.x,
                 height: hi.y - lo.y,
                 yaw: s.yaw,
-                velocity: s.velocity,
+                // `Leashable.getHolderMovement`: a NoAI mob holder counts as
+                // standing still.
+                velocity: if s.no_ai { Vec3::ZERO } else { s.velocity },
             })
         }
         Holder::Boat(id) => w
@@ -1265,5 +1267,42 @@ mod tests {
             assert!(!can_be_leashed(&empty), "a cube with no block in it");
             assert!(can_be_leashed(&full), "a cube holding a block");
         });
+    }
+}
+
+#[cfg(test)]
+mod no_ai_holder_tests {
+    use super::*;
+    use crate::mobs::world::with_test_world;
+
+    /// `Leashable.getHolderMovement`: a holder that is a Mob with NoAI counts
+    /// as standing still, whatever its body's movement is. `holder_state`
+    /// marked the held mob's holder with that body movement before.
+    #[test]
+    fn a_no_ai_mob_holder_counts_as_standing_still() {
+        let mut states = None;
+        if !with_test_world(&[], |w, types| {
+            let kind = std::sync::Arc::new(types.types["minecraft:cow"].clone());
+            let mut moving = Mob::new(2, kind.clone(), Vec3::new(3.5, 64.0, 0.5), 0.0);
+            moving.velocity = Vec3::new(0.2, 0.0, 0.0);
+            let mut no_ai = Mob::new(3, kind, Vec3::new(5.5, 64.0, 0.5), 0.0);
+            no_ai.no_ai = true;
+            no_ai.velocity = Vec3::new(0.2, 0.0, 0.0);
+            let items = w.items.unwrap();
+            let seen = [moving.seen(None, items), no_ai.seen(None, items)];
+            let world = MobWorld {
+                others: &seen,
+                ..w.clone()
+            };
+            states = Some((
+                holder_state(&world, Holder::Mob(2)).unwrap().velocity,
+                holder_state(&world, Holder::Mob(3)).unwrap().velocity,
+            ));
+        }) {
+            return;
+        }
+        let (moving, no_ai) = states.unwrap();
+        assert_eq!(moving, Vec3::new(0.2, 0.0, 0.0));
+        assert_eq!(no_ai, Vec3::ZERO, "a NoAI holder drags nothing");
     }
 }
