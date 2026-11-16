@@ -53,6 +53,8 @@ pub(crate) struct TestLevel {
     pub cake_asks: std::cell::Cell<u32>,
     pub tick_ready: bool,
     pub block_events_ready: bool,
+    /// What `count_entities` answers (for every query a test asks about).
+    pub entity_count: usize,
     /// Positions that refuse fluids, fire and piston moves, as a land claim would.
     pub guarded: HashSet<BlockPos>,
     /// What `adjust_signal` answers at a position: the weak and direct signal,
@@ -133,6 +135,7 @@ impl TestLevel {
             client_side: false,
             tick_ready: true,
             block_events_ready: true,
+            entity_count: 0,
             guarded: HashSet::new(),
             fire_asks: Default::default(),
             source_asks: Default::default(),
@@ -162,6 +165,16 @@ impl TestLevel {
 }
 impl crate::level::BlockEntityNeighbors for TestLevel {}
 impl LevelAccess for TestLevel {
+    fn count_entities(
+        &self,
+        _area: horizon_core::geometry::Aabb,
+        query: super::EntityQuery,
+    ) -> usize {
+        match query {
+            super::EntityQuery::Everything | super::EntityQuery::Mobs => self.entity_count,
+            super::EntityQuery::Minecart | super::EntityQuery::Arrows => 0,
+        }
+    }
     fn cake_can_eat(&self, vanilla: bool) -> bool {
         self.cake_asks.set(self.cake_asks.get() + 1);
         self.cake_answer.unwrap_or(vanilla)

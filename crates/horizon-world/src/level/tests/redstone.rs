@@ -1136,6 +1136,30 @@ fn a_comparator_reads_the_output_vanilla_gives_each_state_based_block() {
     );
 }
 
+/// `BasePressurePlateBlock.entityInside` reads the plate's strength again for
+/// every entity that enters, even while it is pressed: a weighted plate takes
+/// a second entity's weight at once, not at its next scheduled tick.
+#[test]
+fn a_weighted_pressure_plate_takes_a_second_entity_at_once() {
+    let mut w = world!();
+    w.floor(0, 4, "stone");
+    let pos = BlockPos::new(0, 1, 0);
+    w.set(pos, w.id("light_weighted_pressure_plate", &[]));
+    let enter = |w: &mut World, count: usize| {
+        w.level.entity_count = count;
+        w.f.behaviours
+            .entity_inside(&mut w.level, &mut w.ticks, pos);
+    };
+    enter(&mut w, 1);
+    assert_eq!(w.prop(pos, "power"), "1");
+    enter(&mut w, 2);
+    assert_eq!(
+        w.prop(pos, "power"),
+        "2",
+        "the second entity's weight lands at once"
+    );
+}
+
 /// `WaterFluid.getTickDelay` is 5: a source's first spread is five ticks after it is
 /// placed, and each flowing block schedules the next five ticks on, so the water
 /// reaches distance `d` on tick `5 * d`, none sooner, out to its seven blocks.

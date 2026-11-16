@@ -580,8 +580,12 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
         let state = self.state(pos);
         let data = b.data(state);
         if data.is(Class::BasePressurePlate) {
+            // BasePressurePlateBlock.entityInside reads the plate's strength
+            // again for every entity that enters, also while it is pressed: a
+            // weighted plate takes a second entity's weight at once, not at
+            // its next scheduled tick.
             let signal = self.plate_signal_for_state(state);
-            if signal == 0 {
+            if self.plate_signal_strength(pos, state) > 0 {
                 self.plate_check_pressed(pos, state, signal);
             }
         } else if data.is(Class::DetectorRail) {

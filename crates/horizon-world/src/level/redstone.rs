@@ -637,7 +637,7 @@ impl<L: LevelAccess + ?Sized> Sim<'_, L> {
             0
         }
     }
-    fn plate_signal_strength(&self, pos: BlockPos, state: BlockStateId) -> i32 {
+    pub(crate) fn plate_signal_strength(&self, pos: BlockPos, state: BlockStateId) -> i32 {
         use horizon_core::geometry::{Aabb, Vec3};
         let b = self.b;
         let area = Aabb::new(
