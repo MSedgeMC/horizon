@@ -344,12 +344,13 @@ fn uuid(id: u128) -> String {
 }
 
 /// Whether the whitelist is on: the game writes `white-list` to server.properties when `/whitelist on|off`
-/// changes it; server.toml catches up when it stops.
+/// changes it; server.toml catches up when it stops. The value is read as `DedicatedServerProperties`
+/// reads it, with Java's `Boolean.parseBoolean`: any case of "true" is on, and no other word is.
 fn whitelist_on(dir: &Path) -> bool {
     std::fs::read(dir.join(config::PROPERTIES))
         .ok()
         .and_then(|b| horizon_platform::java_properties::Properties::load_file(&b).ok())
-        .and_then(|p| p.get("white-list").map(|v| v == "true"))
+        .and_then(|p| p.get("white-list").map(|v| v.eq_ignore_ascii_case("true")))
         .or_else(|| config::Config::load(dir).ok().map(|c| c.server.whitelist))
         .unwrap_or(false)
 }
@@ -814,6 +815,43 @@ mod tests {
             assert!(body.get("mods").is_none());
         }
         peer.join().unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `DedicatedServerProperties` reads `white-list` with Java's `Boolean.parseBoolean`
+    /// (`horizon-server-files/src/properties.rs::java_bool`): any case of "true" is on, and no other word
+    /// is. A file the game reads as on must not answer off here.
+    #[test]
+    fn the_white_list_switch_is_read_as_java_reads_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "horizon-server-admin-white-list-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let shared = Shared::with_install(&dir, None);
+        let write = |value: &str| {
+            std::fs::write(
+                dir.join("server.properties"),
+                format!("white-list={value}\n"),
+            )
+            .unwrap()
+        };
+        let enabled = || -> bool {
+            let players: Value = serde_json::from_str(&players(&shared).body).unwrap();
+            players["whitelist"]["enabled"].as_bool().unwrap()
+        };
+        for on in ["true", "TRUE", "True", "tRuE"] {
+            write(on);
+            assert!(enabled(), "white-list={on} is on to Boolean.parseBoolean");
+        }
+        for off in ["false", "FALSE", "yes", "on", "1", ""] {
+            write(off);
+            assert!(
+                !enabled(),
+                "white-list={off} is off to Boolean.parseBoolean"
+            );
+        }
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
