@@ -9,12 +9,19 @@
 //! item keeps them. They hold no world state, so they work on any side.
 use super::Game;
 use horizon_client::items::ItemStack;
-use horizon_core::nbt::Tag;
 
 /// `ItemContainerContents`' limit on slots.
 const MAX_SLOTS: u32 = 256;
 /// `Container.getMaxStackSize`.
 const CONTAINER_MAX: u32 = 99;
+
+/// `Container.getMaxStackSize(stack)` for an item's `minecraft:container`: the
+/// container's 99, or the stack's own limit (its `max_stack_size` component, a
+/// removed one being vanilla's `getOrDefault` default of one, else the item's)
+/// when less.
+fn item_limit(items: &horizon_client::items::Items, stack: &ItemStack) -> u32 {
+    crate::menu::item_max_stack(items, stack).min(CONTAINER_MAX)
+}
 
 /// The slots of one item of `stack`, empty ones included; slots past `size`
 /// are dropped, as the item has no room for them.
@@ -184,20 +191,10 @@ impl Game<'_> {
         slots.filter(|s| *s >= 1).map(|s| s.min(MAX_SLOTS))
     }
     /// `Container.getMaxStackSize(stack)`: the container's 99, or the stack's
-    /// own limit (its `max_stack_size` component, else the item's) when less.
+    /// own limit (its `max_stack_size` component, a removed one being vanilla's
+    /// default of one, else the item's) when less.
     fn item_container_limit(&self, stack: &ItemStack) -> u32 {
-        let own = match stack
-            .data()
-            .and_then(|d| d.other("minecraft:max_stack_size"))
-        {
-            Some(Tag::Int(n)) => (*n).clamp(1, 99) as u32,
-            _ => self
-                .res
-                .items()
-                .get(&stack.item)
-                .map_or(64, |i| i.max_stack),
-        };
-        own.min(CONTAINER_MAX)
+        item_limit(self.res.items(), stack)
     }
     /// `Capabilities.Item.ITEM`, read: the slots of one item of `stack`,
     /// empty ones included, kept in its `minecraft:container`. None for an
@@ -287,7 +284,7 @@ impl Game<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use horizon_core::nbt::JavaString;
+    use horizon_core::nbt::{JavaString, Tag};
     use std::sync::Arc;
 
     fn bag(count: u32) -> ItemStack {
@@ -328,6 +325,33 @@ mod tests {
             .enumerate()
             .filter_map(|(i, s)| s.map(|s| (i, s.item.to_string(), s.count)))
             .collect()
+    }
+
+    /// Stone with its own `max_stack_size`, or with the component removed
+    /// (`!minecraft:max_stack_size`, vanilla's `getOrDefault` default of one).
+    fn stone(size: Option<i32>) -> ItemStack {
+        let mut stack = ItemStack::new("minecraft:stone", 1);
+        let data = stack.data_mut();
+        match size {
+            Some(n) => data.set_other("minecraft:max_stack_size", Some(Tag::Int(n))),
+            None => data.set_other(
+                "!minecraft:max_stack_size",
+                Some(Tag::Compound(Default::default())),
+            ),
+        }
+        stack.tidy();
+        stack
+    }
+
+    /// `item_container_limit` is `Container.getMaxStackSize`: a stack's own
+    /// `max_stack_size` caps a slot, and a removed component leaves one, not
+    /// the item's default of 64.
+    #[test]
+    fn a_removed_max_stack_size_limits_an_item_slot_to_one() {
+        let items = horizon_client::items::Items::for_tests(Default::default());
+        assert_eq!(item_limit(&items, &stone(Some(2))), 2);
+        assert_eq!(item_limit(&items, &stone(None)), 1);
+        assert_eq!(item_limit(&items, &ItemStack::new("minecraft:stone", 1)), 64);
     }
 
     #[test]
