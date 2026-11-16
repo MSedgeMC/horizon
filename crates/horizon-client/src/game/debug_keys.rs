@@ -656,7 +656,7 @@ impl Game<'_> {
             }
             DebugAction::ClearChat => {
                 // ChatComponent.clearMessages(false): sent history stays.
-                self.ui.chat.clear();
+                self.ui.chat.clear_messages(false);
                 true
             }
             DebugAction::ShowChunkBorders if player => {

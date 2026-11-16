@@ -656,11 +656,21 @@ impl Chat {
     pub fn shows(&self, source: ChatSource) -> bool {
         self.abilities.shows(source)
     }
+    /// `ChatComponent.clearMessages(true)`: the messages go, and the up-arrow
+    /// history restarts from the command history (commands survive a world).
     pub fn clear(&mut self) {
+        self.clear_messages(true);
+    }
+    /// `ChatComponent.clearMessages`: the messages go; `history` also resets
+    /// the up-arrow history to the command history (`ChatComponent.recentChat`).
+    pub fn clear_messages(&mut self, history: bool) {
         self.messages.clear();
         self.lines.clear();
         self.deletions.clear();
         self.scroll = 0;
+        if history {
+            self.recent = self.commands.clone();
+        }
     }
     /// `ChatComponent.deleteMessage`: the server deleted a message. One
     /// shown for 60 ticks becomes the grey "deleted" marker now; a newer

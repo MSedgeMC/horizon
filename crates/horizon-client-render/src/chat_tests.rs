@@ -1244,3 +1244,15 @@ fn the_suggestion_list_asks_for_the_pointing_hand() {
     screen.draw(&m, (rect[0] - 1, rect[1] + 2), 0, 0);
     assert_eq!(crate::widgets::take_cursor(), crate::widgets::Cursor::Arrow);
 }
+
+/// `ChatComponent.clearMessages(true)`: opening another world resets the
+/// up-arrow history to the commands, not the last world's chat.
+#[test]
+fn clearing_the_chat_keeps_only_commands_in_the_history() {
+    let mut chat = Chat::default();
+    chat.add_recent("hello from the last world");
+    chat.add_recent("/tp 0 64 0");
+    chat.add_recent("another line");
+    chat.clear();
+    assert_eq!(chat.recent, ["/tp 0 64 0"]);
+}
