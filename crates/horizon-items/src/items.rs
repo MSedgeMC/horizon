@@ -2141,7 +2141,15 @@ impl LootContext<'_> {
                             self.held.and_then(ItemStack::custom_data),
                         )
                     });
-                items_ok && enchants_ok && custom_ok
+                // ItemPredicate "minecraft:damage": the DAMAGE component and
+                // the durability it leaves on the prototype's MAX_DAMAGE.
+                let damage_ok = c["predicate"]["predicates"]
+                    .get("minecraft:damage")
+                    .is_none_or(|predicate| {
+                        self.held
+                            .is_some_and(|held| damage_matches(self.items, held, predicate))
+                    });
+                items_ok && enchants_ok && custom_ok && damage_ok
             }
             "minecraft:killed_by_player" => self.killed_by_player,
             "minecraft:random_chance_with_enchanted_bonus" => {
@@ -2583,6 +2591,67 @@ impl LootContext<'_> {
                 _ => {}
             }
         }
+    }
+}
+
+/// `DamagePredicate.matches` for the item predicate `minecraft:damage`:
+/// the stack carries a DAMAGE component (a durable prototype supplies it,
+/// as does an explicitly written 0), `damage` is that value and
+/// `durability` is MAX_DAMAGE minus it.
+fn damage_matches(items: &Items, stack: &ItemStack, predicate: &Value) -> bool {
+    if stack
+        .data()
+        .is_some_and(|data| data.other("!minecraft:damage").is_some())
+    {
+        return false;
+    }
+    let prototype_max = items.get(&stack.item).map_or(0, |info| info.max_damage);
+    if prototype_max == 0
+        && stack.damage == 0
+        && !stack.data().is_some_and(|data| data.explicit_zero_damage)
+    {
+        return false;
+    }
+    let max_damage = if stack
+        .data()
+        .is_some_and(|data| data.other("!minecraft:max_damage").is_some())
+    {
+        0
+    } else {
+        match stack
+            .data()
+            .and_then(|data| data.other("minecraft:max_damage"))
+        {
+            Some(value) => horizon_world::datafix::dynamic::as_int(Some(value), 0).max(0),
+            None => prototype_max as i32,
+        }
+    };
+    let damage = i64::from(stack.damage);
+    int_range(&predicate["durability"], i64::from(max_damage) - damage)
+        && int_range(&predicate["damage"], damage)
+}
+
+/// `MinMaxBounds.Ints.matches`: a bare exact number, or inclusive
+/// `min`/`max` and exclusive `min_exclusive`/`max_exclusive` bounds.
+fn int_range(bounds: &Value, value: i64) -> bool {
+    match bounds {
+        Value::Null => true,
+        Value::Number(n) => n.as_i64() == Some(value),
+        Value::Object(o) => {
+            o.get("min")
+                .and_then(Value::as_i64)
+                .is_none_or(|min| value >= min)
+                && o.get("max")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|max| value <= max)
+                && o.get("min_exclusive")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|min| value > min)
+                && o.get("max_exclusive")
+                    .and_then(Value::as_i64)
+                    .is_none_or(|max| value < max)
+        }
+        _ => false,
     }
 }
 
@@ -3698,6 +3767,43 @@ mod tests {
         assert_eq!(drops(json!({"type":"mymod:always"}), ""), 0);
         assert_eq!(drops(json!("mymod:always"), "minecraft:stone"), 0);
         assert_eq!(drops(Value::Null, "minecraft:stone"), 1);
+    }
+
+    /// `MatchTool` reads the item predicate's `minecraft:damage`: `damage`
+    /// is the DAMAGE component and `durability` is MAX_DAMAGE minus it, and
+    /// a stack without a DAMAGE component matches nothing.
+    #[test]
+    fn match_tool_reads_the_damage_predicate() {
+        let root = std::env::temp_dir().join(format!("horizon-tool-damage-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(root.join("data/minecraft/loot_table")).unwrap();
+        fs::write(
+            root.join("items.json"),
+            r#"{"minecraft:diamond_sword":{"minecraft:max_damage":1561},"minecraft:stick":{}}"#,
+        )
+        .unwrap();
+        let items = Items::catalog(&root, &PackOverlay::NONE).unwrap();
+        let props = horizon_world::chunk::BlockProperties::new();
+        let table = |predicate: Value| {
+            json!({"pools":[{"rolls":1,"entries":[{"type":"minecraft:item",
+                "name":"minecraft:stone","condition":{"type":"minecraft:match_tool",
+                "predicate":{"predicates":{"minecraft:damage":predicate}}}}]}]})
+        };
+        let mut sword = ItemStack::new("minecraft:diamond_sword", 1);
+        sword.damage = 61;
+        let stick = ItemStack::new("minecraft:stick", 1);
+        let mut random = LegacyRandom::new(7);
+        let mut drops = |held: &ItemStack, predicate: Value| {
+            ctx(&items, Some(held), &props, "minecraft:stone")
+                .evaluate(&table(predicate), &mut random)
+                .len()
+        };
+        assert_eq!(drops(&sword, json!({"damage": 61})), 1);
+        assert_eq!(drops(&sword, json!({"durability": 1500})), 1);
+        assert_eq!(drops(&sword, json!({"durability": {"min": 1501}})), 0);
+        assert_eq!(drops(&sword, json!({"damage": {"max": 60}})), 0);
+        assert_eq!(drops(&stick, json!({"damage": {"min": 0}})), 0);
+        fs::remove_dir_all(root).unwrap();
     }
 
     /// A mod's function kind changes the stack the items engine drops: what
