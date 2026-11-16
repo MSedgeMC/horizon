@@ -9,8 +9,8 @@ use crate::random_sequences::RandomSequences;
 use horizon_core::random::{LegacyRandom, LevelRandom, RandomSource};
 use horizon_world::{
     loot::{
-        EnchantedLevel, EntityLootParams, LootBlockSource, LootDamage, LootData, LootEntity,
-        LootStack,
+        EnchantedLevel, EntityLootParams, LootBlockSource, LootDamage, LootData, LootEffect,
+        LootEntity, LootStack,
     },
     registry::BlockStateId,
 };
@@ -57,7 +57,8 @@ pub struct Death<'a> {
     pub mob_drops: bool,
     pub world_seed: i64,
     /// The level the mob died in, for a predicate that reads a block around
-    /// it (`movement_affected_by`); `None` where the caller has no level.
+    /// it (`movement_affected_by`, `location`); `None` where the caller has no
+    /// level.
     pub level: Option<&'a dyn LootBlockSource>,
 }
 
@@ -472,6 +473,19 @@ pub fn loot_entity(m: &Mob, vehicle: Option<LootEntity>) -> LootEntity {
         .iter()
         .filter_map(|slot| slot_item(m, slot).map(|i| (slot.to_string(), i)))
         .collect();
+    e.effects = m
+        .extra
+        .effects
+        .iter()
+        .map(|effect| LootEffect {
+            id: effect.id.to_owned(),
+            amplifier: effect.amplifier,
+            duration: effect.duration,
+            ambient: m.extra.ambient_effects.contains(&effect.id),
+            // `MobEffectInstance.isVisible` is what `hideParticles` clears.
+            visible: !m.extra.hidden_effects.contains(&effect.id),
+        })
+        .collect();
     e
 }
 /// What a mob clears on itself in `LivingEntity.die`, before any loot is
@@ -544,6 +558,7 @@ pub fn roll_death(m: &mut Mob, d: &Death, rolls: &mut dyn DeathRolls) -> Rolled 
             player: None,
             luck: 0.0,
             position: Some([m.position.x, m.position.y, m.position.z]),
+            origin: Some([m.position.x, m.position.y, m.position.z]),
             level: d.level,
         };
         let items = roll(d, "minecraft:charged_creeper/root", &params, rolls, 0);
@@ -574,6 +589,7 @@ pub fn roll_death(m: &mut Mob, d: &Death, rolls: &mut dyn DeathRolls) -> Rolled 
             player: d.player.clone().filter(|_| killed_by_player),
             luck: if killed_by_player { d.luck } else { 0.0 },
             position: Some([m.position.x, m.position.y, m.position.z]),
+            origin: Some([m.position.x, m.position.y, m.position.z]),
             level: d.level,
         };
         let items = roll(d, &table, &params, rolls, m.extra.death_table_seed);
@@ -720,6 +736,7 @@ fn damage_context<'a>(
         player: None,
         luck: 0.0,
         position: Some(position),
+        origin: Some(position),
         level: d.level,
     }
 }

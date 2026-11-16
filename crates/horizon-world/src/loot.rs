@@ -377,6 +377,24 @@ pub struct LootEntity {
     /// Worn and held items by `EquipmentSlot` name (mainhand, offhand,
     /// feet, legs, chest, head, body, saddle).
     pub equipment: Vec<(String, LootStack)>,
+    /// `LivingEntity.getActiveEffects`: the effects `MobEffectsPredicate`
+    /// reads, in effect order.
+    pub effects: Vec<LootEffect>,
+}
+
+/// A `MobEffectInstance` on a loot entity, as `MobEffectsPredicate` reads it.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LootEffect {
+    /// `MobEffect` id (`minecraft:speed`).
+    pub id: String,
+    /// `MobEffectInstance.getAmplifier`.
+    pub amplifier: i32,
+    /// `MobEffectInstance.getDuration`: ticks left (`-1` is infinite).
+    pub duration: i32,
+    /// `MobEffectInstance.isAmbient` (a beacon's effect).
+    pub ambient: bool,
+    /// `MobEffectInstance.isVisible` (`hideParticles` clears it).
+    pub visible: bool,
 }
 impl LootEntity {
     pub fn new(kind: &str) -> Self {
@@ -432,8 +450,12 @@ pub struct EntityLootParams<'a> {
     /// The killing player's luck.
     pub luck: f32,
     /// `Entity.position`: where the rolled entity is, for the predicates that
-    /// read a block around it (`movement_affected_by`).
+    /// read a block around it (`movement_affected_by`, `location`).
     pub position: Option<[f64; 3]>,
+    /// `LootContextParams.ORIGIN`: where the roll happens (a dead mob's
+    /// position), for `distance`. It is the roll's origin, not the entity's
+    /// position: the two are the same for a death table, but distinct params.
+    pub origin: Option<[f64; 3]>,
     /// The level the rolled entity is in; `None` when the roll has no level.
     pub level: Option<&'a dyn LootBlockSource>,
 }
@@ -618,6 +640,41 @@ fn double_bounds(v: &Value, value: f64) -> bool {
                 && o.get("max")
                     .and_then(Value::as_f64)
                     .is_none_or(|m| value <= m)
+        }
+        _ => false,
+    }
+}
+
+/// `DistancePredicate.matches`: component bounds over the absolute offsets and
+/// squared bounds over the horizontal and absolute distances, all in float as
+/// vanilla computes them (`(float)(x0 - x1)`).
+fn distance_matches(v: &Value, origin: [f64; 3], position: [f64; 3]) -> bool {
+    let xd = (origin[0] - position[0]) as f32;
+    let yd = (origin[1] - position[1]) as f32;
+    let zd = (origin[2] - position[2]) as f32;
+    if !double_bounds(&v["x"], f64::from(xd.abs()))
+        || !double_bounds(&v["y"], f64::from(yd.abs()))
+        || !double_bounds(&v["z"], f64::from(zd.abs()))
+    {
+        return false;
+    }
+    double_bounds_sqr(&v["horizontal"], f64::from(xd * xd + zd * zd))
+        && double_bounds_sqr(&v["absolute"], f64::from(xd * xd + yd * yd + zd * zd))
+}
+
+/// `MinMaxBounds.Doubles.matchesSqr`: the codec squares the bounds as it reads
+/// them, so a bare number and a range are compared against the squared value.
+fn double_bounds_sqr(v: &Value, value_sqr: f64) -> bool {
+    match v {
+        Value::Null => true,
+        Value::Number(n) => n.as_f64().is_some_and(|n| n * n == value_sqr),
+        Value::Object(o) => {
+            o.get("min")
+                .and_then(Value::as_f64)
+                .is_none_or(|m| value_sqr >= m * m)
+                && o.get("max")
+                    .and_then(Value::as_f64)
+                    .is_none_or(|m| value_sqr <= m * m)
         }
         _ => false,
     }
@@ -1061,6 +1118,7 @@ impl LootData {
             player: None,
             luck: 0.0,
             position: params.position,
+            origin: params.origin,
             level: params.level,
         };
         let mut c = Context {
@@ -1073,6 +1131,7 @@ impl LootData {
             open_water: None,
             entity: Some(&damage_params),
             position: params.position,
+            origin: params.origin,
             level: params.level,
             enchanted_level: None,
         };
@@ -1161,6 +1220,7 @@ impl LootData {
             open_water: None,
             entity: Some(params),
             position: params.position,
+            origin: params.origin,
             level: params.level,
             enchanted_level,
         };
@@ -1311,8 +1371,10 @@ struct Context<'a, R> {
     entity: Option<&'a EntityLootParams<'a>>,
     /// `Entity.position` of the rolled entity, when the roll names one.
     position: Option<[f64; 3]>,
+    /// `LootContextParams.ORIGIN`, for a `distance` predicate.
+    origin: Option<[f64; 3]>,
     /// The level the rolled entity is in, for a location predicate's block
-    /// lookup (`movement_affected_by`).
+    /// lookup (`movement_affected_by`, `location`).
     level: Option<&'a dyn LootBlockSource>,
     /// Asked for a death's enchantment levels; None for every other roll.
     enchanted_level: Option<&'a mut EnchantedLevel<'a, R>>,
@@ -1390,10 +1452,16 @@ impl<R: RandomSource> Context<'_, R> {
             }
         }
     }
-    /// EntityPredicate.matches (false without an entity).
+    /// EntityPredicate.matches (false without an entity). The context knows a
+    /// position only for the rolled entity, so a predicate on another target
+    /// (`attacker`, `direct_attacker`, `attacking_player`) reads no place.
     fn entity_matches(&self, p: &Value, e: Option<&LootEntity>) -> bool {
+        let position = match (self.entity, e) {
+            (Some(params), Some(e)) if std::ptr::eq(e, &params.this) => self.position,
+            _ => None,
+        };
         self.data
-            .entity_matches_with(p, e, self.position, self.level, self.biome)
+            .entity_matches_with(p, e, position, self.origin, self.level, self.biome)
     }
     /// A number provider. An unknown type gives 0, as in items.rs `number`
     /// (a data pack's typo yields nothing rather than a full roll).
@@ -3669,18 +3737,21 @@ impl LootData {
     /// `EntityPredicate.matches`: the pure matcher shared by loot contexts.
     /// A context that knows where the entity stands uses
     /// [`Self::entity_matches_with`]; without a place `movement_affected_by`
-    /// cannot read a block and fails, as every other missing entity fact does.
+    /// and `location` cannot read a block and fail, as every other missing
+    /// entity fact does.
     pub fn entity_matches(&self, p: &Value, e: Option<&LootEntity>) -> bool {
-        self.entity_matches_with(p, e, None, None, None)
+        self.entity_matches_with(p, e, None, None, None, None)
     }
     /// `EntityPredicate.matches` with the rolled entity's place: `position`
-    /// (`Entity.position`), `level` for the block lookup a location predicate
-    /// does, and the roll's `biome` for `biomes`.
+    /// (`Entity.position`), `origin` (`LootContextParams.ORIGIN`, for
+    /// `distance`), `level` for the block lookup a location predicate does, and
+    /// the roll's `biome` for `biomes`.
     fn entity_matches_with(
         &self,
         p: &Value,
         e: Option<&LootEntity>,
         position: Option<[f64; 3]>,
+        origin: Option<[f64; 3]>,
         level: Option<&dyn LootBlockSource>,
         biome: Option<&str>,
     ) -> bool {
@@ -3690,6 +3761,23 @@ impl LootData {
         };
         let data = self;
         parts.iter().all(|(key, v)| match key.as_str() {
+            // EntityEffectsPredicate.matches: every named effect must be active
+            // and match its amplifier, duration, ambient and visible bounds;
+            // only a living entity has active effects.
+            "minecraft:effects" => {
+                e.living
+                    && v.as_object().into_iter().flatten().all(|(id, want)| {
+                        e.effects
+                            .iter()
+                            .find(|have| have.id == id.as_str())
+                            .is_some_and(|have| {
+                                int_bounds(&want["amplifier"], have.amplifier)
+                                    && int_bounds(&want["duration"], have.duration)
+                                    && want["ambient"].as_bool().is_none_or(|w| w == have.ambient)
+                                    && want["visible"].as_bool().is_none_or(|w| w == have.visible)
+                            })
+                    })
+            }
             "minecraft:entity_type" => match v.as_str() {
                 Some(s) => match s.strip_prefix('#') {
                     Some(tag) => data.in_tag("entity_type", tag, &e.kind),
@@ -3751,6 +3839,21 @@ impl LootData {
                 !v["has_raid"].as_bool().unwrap_or(false)
                     && captain == v["is_captain"].as_bool().unwrap_or(false)
             }),
+            // EntityLocationPredicate.matches: the nested location predicate
+            // runs at the entity's own position (`Entity.getX/getY/getZ`), not
+            // at the loot origin. `location_matches` reads the fields a roll
+            // can supply (`position`, `biomes`, `block.blocks`); the rest fail.
+            "minecraft:location" => match position {
+                Some(position) => self.location_matches(v, position, biome, level),
+                None => false,
+            },
+            // DistanceToPlayerPredicate.matches: the distance is measured from
+            // the loot origin (`LootContextParams.ORIGIN`) to the entity
+            // position; a roll without either cannot measure it.
+            "minecraft:distance" => match (origin, position) {
+                (Some(origin), Some(position)) => distance_matches(v, origin, position),
+                _ => false,
+            },
             // MovementAffectedByPredicate.matches: the nested location
             // predicate runs at the centre of `Entity.getBlockPosBelowThatAffectsMyMovement`
             // (`getOnPos(0.500001F)`), the block that affects the entity's
@@ -4096,6 +4199,149 @@ mod movement_affected_by_tests {
         let blocks = Blocks::default();
         assert!(drops(&centre, Some([0.5, 64.0, 0.5]), &blocks));
         assert!(!drops(&centre, Some([0.5, 65.0, 0.5]), &blocks));
+    }
+}
+
+#[cfg(test)]
+mod distance_location_predicate_tests {
+    use super::*;
+
+    /// A level with a block id at some positions and nothing elsewhere.
+    #[derive(Debug, Default)]
+    struct Blocks(std::collections::HashMap<[i32; 3], &'static str>);
+    impl LootBlockSource for Blocks {
+        fn block(&self, pos: [i32; 3]) -> Option<String> {
+            self.0.get(&pos).map(|id| (*id).to_owned())
+        }
+    }
+
+    /// A one-pool table whose stone entry asks for `predicate` on `this`.
+    fn table(name: &str, predicate: &str) -> LootData {
+        let root = std::env::temp_dir().join(format!("loot-dist-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        let dir = root.join("data/minecraft/loot_table");
+        fs::create_dir_all(&dir).unwrap();
+        let json = format!(
+            r#"{{"pools":[{{"rolls":1,"entries":[{{"type":"minecraft:item","name":"minecraft:stone",
+                "condition":{{"type":"minecraft:entity_properties","entity":"this","predicate":{predicate}}}}}]}}]}}"#
+        );
+        fs::write(dir.join("test.json"), json).unwrap();
+        fs::write(root.join("items.json"), "{}").unwrap();
+        let defaults = crate::item_defaults::read(&root).unwrap();
+        let data = LootData::load(&root, &PackOverlay::NONE, &defaults).unwrap();
+        let _ = fs::remove_dir_all(&root);
+        data
+    }
+
+    fn drops(
+        data: &LootData,
+        origin: Option<[f64; 3]>,
+        position: Option<[f64; 3]>,
+        blocks: &Blocks,
+    ) -> bool {
+        let params = EntityLootParams {
+            this: LootEntity::new("minecraft:zombie"),
+            position,
+            origin,
+            level: Some(blocks),
+            ..Default::default()
+        };
+        !data
+            .roll_entity("minecraft:test", &mut LegacyRandom::new(1), &params)
+            .is_empty()
+    }
+
+    fn drops_with_entity(data: &LootData, this: LootEntity) -> bool {
+        let params = EntityLootParams {
+            this,
+            ..Default::default()
+        };
+        !data
+            .roll_entity("minecraft:test", &mut LegacyRandom::new(1), &params)
+            .is_empty()
+    }
+
+    /// `DistancePredicate.matches`: the bounds measure the offsets from the
+    /// loot origin (`LootContextParams.ORIGIN`) to the entity position. The
+    /// fields are `x`/`y`/`z`/`horizontal`/`absolute`; a bare number is exact
+    /// and a range is inclusive.
+    #[test]
+    fn distance_measures_from_the_loot_origin() {
+        let min4 = table("min4", r#"{"minecraft:distance":{"absolute":{"min":4}}}"#);
+        let min6 = table("min6", r#"{"minecraft:distance":{"absolute":{"min":6}}}"#);
+        let origin = Some([0.0, 64.0, 0.0]);
+        let blocks = Blocks::default();
+        // Five blocks away: min 4 holds, min 6 does not.
+        assert!(drops(&min4, origin, Some([5.0, 64.0, 0.0]), &blocks));
+        assert!(!drops(&min6, origin, Some([5.0, 64.0, 0.0]), &blocks));
+        // The component bounds are per axis, over the absolute offset.
+        let x_min4 = table("x", r#"{"minecraft:distance":{"x":{"min":4}}}"#);
+        assert!(drops(&x_min4, origin, Some([5.0, 64.0, 0.0]), &blocks));
+        assert!(!drops(&x_min4, origin, Some([0.0, 64.0, 5.0]), &blocks));
+        // A roll without an origin cannot measure a distance.
+        assert!(!drops(&min4, None, Some([5.0, 64.0, 0.0]), &blocks));
+    }
+
+    /// `EntityEffectsPredicate.matches`: the rolled entity's active effect must
+    /// be present and match the amplifier, duration, ambient and visible
+    /// bounds; only a living entity has active effects.
+    #[test]
+    fn effects_read_the_rolled_entity_effects() {
+        let speed = table(
+            "effects",
+            r#"{"minecraft:effects":{"minecraft:speed":{"amplifier":{"min":1},"ambient":true}}}"#,
+        );
+        let mut this = LootEntity::new("minecraft:zombie");
+        this.effects = vec![LootEffect {
+            id: "minecraft:speed".to_owned(),
+            amplifier: 2,
+            duration: 600,
+            ambient: true,
+            visible: true,
+        }];
+        assert!(drops_with_entity(&speed, this.clone()));
+        // A weaker amplifier fails the bounds.
+        this.effects[0].amplifier = 0;
+        assert!(!drops_with_entity(&speed, this.clone()));
+        // An effect that is not ambient fails the ambient flag.
+        this.effects[0].amplifier = 2;
+        this.effects[0].ambient = false;
+        assert!(!drops_with_entity(&speed, this.clone()));
+        // A non-living entity has no active effects.
+        this.living = false;
+        assert!(!drops_with_entity(&speed, this));
+    }
+
+    /// `EntityLocationPredicate.matches`: the nested location predicate runs at
+    /// the entity's own position, so it reads the block the entity occupies.
+    #[test]
+    fn location_reads_the_entity_position() {
+        let stone = table(
+            "stone",
+            r#"{"minecraft:location":{"block":{"blocks":"minecraft:stone"}}}"#,
+        );
+        let mut blocks = Blocks::default();
+        blocks.0.insert([0, 64, 0], "minecraft:stone");
+        assert!(drops(&stone, None, Some([0.5, 64.0, 0.5]), &blocks));
+        // The same predicate fails where the block at the entity position differs.
+        blocks.0.insert([0, 64, 0], "minecraft:slime_block");
+        assert!(!drops(&stone, None, Some([0.5, 64.0, 0.5]), &blocks));
+        // The block below the feet is not the entity's position.
+        let mut below = Blocks::default();
+        below.0.insert([0, 63, 0], "minecraft:stone");
+        assert!(!drops(&stone, None, Some([0.5, 64.0, 0.5]), &below));
+        // The nested position field reads the entity position too.
+        let at = table(
+            "position",
+            r#"{"minecraft:location":{"position":{"y":{"min":63.9,"max":64.1}}}}"#,
+        );
+        assert!(drops(&at, None, Some([0.5, 64.0, 0.5]), &Blocks::default()));
+        assert!(!drops(
+            &at,
+            None,
+            Some([0.5, 65.0, 0.5]),
+            &Blocks::default()
+        ));
     }
 }
 

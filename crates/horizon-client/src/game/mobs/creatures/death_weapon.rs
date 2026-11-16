@@ -246,9 +246,9 @@ impl Game<'_> {
             .map(|o| LootEntity::new(&o.kind.id));
         let kind = crate::game::native_hooks::mob_kind(m);
         // `Level.getBlockState` for the location predicates a dead mob's loot
-        // reads around it (`movement_affected_by`), taken before the roll
-        // borrows the game for a listener.
-        let level = horizon_client::loot_blocks::LootBlockAt::below(
+        // reads around it (`movement_affected_by`, `location`), taken before
+        // the roll borrows the game for a listener.
+        let level = horizon_client::loot_blocks::LootBlockAt::at_entity(
             [m.position.x, m.position.y, m.position.z],
             &self.world,
             &self.pack.assets.registry,

@@ -69,6 +69,7 @@ impl LootData {
             open_water: None,
             entity: entity.as_ref(),
             position: None,
+            origin: None,
             level: None,
             enchanted_level: None,
         };

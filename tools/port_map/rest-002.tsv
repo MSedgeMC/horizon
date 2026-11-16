@@ -2,7 +2,7 @@ InputPredicate.matches	inline	crates/horizon-client/src/advancements.rs::input	g
 ItemPredicate.Builder.of	skip:java		builder for item predicates in code
 LightPredicate.matches	inline	crates/horizon-client/src/advancements.rs::location	the light range inside location()
 LocationPredicate.PositionPredicate.of	skip:java		factory: empty when no bound is set; location() reads the position key directly
-LocationPredicate.PositionPredicate.matches	inline	crates/horizon-client/src/advancements.rs::location	the x, y and z ranges inside location()
+LocationPredicate.PositionPredicate.matches	inline	crates/horizon-client/src/advancements.rs::location; crates/horizon-world/src/loot.rs::LootData::location_matches	the x, y and z ranges inside location(), and the loot location predicate's nested position field
 MinMaxBounds.validateContainedInRange	skip:java		codec validation that one range lies inside another
 MinMaxBounds.Bounds.isAny	inline	crates/horizon-client/src/advancements.rs::range_f	an empty bound matches any value; range_f treats a missing min or max as open
 MinMaxBounds.Bounds.validateSwappedBoundsInCodec	skip:java		codec check rejecting min above max when data loads
@@ -13,11 +13,11 @@ MinMaxBounds.Bounds.map	skip:java		converts bounds between number types in Java
 MinMaxBounds.Bounds.createCodec	skip:java		codec for a number or a min/max object; range_f reads the JSON directly
 MinMaxBounds.Bounds.readNumber	port	crates/horizon-command/src/args.rs::read_bounds	reads one number of a range argument
 MinMaxBounds.Bounds.isAllowedInputChar	inline	crates/horizon-command/src/args.rs::read_bounds	the digit, minus and single dot test inside read_bounds
-MinMaxBounds.Doubles.matchesSqr	inline	crates/horizon-client/src/advancements.rs::distance	takes the square root and tests the range; same result as the squared bounds
+MinMaxBounds.Doubles.matchesSqr	inline	crates/horizon-client/src/advancements.rs::distance; crates/horizon-world/src/loot.rs::double_bounds_sqr	advancement distance takes the square root and tests the range; the loot distance predicate compares the squared bounds directly
 MinMaxBounds.Ints.matchesSqr	skip:other		no caller in vanilla 26.3
-MobEffectsPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: ambient and visible flags are not checked; no vanilla advancement uses them
+MobEffectsPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity; crates/horizon-world/src/loot.rs::LootData::entity_matches	the effects key: every named effect must be active; the loot reader checks amplifier, duration, ambient and visible
 MobEffectsPredicate.Builder.and	skip:java		builder for effect predicates in code
-MobEffectsPredicate.MobEffectInstancePredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: ambient and visible flags are not checked; amplifier and duration are
+MobEffectsPredicate.MobEffectInstancePredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity; crates/horizon-world/src/loot.rs::LootData::entity_matches	amplifier and duration; the loot reader checks ambient and visible too, the advancement entity() only amplifier and duration
 NbtPredicate.matches	missing		minor: custom_data and entity NBT predicates are not read; no vanilla advancement uses them
 SingleComponentItemPredicate.matches	inline	crates/horizon-client/src/advancements.rs::item	gap: minor: enchantments, damage and potion contents are read from components and predicates; adventure/play_jukebox_in_meadows asks for minecraft:jukebox_playable, which is ignored, so any tool passes that match_tool test
 SlotsPredicate.matches	port	crates/horizon-world/src/loot.rs::LootData::entity_matches	the loot reader's minecraft:slots arm: every range needs a matching item, over the equipment ranges; container and inventory ranges have no slot source here
@@ -34,13 +34,13 @@ TagPredicate.is	skip:java		builder
 TagPredicate.isNot	skip:java		builder
 TagPredicate.matches	inline	crates/horizon-client/src/advancements.rs::damage_source	each of the damage type's tags compared against the predicate's expected flag; DamageSourcePredicate.matches is the only caller (adventure/blowback asks for #minecraft:is_projectile with expected true)
 CubeMobPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/cube_mob arm, the size bounds against the mob's own size; entity() in advancements.rs has no arm for it and answers false, so an advancement asking for one never matches
-DistanceToPlayerPredicate.matches	port	crates/horizon-client/src/advancements.rs::distance	the distance key of entity(): from the player to the entity
+DistanceToPlayerPredicate.matches	port	crates/horizon-client/src/advancements.rs::distance; crates/horizon-world/src/loot.rs::LootData::entity_matches	the distance key of entity() and entity_properties: from the origin (the player's or the loot roll's) to the entity
 EntityEquipmentPredicate.captainPredicate	skip:data		datagen builder for the raid captain predicate (VanillaAdventureAdvancements)
 EntityEquipmentPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the equipment key: the seven slots
 EntityEquipmentPredicate.Builder.build	skip:java		builder
 EntityFlagsPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: is_in_water and is_fall_flying are not read; vanilla advancements only use is_baby
 EntityFlagsPredicate.Builder.build	skip:java		builder
-EntityLocationPredicate.matches	port	crates/horizon-client/src/advancements.rs::location	the location key of entity()
+EntityLocationPredicate.matches	port	crates/horizon-client/src/advancements.rs::location; crates/horizon-world/src/loot.rs::LootData::entity_matches	the location key of entity() and entity_properties: the nested location predicate at the entity's own position
 EntityPartialComponentsPredicate.matches	missing		minor: the predicates key is accepted and ignored (entity() returns true); no vanilla advancement uses it
 EntityPredicate.wrap	skip:java		wraps a builder into a loot condition
 EntityPredicate.createContext	inline	crates/horizon-client/src/game/interface/advancements/mod.rs::Game::trigger_entity	the entity context (this entity, origin at the player) built in each trigger

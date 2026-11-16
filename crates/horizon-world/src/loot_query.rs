@@ -55,6 +55,7 @@ impl LootData {
             open_water,
             entity: None,
             position: None,
+            origin: None,
             level: None,
             enchanted_level: None,
         };
@@ -81,6 +82,7 @@ impl LootData {
             open_water: None,
             entity: None,
             position: None,
+            origin: None,
             level: None,
             enchanted_level: None,
         };
