@@ -989,7 +989,8 @@ mod destroyed_contents_tests {
     #[test]
     #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
     fn an_empty_item_stack_is_discarded_before_it_ticks() {
-        let mut game = server_game();
+        let mut resources = None;
+        let mut game = server_game(&mut resources);
         game.build_registries();
         game.world.chunks.insert(
             (0, 0),
