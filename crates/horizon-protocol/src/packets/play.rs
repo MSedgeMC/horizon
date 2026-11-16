@@ -2,9 +2,9 @@
 use crate::{
     Error, Result,
     buf::{
-        Bool, Byte, BytesN, ChunkPos, Codec, Double, Float, Ident, Int, List, Long, LpVec3, Nbt,
-        Opt, OptVarInt, Pos, Reader, SectionPos, Short, Str, StrN, UByte, Uuid, VarInt, VarLong,
-        VarVec3i, Vec3d, Writer,
+        Bool, Byte, BytesN, ChunkPos, Codec, Double, Float, Ident, Int, List, ListN, Long, LpVec3,
+        Nbt, Opt, OptVarInt, Pos, Reader, SectionPos, Short, Str, StrN, UByte, Uuid, VarInt,
+        VarLong, VarVec3i, Vec3d, Writer,
     },
     chunk::{ChunkData, LightData},
     entity_data::{EntityData, Particle, Value},
@@ -665,7 +665,7 @@ packet!(PlayerChat {
     content: String => StrN<256>,
     timestamp: i64 => Long,
     salt: i64 => Long,
-    last_seen: Vec<(i32, Option<Vec<u8>>)> => List<PackedSignature>,
+    last_seen: Vec<(i32, Option<Vec<u8>>)> => ListN<PackedSignature, 20>,
     unsigned_content: Option<Tag> => Opt<Nbt>,
     filter: (i32, Vec<i64>) => FilterMask,
     chat_type: ChatTypeBound => ChatTypeBound,
@@ -3152,6 +3152,36 @@ mod tests {
                 signature: (-1, Some(vec![3; 256]))
             })
         );
+    }
+
+    #[test]
+    fn a_player_chat_last_seen_list_holds_at_most_20() {
+        // SignedMessageBody.Packed sends LastSeenMessages.Packed, whose
+        // entries use ByteBufCodecs.list(20).
+        let chat = |n: usize| PlayerChat {
+            global_index: 0,
+            sender: 0,
+            index: 0,
+            signature: None,
+            content: "hi".into(),
+            timestamp: 0,
+            salt: 0,
+            last_seen: (0..n).map(|i| (i as i32, None)).collect(),
+            unsigned_content: None,
+            filter: (0, Vec::new()),
+            chat_type: ChatTypeBound {
+                chat_type: 0,
+                name: literal("Steve"),
+                target: None,
+            },
+        };
+        let decode = |n: usize| {
+            let mut w = Writer::new();
+            PlayerChat::write(&chat(n), &mut w);
+            Clientbound::decode(crate::ids::play::clientbound::PLAYER_CHAT, &w.data)
+        };
+        assert!(decode(20).is_ok());
+        assert!(decode(21).is_err());
     }
 
     #[test]
