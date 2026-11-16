@@ -68,7 +68,7 @@ PlayerPredicate.Builder.build	skip:java		builder
 PlayerPredicate.StatMatcher.createTypedCodec	skip:java		codec
 RaiderPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/raider arm: captain matches, and has_raid matches no raid running here; the advancement reader answers false for the key
 SheepPredicate.matches	inline	crates/horizon-world/src/loot.rs::Context::entity_matches	the loot reader's minecraft:type_specific/sheep arm, the sheared flag; the advancement reader answers false for the key
-SteppingOnPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	gap: minor: no on-ground test; the block is read 0.5 below the feet
+SteppingOnPredicate.matches	inline	crates/horizon-client/src/advancements.rs::entity	the on-ground test and the block 0.5 below the feet inside entity()
 TargetedEntityPredicate.matches	missing		minor: targeted_entity key is not read; no vanilla advancement uses it
 TeamPredicate.matches	missing		minor: team key is not read though scoreboard teams exist; no vanilla advancement uses it
 AnyBlockInteractionTrigger.trigger	port	crates/horizon-client/src/game/advancements.rs::Game::trigger_any_block_use	any_block_use with the block's location and the stack in hand as the use left it

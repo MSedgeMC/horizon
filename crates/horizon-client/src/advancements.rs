@@ -1090,8 +1090,11 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
         let ok = match &*full(key) {
             "minecraft:entity_type" => id_matches(p, "entity_type", &e.kind, w),
             "minecraft:location" => location(p, e.position, w),
+            // `SteppingOnPredicate.matches`: only an entity on the ground
+            // stands on the block 0.5 below its feet; an airborne one passes.
             "minecraft:stepping_on" => {
-                location(p, [e.position[0], e.position[1] - 0.5, e.position[2]], w)
+                e.on_ground
+                    && location(p, [e.position[0], e.position[1] - 0.5, e.position[2]], w)
             }
             "minecraft:distance" => distance(p, e.position, origin),
             "minecraft:movement" => e.movement.is_some_and(|m| movement(p, m)),
@@ -2092,6 +2095,26 @@ mod tests {
                 || (tag == "minecraft:is_projectile"
                     && matches!(id, "minecraft:fireball" | "minecraft:arrow"))
         }
+    }
+    /// `SteppingOnPredicate.matches`: an entity that is not on the ground
+    /// does not stand on the block below it, even when its feet are over it.
+    #[test]
+    fn stepping_on_ignores_an_airborne_entity() {
+        let predicate = serde_json::json!({
+            "minecraft:stepping_on": {"block": {"blocks": "minecraft:stone"}}
+        });
+        let mut view = EntityView {
+            kind: "minecraft:player".into(),
+            position: [0.0, 1.0, 0.0],
+            on_ground: true,
+            ..Default::default()
+        };
+        assert!(entity(&predicate, &view, &Flat, [0.0; 3]));
+        view.on_ground = false;
+        assert!(
+            !entity(&predicate, &view, &Flat, [0.0; 3]),
+            "an airborne entity is not stepping on the block under it"
+        );
     }
     /// `BlockPredicate.matchesBlockEntity`: an `nbt` test needs a block
     /// entity whose `saveWithFullMetadata` contains the pattern

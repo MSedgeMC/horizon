@@ -486,6 +486,7 @@ impl Game<'_> {
                 EntityView {
                     kind: self.target_type(t),
                     position: g.position,
+                    on_ground: g.on_ground,
                     sneaking: g.sneaking,
                     input_sneak: g.input & 32 != 0,
                     team: self
