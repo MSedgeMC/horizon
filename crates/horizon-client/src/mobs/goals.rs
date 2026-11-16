@@ -2210,7 +2210,11 @@ impl AvoidEntity {
                 && seen_when.is_none_or(|f| f(s))
                 && (s.position.y - y).abs() <= 3.0 + max
         }) {
-            if m.sees(cx.w, Who::Mob(s.id)) {
+            // `TargetingConditions.test` scales `maxDist` by the target's
+            // visibility too, with the two-block floor.
+            if m.distance_sqr(s.position) <= cx.w.reach_sqr(s.id, m, max)
+                && m.sees(cx.w, Who::Mob(s.id))
+            {
                 hit = Some((s.id, s.position));
                 break;
             }
@@ -2234,8 +2238,8 @@ impl Goal for AvoidEntity {
         let Some(from) = self.avoid_target(m, cx) else {
             return false;
         };
-        // The player arm already applied the visibility-scaled range (floor 2);
-        // the species arm only got a box test from `nearby`.
+        // Both arms already applied the visibility-scaled range (floor 2); this
+        // is the plain distance the box may still hide.
         if !matches!(self.what, Avoid::Player) && m.distance_sqr(from) > max * max {
             return false;
         }
@@ -3729,6 +3733,61 @@ mod avoid_entity_targeting_tests {
             assert!(in_range, "the player is inside the plain distance range");
             assert!(picked, "the rabbit ignored a player in the open");
         }
+    }
+
+    /// A wolf `distance` blocks from the rabbit, with `invisible` setting its
+    /// flag: whether `AvoidEntityGoal.avoid_target` picks it, or `None` without
+    /// the vanilla data.
+    fn wolf_target(invisible: bool, distance: f64) -> Option<bool> {
+        let mut seen = None;
+        with_test_world(&[], |_, types| {
+            let kind = Arc::new(types.types["minecraft:wolf"].clone());
+            let mut wolf = Mob::new(2, kind, Vec3::new(0.5 + distance, 64.0, 0.5), 0.0);
+            wolf.invisible = invisible;
+            seen = Some(wolf.seen(None, &crate::items::Items::empty()));
+        });
+        let seen = seen?;
+        let mut picked = None;
+        with_test_world(&[seen], |w, types| {
+            let mut m = Mob::new(
+                1,
+                Arc::new(types.types["minecraft:rabbit"].clone()),
+                Vec3::new(0.5, 64.0, 0.5),
+                0.0,
+            );
+            let mut goal = AvoidEntity::new(Avoid::Species(vec![Species::Wolf]), 8.0, 1.0, 1.0);
+            let mut test_level = crate::health::TestLevel::new(0);
+            let mut events = Vec::new();
+            let mut cx = Cx {
+                w,
+                level: &mut test_level.level(),
+                events: &mut events,
+            };
+            picked = Some(goal.avoid_target(&mut m, &mut cx).is_some());
+        });
+        picked
+    }
+
+    /// `TargetingConditions.test` shrinks `AvoidEntityGoal`'s `maxDist` by the
+    /// target's visibility as well: the rabbit does not flee an invisible wolf
+    /// five blocks away, while a visible one and one within the two-block
+    /// floor make it run.
+    #[test]
+    fn an_invisible_wolf_is_not_fled_from_five_blocks() {
+        let Some(visible) = wolf_target(false, 5.0) else {
+            return;
+        };
+        assert!(visible, "a visible wolf five blocks away is fled");
+        assert_eq!(
+            wolf_target(true, 5.0),
+            Some(false),
+            "an invisible wolf that far is not: 8 x 0.07, floored to 2 blocks"
+        );
+        assert_eq!(
+            wolf_target(true, 1.5),
+            Some(true),
+            "within the two block floor the rabbit flees"
+        );
     }
 
     /// Upstream's visibility regression, also through the selected-guest path.
