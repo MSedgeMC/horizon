@@ -9,6 +9,38 @@ pub const STATUS: i32 = 1;
 pub const LOGIN: i32 = 2;
 pub const TRANSFER: i32 = 3;
 
+/// `ClientIntent`: the handshake's intent, by id (`byId`) and back (`id`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClientIntent {
+    Status,
+    Login,
+    Transfer,
+}
+
+impl ClientIntent {
+    /// `ClientIntent.byId`: an id it does not know is an error, so the handshake's decode fails
+    /// instead of carrying a raw number.
+    pub fn by_id(id: i32) -> crate::Result<Self> {
+        match id {
+            STATUS => Ok(Self::Status),
+            LOGIN => Ok(Self::Login),
+            TRANSFER => Ok(Self::Transfer),
+            _ => Err(crate::Error::new(format!(
+                "Unknown connection intent: {id}"
+            ))),
+        }
+    }
+
+    /// `ClientIntent.id`: the id this intent is written as.
+    pub fn id(self) -> i32 {
+        match self {
+            Self::Status => STATUS,
+            Self::Login => LOGIN,
+            Self::Transfer => TRANSFER,
+        }
+    }
+}
+
 packet!(Intention {
     protocol: i32 => VarInt,
     host: String => StrN<255>,
@@ -32,11 +64,18 @@ pub fn decode_intention(id: i32, payload: &[u8], host_limit: usize) -> crate::Re
         )));
     }
     let mut r = crate::buf::Reader::new(payload);
+    let protocol = r.varint()?;
+    let host = r.string(host_limit)?;
+    let port = r.u16()?;
+    let intent = r.varint()?;
+    // ClientIntentionPacket's codec reads the intent through ClientIntent.byId, which throws for
+    // an unknown id: the packet fails to decode rather than keeping the raw number.
+    ClientIntent::by_id(intent)?;
     let intention = Intention {
-        protocol: r.varint()?,
-        host: r.string(host_limit)?,
-        port: r.u16()?,
-        intent: r.varint()?,
+        protocol,
+        host,
+        port,
+        intent,
     };
     if r.remaining() != 0 {
         return Err(crate::Error::new(format!(

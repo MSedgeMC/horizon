@@ -255,10 +255,9 @@ impl Session {
         let host = r.string(255)?;
         let port = r.u16()?;
         let intent = r.varint()?;
-        let next = if intent == handshake::STATUS {
-            State::Status
-        } else {
-            State::Login
+        let next = match handshake::ClientIntent::by_id(intent)? {
+            handshake::ClientIntent::Status => State::Status,
+            handshake::ClientIntent::Login | handshake::ClientIntent::Transfer => State::Login,
         };
         self.set_writing(next);
         self.set_reading(next);
@@ -281,6 +280,35 @@ mod tests {
         w.varint(id);
         w.bytes(payload);
         w.data
+    }
+
+    #[test]
+    fn an_unknown_handshake_intent_is_refused() {
+        let intention = |intent: i32| {
+            let mut w = Writer::new();
+            w.varint(777);
+            w.string("localhost");
+            w.u16(25565);
+            w.varint(intent);
+            body(ids::handshake::serverbound::INTENTION, &w.data)
+        };
+        let s = Session::new(ServerVersion::V1_20_3);
+        // ClientIntent.byId throws for an id it does not know, so the decode fails and the
+        // connection is not moved into the status or login state.
+        assert!(s.serverbound(&intention(4)).is_err());
+        assert_eq!(
+            (s.writing(), s.reading()),
+            (State::Handshake, State::Handshake)
+        );
+        for (intent, state) in [
+            (handshake::STATUS, State::Status),
+            (handshake::LOGIN, State::Login),
+            (handshake::TRANSFER, State::Login),
+        ] {
+            let s = Session::new(ServerVersion::V1_20_3);
+            assert!(s.serverbound(&intention(intent)).unwrap().is_some());
+            assert_eq!((s.writing(), s.reading()), (state, state));
+        }
     }
 
     fn old_play_id(version: ServerVersion, pinned: i32) -> i32 {

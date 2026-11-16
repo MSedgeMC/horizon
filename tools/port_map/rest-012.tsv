@@ -113,8 +113,8 @@ VecDelta.Linear.decode	inline	crates/horizon-client/src/game/remote.rs::Game::ha
 VecDelta.Stepped.decode	inline	crates/horizon-client/src/game/remote.rs::Game::handle_packet	MoveEntity arms: each step applied to the previous step's position, with its ticks
 VecDeltaCodec.isDeltaTooBig	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::send_changes	the i16 range check on each delta
 VecDeltaCodec.tryEncode	inline	crates/horizon-client/src/lan/entity.rs::ServerEntity::send_changes	gap: minor: linear positions only; stepped paths are not encoded
-ClientIntent.byId	missing		minor: an unknown handshake intent is not rejected; the intent stays a raw number in handshake.rs
-ClientIntent.id	skip:other		constants STATUS, LOGIN and TRANSFER in handshake.rs
+ClientIntent.byId	port	crates/horizon-protocol/src/packets/handshake.rs::ClientIntent::by_id	an unknown id fails the handshake's decode, as the codec's byId throws
+ClientIntent.id	port	crates/horizon-protocol/src/packets/handshake.rs::ClientIntent::id	the ids STATUS, LOGIN and TRANSFER, read back from the enum
 ClientIntentionPacket.write	port	crates/horizon-protocol/src/buf.rs::write	packet! Intention {protocol, host, port, intent}
 ClientboundCustomQueryPacket.readUnknownPayload	missing		minor: no 1 MiB cap on unknown login query payloads; CustomQuery keeps the raw data
 ClientboundCustomQueryPacket.write	port	crates/horizon-protocol/src/buf.rs::write	packet! CustomQuery {transaction, channel Ident, data Rest}
