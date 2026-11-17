@@ -253,7 +253,7 @@ pub fn equippable(stack: &ItemStack, items: &crate::items::Items) -> Option<Equi
     }
     for (kind, c) in &added {
         if let (component::EQUIPPABLE, Component::Raw(bytes)) = (*kind, c) {
-            out = decode_equippable(bytes);
+            out = decode_equippable(bytes).map(|(equippable, _)| equippable);
         }
     }
     out
@@ -444,8 +444,9 @@ fn namespaced(id: String) -> String {
 }
 
 /// `Equippable.STREAM_CODEC` up to `swappable`: the slot, the equip sound, the
-/// asset id, the camera overlay, the allowed entities and the swappable flag.
-fn decode_equippable(bytes: &[u8]) -> Option<Equippable> {
+/// asset id, the camera overlay, the allowed entities and its flags. The set
+/// comes back too, so a test can tell a tag from an id list.
+fn decode_equippable(bytes: &[u8]) -> Option<(Equippable, Option<AllowedEntities>)> {
     let mut r = Reader::new(bytes);
     let slot = equipment_slot_name(r.varint().ok()?)?.to_owned();
     // SoundEvent.STREAM_CODEC (ByteBufCodecs.holder): a registry id + 1, or 0
@@ -468,32 +469,53 @@ fn decode_equippable(bytes: &[u8]) -> Option<Equippable> {
     };
     // A layout the fields before this one leave in another shape keeps the
     // component's default (swappable) rather than losing the slot.
-    let swappable = read_swappable(&mut r).unwrap_or(true);
-    Some(Equippable {
-        slot,
-        asset_id,
-        camera_overlay,
-        swappable,
-    })
+    let (allowed_entities, swappable) = read_swappable(&mut r).unwrap_or((None, true));
+    Some((
+        Equippable {
+            slot,
+            asset_id,
+            camera_overlay,
+            swappable,
+        },
+        allowed_entities,
+    ))
 }
 
-/// `Equippable`'s `allowedEntities` (`HolderSet.STREAM_CODEC`: a tag's id and
-/// name, or a count plus one entity type ids), then its `swappable` bool.
-fn read_swappable(r: &mut Reader) -> Option<bool> {
-    if r.bool().ok()? {
-        match r.varint().ok()? {
-            0 => {
-                r.varint().ok()?;
-                r.string(32767).ok()?;
+/// `Equippable`'s `allowedEntities`: `HolderSet.STREAM_CODEC`, a tag's id
+/// behind a 0, or a count of one plus entity type ids.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[cfg_attr(not(test), allow(dead_code))]
+enum AllowedEntities {
+    Tag(String),
+    Ids(Vec<i32>),
+}
+
+/// `Equippable`'s `allowedEntities` (`HolderSet.STREAM_CODEC`), then its
+/// `dispensable` and `swappable` flags.
+fn read_swappable(r: &mut Reader) -> Option<(Option<AllowedEntities>, bool)> {
+    let allowed_entities = if r.bool().ok()? {
+        Some(read_allowed_entities(r)?)
+    } else {
+        None
+    };
+    // `dispensable`, then `swappable`.
+    r.bool().ok()?;
+    Some((allowed_entities, r.bool().ok()?))
+}
+
+/// `HolderSet.STREAM_CODEC` (`ByteBufCodecs.holderSet`): a tag's id directly
+/// behind a 0, or a count of one plus entity type ids.
+fn read_allowed_entities(r: &mut Reader) -> Option<AllowedEntities> {
+    Some(match r.varint().ok()? {
+        0 => AllowedEntities::Tag(r.string(32767).ok()?),
+        n => {
+            let n = usize::try_from(n).ok()?.checked_sub(1)?;
+            if n > r.remaining() {
+                return None;
             }
-            n => {
-                for _ in 0..n.checked_sub(1)? {
-                    r.varint().ok()?;
-                }
-            }
+            AllowedEntities::Ids((0..n).map(|_| r.varint().ok()).collect::<Option<_>>()?)
         }
-    }
-    r.bool().ok()
+    })
 }
 
 /// `EquipmentSlot.byId`'s serialized names.
@@ -1372,6 +1394,7 @@ fn profile_tag(p: &Profile) -> Tag {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use horizon_protocol::buf::Writer;
     use horizon_protocol::registry::Ids;
     use std::path::Path;
 
@@ -3189,13 +3212,68 @@ mod tests {
         assert!(!equippable(&helmet, &items).unwrap().swappable);
 
         // The server's patch: slot 4 (head), a registry sound, no asset id,
-        // camera overlay or allowed entities, and swappable false.
-        let mut bytes = vec![4, 1, 0, 0, 0, 0, 1, 1];
+        // camera overlay or allowed entities, dispensable and swappable false.
+        let mut bytes = vec![4, 1, 0, 0, 0, 0, 0];
         let mut patch = vec![1, 0, component::EQUIPPABLE as u8, bytes.len() as u8];
         patch.append(&mut bytes);
         let mut stick = ItemStack::new("minecraft:stick", 1);
         stick.data_mut().wire = crate::item_data::Wire::new(stick.clone(), Arc::from(patch));
         assert_eq!(equippable_slot(&stick, &items).as_deref(), Some("head"));
         assert!(!equippable(&stick, &items).unwrap().swappable);
+    }
+
+    /// A patch's `equippable` value: slot 4 (head), a registry sound, no asset
+    /// id or camera overlay, `allowedEntities` appended by `entities`, then
+    /// `dispensable` and `swappable` both false.
+    fn equippable_value(entities: impl FnOnce(&mut Writer)) -> Vec<u8> {
+        let mut w = Writer::new();
+        w.varint(4);
+        w.varint(1);
+        w.bool(false);
+        w.bool(false);
+        w.bool(true);
+        entities(&mut w);
+        w.bool(false);
+        w.bool(false);
+        w.data
+    }
+
+    /// `Equippable.STREAM_CODEC` reads `allowedEntities` as a tag's id directly
+    /// after the 0, or a count of one plus entity type ids, then `dispensable`
+    /// and `swappable`: the extra int before the tag this reader once read
+    /// misaligned it and lost the flags.
+    #[test]
+    fn an_equippable_patch_reads_its_allowed_entities() {
+        let tag = "minecraft:can_equip_saddle";
+        let value = equippable_value(|w| {
+            w.varint(0);
+            w.string(tag);
+        });
+        let (decoded, allowed) = decode_equippable(&value).unwrap();
+        assert_eq!(decoded.slot, "head");
+        assert!(!decoded.swappable);
+        assert_eq!(allowed, Some(AllowedEntities::Tag(tag.into())));
+
+        // The same value on a stack: the server's patch sets the slot and the
+        // swappable flag rather than the component's default.
+        let items = crate::items::Items::for_tests(Default::default());
+        let mut patch = vec![1, 0, component::EQUIPPABLE as u8, value.len() as u8];
+        patch.extend_from_slice(&value);
+        let mut stick = ItemStack::new("minecraft:stick", 1);
+        stick.data_mut().wire = crate::item_data::Wire::new(stick.clone(), Arc::from(patch));
+        let decoded = equippable(&stick, &items).unwrap();
+        assert_eq!(decoded.slot, "head");
+        assert!(!decoded.swappable);
+
+        // Two entity type ids: the count is one more than the ids it holds.
+        let value = equippable_value(|w| {
+            w.varint(3);
+            w.varint(47);
+            w.varint(100);
+        });
+        let (decoded, allowed) = decode_equippable(&value).unwrap();
+        assert_eq!(decoded.slot, "head");
+        assert!(!decoded.swappable);
+        assert_eq!(allowed, Some(AllowedEntities::Ids(vec![47, 100])));
     }
 }
