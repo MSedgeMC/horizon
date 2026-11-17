@@ -58,18 +58,6 @@ impl ProjectileWorld for ProjWorld<'_, '_> {
     fn targets(&self) -> &[(Who, Aabb)] {
         self.targets
     }
-    /// `Projectile.canHitEntity`'s shooter rule over the mob world's teams
-    /// (`Entity.doTeamsAllowDamage`).
-    fn can_attack(&self, owner: Option<Who>, who: Who) -> bool {
-        // `Entity.canBeHitByProjectile` refuses a spectator.
-        if who == Who::Player && self.w.player.as_ref().is_some_and(|p| p.spectator) {
-            return false;
-        }
-        let Some(owner) = owner else {
-            return true;
-        };
-        horizon_client::scoreboard::teams_allow_damage(self.w.teams.of(owner), self.w.teams.of(who))
-    }
     /// `BaseFireBlock.entityInside` for a thrown projectile: fire and soul
     /// fire set it alight for 160 ticks.
     fn ignites(&self, p: [i32; 3]) -> bool {
@@ -109,39 +97,34 @@ impl ProjectileWorld for ProjWorld<'_, '_> {
 }
 
 impl Game<'_> {
-    /// `Entity.getTeam` of anyone a projectile can name: the host, a guest
-    /// under its entity id, or a mob (its own team, else its tamed owner's).
-    fn team_of_who(&self, who: Who) -> Option<&horizon_client::scoreboard::Team> {
+    /// `Entity.getTeam` of a player a projectile can name: the host under
+    /// `Who::Player`, a guest under its entity id. `None` for a mob, which
+    /// `AbstractArrow.canHitEntity` does not team-check.
+    fn player_team_of(&self, who: Who) -> Option<Option<&horizon_client::scoreboard::Team>> {
         match who {
-            Who::Player => self.player_team(),
-            Who::Mob(id) => {
-                let guest = self
-                    .lan
-                    .as_ref()
-                    .and_then(|h| h.hub.guests.iter().find(|g| g.entity_id as u32 == id));
-                match guest {
-                    Some(g) => self.score.board.players_team(&g.name),
-                    None => self.mob_team(id),
-                }
-            }
+            Who::Player => Some(self.player_team()),
+            Who::Mob(id) => self
+                .lan
+                .as_ref()
+                .and_then(|h| h.hub.guests.iter().find(|g| g.entity_id as u32 == id))
+                .map(|g| self.score.board.players_team(&g.name)),
         }
     }
 }
 
-impl horizon_client::arrows::ShooterRule for Game<'_> {
-    /// `Entity.doTeamsAllowDamage` as `Player.canHarmPlayer` reads it: an
-    /// ally of the shooter on a team without friendly fire is not a target.
-    fn can_attack(&self, owner: Option<Who>, who: Who) -> bool {
-        // `Entity.canBeHitByProjectile` refuses a spectator.
-        if who == Who::Player && self.spectator() {
-            return false;
-        }
+impl horizon_client::arrows::CanHarmPlayer for Game<'_> {
+    /// `Player.canHarmPlayer`: only an arrow whose owner and target are both
+    /// players reads the rule (`Entity.doTeamsAllowDamage`); a mob on the
+    /// shooter's team is still a target.
+    fn can_harm_player(&self, owner: Option<Who>, who: Who) -> bool {
         let Some(owner) = owner else {
             return true;
         };
-        horizon_client::scoreboard::teams_allow_damage(
-            self.team_of_who(owner),
-            self.team_of_who(who),
-        )
+        let (Some(owner_team), Some(target_team)) =
+            (self.player_team_of(owner), self.player_team_of(who))
+        else {
+            return true;
+        };
+        horizon_client::scoreboard::teams_allow_damage(owner_team, target_team)
     }
 }

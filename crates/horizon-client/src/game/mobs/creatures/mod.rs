@@ -5148,7 +5148,7 @@ impl Game<'_> {
                 .grief_hooked()
                 .then_some(self as &dyn horizon_client::mobs::MobHooks),
             owners: self,
-            can_attack: self,
+            can_harm_player: self,
         }
     }
     /// Dispatch with the projectile's actual owner context, including a guest shooter.

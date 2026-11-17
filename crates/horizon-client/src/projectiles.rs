@@ -436,13 +436,6 @@ pub trait ProjectileWorld {
         velocity
     }
     fn targets(&self) -> &[(Who, Aabb)];
-    /// `Projectile.canHitEntity`'s shooter rule: whether the projectile's
-    /// owner may attack `who` (`Entity.doTeamsAllowDamage`, the rule the melee
-    /// paths already read). True by default, for an ownerless projectile and
-    /// for a world that knows no teams.
-    fn can_attack(&self, _owner: Option<Who>, _who: Who) -> bool {
-        true
-    }
     /// `Level.getMinY() - 64` (`Entity.checkBelowWorld`); the Overworld's
     /// unless the world says otherwise.
     fn below_world_y(&self) -> f64 {
@@ -1369,7 +1362,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if !self.target_allowed(w, *who) {
+            if !self.target_allowed(*who) {
                 continue;
             }
             if let Some(at) = b.inflate(Vec3::new(margin, margin, margin)).clip(from, end) {
@@ -1686,29 +1679,24 @@ impl Projectile {
     fn hit_margin(&self) -> f64 {
         f64::from(((self.age as i32 - 2) as f32 / 20.0).clamp(0.0, 0.3))
     }
-    /// `Projectile.canHitEntity`: whether the projectile may strike `who`.
-    /// The shooter and the non-living vehicle it was shot from are refused
-    /// until the projectile has left them, and `AbstractArrow.canHitEntity`
-    /// exempts a no-physics arrow (a loyalty trident's return) or a deflected
-    /// one from that owner check. Otherwise `can_attack` is the shooter's own
-    /// rule, so a projectile is never spent on an entity its shooter cannot
-    /// attack.
-    pub fn can_hit_entity(&self, who: Who, can_attack: impl FnOnce(Who) -> bool) -> bool {
-        if Some(who) == self.owner || Some(who) == self.collision_owner() {
-            return self.left_owner || (Some(who) == self.owner && self.owner_hit_exempt());
+    /// `Projectile.canHitEntity`: the shooter and the vehicle it rides are
+    /// refused until the projectile has left them. `AbstractArrow.canHitEntity`
+    /// adds one rule, `Player.canHarmPlayer` between a player shooter and a
+    /// player target; a projectile that is not an arrow has no such filter, so
+    /// it can hit an ally of its shooter.
+    pub fn can_hit_entity(
+        &self,
+        who: Who,
+        can_harm_player: impl FnOnce(Option<Who>, Who) -> bool,
+    ) -> bool {
+        if !self.left_owner && (Some(who) == self.owner || Some(who) == self.collision_owner()) {
+            return false;
         }
-        can_attack(who)
+        self.arrow.is_none() || can_harm_player(self.owner, who)
     }
-    /// `Projectile.canHitEntity` against a world's target list.
-    fn target_allowed(&self, w: &impl ProjectileWorld, who: Who) -> bool {
-        self.can_hit_entity(who, |target| w.can_attack(self.owner, target))
-    }
-    /// `AbstractArrow.canHitEntity`'s owner exemption: an arrow in no-physics
-    /// flight or one that was deflected may strike its owner.
-    fn owner_hit_exempt(&self) -> bool {
-        self.arrow
-            .as_ref()
-            .is_some_and(|a| a.no_physics || a.deflected)
+    /// `Projectile.canHitEntity` alone, for a non-arrow projectile's search.
+    fn target_allowed(&self, who: Who) -> bool {
+        self.can_hit_entity(who, |_, _| true)
     }
     fn tick_inner(&mut self, w: &impl ProjectileWorld, impact: bool) -> (bool, Hit) {
         // `Entity.setOldPosAndRot` (the previous position and rotation the
@@ -1774,7 +1762,7 @@ impl Projectile {
         let margin = self.hit_margin();
         let mut best: Option<(Who, Vec3, f64)> = None;
         for (who, b) in w.targets() {
-            if !self.target_allowed(w, *who) {
+            if !self.target_allowed(*who) {
                 continue;
             }
             let inflated = b.inflate(Vec3::new(margin, margin, margin));
@@ -3345,15 +3333,11 @@ mod arrow_color_tests {
 mod can_hit_entity_tests {
     use super::*;
 
-    /// A world whose shooter and target are on teams, so `can_attack` answers
-    /// as the game's melee rule does: `Entity.doTeamsAllowDamage` over the two
-    /// teams.
-    struct TeamWorld {
+    /// A world with one target and no block: the tick's hit search alone.
+    struct OneTarget {
         targets: Vec<(Who, Aabb)>,
-        shooter: Option<crate::scoreboard::Team>,
-        target: Option<crate::scoreboard::Team>,
     }
-    impl ProjectileWorld for TeamWorld {
+    impl ProjectileWorld for OneTarget {
         fn clip(&self, _: Vec3, _: Vec3) -> Option<(Vec3, [i32; 3], [i32; 3])> {
             None
         }
@@ -3363,97 +3347,75 @@ mod can_hit_entity_tests {
         fn targets(&self) -> &[(Who, Aabb)] {
             &self.targets
         }
-        fn can_attack(&self, owner: Option<Who>, _who: Who) -> bool {
-            owner.is_some()
-                && crate::scoreboard::teams_allow_damage(
-                    self.shooter.as_ref(),
-                    self.target.as_ref(),
-                )
-        }
     }
-    fn team(name: &str, friendly_fire: bool) -> crate::scoreboard::Team {
-        crate::scoreboard::Team {
-            name: name.to_owned(),
-            display_name: crate::scoreboard::literal(name),
-            color: None,
-            allow_friendly_fire: friendly_fire,
-            see_friendly_invisibles: true,
-            prefix: crate::scoreboard::literal(""),
-            suffix: crate::scoreboard::literal(""),
-            nametag_visibility: crate::scoreboard::Visibility::Always,
-            death_message_visibility: crate::scoreboard::Visibility::Always,
-            collision_rule: crate::scoreboard::CollisionRule::Always,
-            players: Default::default(),
-        }
+    fn at(x: f64) -> Aabb {
+        Aabb::new(Vec3::new(x, 100.0, 0.0), Vec3::new(x + 0.2, 101.0, 1.0))
     }
-    #[test]
-    fn a_projectile_skips_what_its_shooter_cannot_attack_and_a_deflected_arrow_hits_its_owner() {
-        // `Projectile.canHitEntity`: the melee `Entity.doTeamsAllowDamage`
-        // rule is consulted once for every candidate target, so an ally is
-        // flown through; `AbstractArrow.canHitEntity` exempts a deflected
-        // arrow's owner.
-        let boxed = |x: f64| Aabb::new(Vec3::new(x, 100.0, 0.0), Vec3::new(x + 0.2, 101.0, 1.0));
-        let red = team("red", false);
-        let blue = team("blue", false);
-        let mut snowball = Projectile::new(
-            ProjectileKind::Snowball,
-            Vec3::new(0.0, 100.5, 0.5),
-            Some(Who::Player),
-        );
-        snowball.velocity = Vec3::new(0.5, 0.0, 0.0);
-        snowball.age = 5;
-        let ally = TeamWorld {
-            targets: vec![(Who::Mob(7), boxed(0.4))],
-            shooter: Some(red.clone()),
-            target: Some(red.clone()),
-        };
-        let mut missed = snowball.clone();
-        assert_eq!(missed.tick(&ally).1, Hit::None, "an ally is not hit");
-        let enemy = TeamWorld {
-            targets: vec![(Who::Mob(7), boxed(0.4))],
-            shooter: Some(red.clone()),
-            target: Some(blue),
-        };
-        let mut hit = snowball;
-        assert!(
-            matches!(
-                hit.tick(&enemy).1,
-                Hit::Entity {
-                    who: Who::Mob(7),
-                    ..
-                }
-            ),
-            "a non-ally is hit"
-        );
-        // The owner is refused while the arrow is inside it, unless deflected.
-        let mut arrow = Projectile::new(
+    fn projectile(kind: ProjectileKind, owner: Option<Who>) -> Projectile {
+        let mut p = Projectile::new(kind, Vec3::new(0.0, 100.5, 0.5), owner);
+        p.velocity = Vec3::new(1.0, 0.0, 0.0);
+        p.age = 5;
+        p
+    }
+    fn arrow(owner: Option<Who>) -> Projectile {
+        projectile(
             ProjectileKind::Arrow {
                 base_damage: 2.0,
                 critical: false,
                 effect: None,
             },
-            Vec3::new(0.0, 100.5, 0.5),
-            Some(Who::Player),
+            owner,
+        )
+    }
+    #[test]
+    fn the_shooter_is_refused_until_the_projectile_has_left() {
+        let mut p = projectile(ProjectileKind::Snowball, Some(Who::Player));
+        assert!(
+            !p.can_hit_entity(Who::Player, |_, _| true),
+            "the shooter is not hit"
         );
-        arrow.velocity = Vec3::new(0.5, 0.0, 0.0);
-        arrow.age = 5;
-        let own = TeamWorld {
-            targets: vec![(Who::Player, boxed(0.4))],
-            shooter: Some(red.clone()),
-            target: Some(red),
+        p.left_owner = true;
+        assert!(
+            p.can_hit_entity(Who::Player, |_, _| true),
+            "the shooter is hit once the projectile has left"
+        );
+    }
+    #[test]
+    fn an_arrow_refuses_a_player_its_owner_cannot_harm() {
+        // A guest shooter (`Who::Mob(5)`) against the host player: the owner
+        // skip does not apply, so only the arrow's player rule decides.
+        let p = arrow(Some(Who::Mob(5)));
+        assert!(
+            !p.can_hit_entity(Who::Player, |_, _| false),
+            "friendly fire off: a player target is refused"
+        );
+        assert!(
+            p.can_hit_entity(Who::Player, |_, _| true),
+            "friendly fire on: the player is a target"
+        );
+        // The rule only applies between players; it never refuses a mob.
+        assert!(
+            p.can_hit_entity(Who::Mob(7), |_, who| who != Who::Player),
+            "a mob target is not refused"
+        );
+    }
+    #[test]
+    fn a_non_arrow_projectile_hits_an_ally_of_its_shooter() {
+        // `Projectile.canHitEntity` has no team rule: a snowball flies into a
+        // teammate of the player who threw it.
+        let world = OneTarget {
+            targets: vec![(Who::Mob(7), at(0.4))],
         };
-        let mut blocked = arrow.clone();
-        assert_eq!(blocked.tick(&own).1, Hit::None, "the shooter is not hit");
-        arrow.arrow.as_mut().unwrap().deflected = true;
+        let mut p = projectile(ProjectileKind::Snowball, Some(Who::Player));
         assert!(
             matches!(
-                arrow.tick(&own).1,
+                p.tick(&world).1,
                 Hit::Entity {
-                    who: Who::Player,
+                    who: Who::Mob(7),
                     ..
                 }
             ),
-            "a deflected arrow hits its owner"
+            "the ally is hit"
         );
     }
 }
