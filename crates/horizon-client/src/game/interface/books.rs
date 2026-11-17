@@ -2387,7 +2387,7 @@ mod lectern_page_resolution_tests {
     /// becomes its value. Reading the same book in hand already resolves it
     /// (`Game::resolve_held_book`); the lectern did not.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn a_lectern_resolves_its_books_pages_from_its_own_position() {
         let mut game = server_game();
         game.set_allow_commands(true);
@@ -2453,7 +2453,7 @@ mod lectern_page_resolution_tests {
     /// chunk loads, so a distance-limited selector reads from the block and
     /// not from whoever later opens the screen. Nothing opens it here.
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn a_saved_lecterns_book_resolves_when_its_chunk_loads() {
         let mut game = server_game();
         game.set_allow_commands(true);
