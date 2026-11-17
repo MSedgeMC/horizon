@@ -2723,3 +2723,7 @@ mod goal_timing_tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "wolf_whine_tests.rs"]
+mod wolf_whine_tests;
