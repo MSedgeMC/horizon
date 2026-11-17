@@ -349,6 +349,60 @@ pub(super) fn item_view(s: &ItemStack) -> ItemView {
         custom_data: None,
     }
 }
+/// An item in a numbered slot, with the stack's custom data so
+/// `ItemPredicate`'s `custom_data` tests as it does on mob equipment.
+pub(super) fn slot_item_view(s: &ItemStack) -> ItemView {
+    let mut view = item_view(s);
+    view.custom_data = Some(horizon_core::nbt::Tag::Compound(
+        s.custom_data().cloned().unwrap_or_default(),
+    ));
+    view
+}
+/// `ItemStack.EMPTY` as predicates see it: item `minecraft:air`, count 0.
+pub(super) fn empty_item_view() -> ItemView {
+    ItemView {
+        id: "minecraft:air".into(),
+        ..Default::default()
+    }
+}
+/// `Player.getSlot` for the slots this view can supply: the main inventory
+/// (0..36), the equipment slots (98, 99, 100..103, 105, 106), the carried
+/// stack (499) and the inventory menu's 2x2 crafting grid (500..504). The
+/// ender chest (200..227) and an open table's 3x3 grid are not projected.
+pub(super) fn player_slot_map(
+    inventory: &[Option<ItemStack>],
+    selected: usize,
+    armor: &[Option<ItemStack>; 4],
+    offhand: &Option<ItemStack>,
+    carried: &Option<ItemStack>,
+    craft_grid: &[Option<ItemStack>],
+    craft_size: usize,
+) -> BTreeMap<i32, ItemView> {
+    let mut slots = BTreeMap::new();
+    let empty = empty_item_view;
+    for (i, stack) in inventory.iter().take(36).enumerate() {
+        slots.insert(i as i32, stack.as_ref().map_or_else(empty, slot_item_view));
+    }
+    let held = inventory.get(selected).and_then(Option::as_ref);
+    let mut put = |id: i32, stack: Option<&ItemStack>| {
+        slots.insert(id, stack.map_or_else(empty, slot_item_view));
+    };
+    put(98, held);
+    put(99, offhand.as_ref());
+    put(100, armor[3].as_ref());
+    put(101, armor[2].as_ref());
+    put(102, armor[1].as_ref());
+    put(103, armor[0].as_ref());
+    put(105, None);
+    put(106, None);
+    put(499, carried.as_ref());
+    if craft_size == 2 {
+        for i in 0..4 {
+            put(500 + i, craft_grid.get(i as usize).and_then(Option::as_ref));
+        }
+    }
+    slots
+}
 impl Game<'_> {
     fn adv_path(&self) -> Option<std::path::PathBuf> {
         Some(super::stats::player_json(
@@ -566,7 +620,7 @@ impl Game<'_> {
     }
     /// The player as a command's predicates see it: with what it looks at.
     pub(super) fn player_entity(&self) -> EntityView {
-        self.player_entity_looking(true)
+        self.player_entity_looking(true, true)
     }
     /// [`Self::entity_view_of`] for testing `predicate` (a predicate, a list
     /// of conditions or an item modifier): the player with the level,
@@ -636,7 +690,10 @@ impl Game<'_> {
     /// without the player's compound (building it needs `&mut self`).
     pub(super) fn player_entity_for_any(&self, triggers: &[&str]) -> EntityView {
         let tree = &self.adv.tree;
-        let mut me = self.player_entity_looking(triggers.iter().any(|t| tree.may_look(t)));
+        let mut me = self.player_entity_looking(
+            triggers.iter().any(|t| tree.may_look(t)),
+            triggers.iter().any(|t| tree.may_test_slots(t)),
+        );
         let asked = (triggers.iter()).fold(adv::FactsAsked::default(), |all, t| {
             all.or(tree.player_facts_asked(t))
         });
@@ -663,8 +720,9 @@ impl Game<'_> {
                 .then(|| self.level.recipe_book.recipes.clone()),
         }
     }
-    /// The player as predicates see it, with what it looks at when `looking`.
-    pub(super) fn player_entity_looking(&self, looking: bool) -> EntityView {
+    /// The player as predicates see it, with what it looks at when `looking`
+    /// and its numbered slots when a criterion may ask.
+    pub(super) fn player_entity_looking(&self, looking: bool, slots_asked: bool) -> EntityView {
         let Some(p) = self.player.as_ref() else {
             return EntityView::default();
         };
@@ -686,6 +744,17 @@ impl Game<'_> {
                         .map(|b| Box::new(self.boat_entity(b)))
                 })
         });
+        let slots = slots_asked.then(|| {
+            player_slot_map(
+                &self.inventory,
+                self.selected,
+                &self.armor,
+                &self.offhand,
+                &self.carried,
+                &self.craft_grid,
+                self.craft_size,
+            )
+        });
         EntityView {
             kind: "minecraft:player".into(),
             position: [p.position.x, p.position.y, p.position.z],
@@ -702,6 +771,7 @@ impl Game<'_> {
             fall_flying: p.fall_flying,
             tick_count: Some(p.health.tick_count),
             equipment: eq,
+            slots: slots.unwrap_or_default(),
             vehicle,
             effects: self
                 .potions
@@ -796,6 +866,24 @@ impl Game<'_> {
                 view.custom_data = Some(horizon_core::nbt::Tag::Compound(data));
             }
         }
+        // `LivingEntity.getSlot`: the hands, armour, body and saddle. The
+        // view has all of them, so an empty one still counts as a real slot.
+        let mut slots = BTreeMap::new();
+        for (id, view) in [
+            (98, &equipment[0]),
+            (99, &equipment[1]),
+            (100, &equipment[5]),
+            (101, &equipment[4]),
+            (102, &equipment[3]),
+            (103, &equipment[2]),
+            (105, &equipment[6]),
+        ] {
+            slots.insert(id, view.clone().unwrap_or_else(empty_item_view));
+        }
+        slots.insert(
+            106,
+            slot(m.extra.slot_id(horizon_items::equipment::SADDLE)).unwrap_or_else(empty_item_view),
+        );
 
         let passengers: Vec<EntityView> = self
             .mobs
@@ -840,6 +928,7 @@ impl Game<'_> {
             fall_flying: m.extra.fall_flying,
             tick_count: Some(m.age as i32),
             equipment,
+            slots,
             // LivingEntity.getActiveEffectsMap supplies the active predicate instances.
             effects: m
                 .extra
@@ -3824,4 +3913,43 @@ pub(super) fn inventory_slots(
     slots.extend(armor.iter().rev().cloned());
     slots.push(offhand.clone());
     slots
+}
+
+#[cfg(test)]
+mod slots_tests {
+    use super::*;
+
+    /// `Player.getSlot`'s slots this view supplies: the inventory in its
+    /// vanilla ids, the hands and armour, the cursor and the 2x2 grid.
+    #[test]
+    fn player_slots_project_inventory_equipment_and_menu_slots() {
+        let mut inventory = vec![None; 36];
+        inventory[0] = Some(ItemStack::new("minecraft:bread", 2));
+        inventory[9] = Some(ItemStack::new("minecraft:diamond", 1));
+        let mut armor = [None, None, None, None];
+        armor[0] = Some(ItemStack::new("minecraft:iron_helmet", 1));
+        armor[3] = Some(ItemStack::new("minecraft:iron_boots", 1));
+        let offhand = Some(ItemStack::new("minecraft:torch", 3));
+        let carried = Some(ItemStack::new("minecraft:stick", 1));
+        let mut craft = vec![None; 9];
+        craft[0] = Some(ItemStack::new("minecraft:oak_planks", 4));
+
+        let slots = player_slot_map(&inventory, 0, &armor, &offhand, &carried, &craft, 2);
+
+        assert_eq!(slots[&0].id, "minecraft:bread");
+        assert_eq!(slots[&9].id, "minecraft:diamond");
+        assert_eq!(slots[&98].id, "minecraft:bread");
+        assert_eq!(slots[&99].id, "minecraft:torch");
+        assert_eq!(slots[&100].id, "minecraft:iron_boots");
+        assert_eq!(slots[&101].id, "minecraft:air");
+        assert_eq!(slots[&103].id, "minecraft:iron_helmet");
+        assert_eq!(slots[&105].id, "minecraft:air");
+        assert_eq!(slots[&106].id, "minecraft:air");
+        assert_eq!(slots[&499].id, "minecraft:stick");
+        assert_eq!(slots[&500].id, "minecraft:oak_planks");
+        assert!(
+            !slots.contains_key(&200),
+            "the ender chest is not projected"
+        );
+    }
 }

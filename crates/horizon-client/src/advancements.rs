@@ -71,6 +71,9 @@ pub struct Tree {
     /// The triggers with a criterion that may test an entity's `nbt`
     /// (`index_nbt`).
     nbt_triggers: BTreeSet<String>,
+    /// The triggers with a criterion that may read entity slots
+    /// (`index_slots`).
+    slots_triggers: BTreeSet<String>,
     /// What the criteria of each trigger may ask of the player's level,
     /// statistics, advancements and recipes (`index_player_facts`).
     player_fact_triggers: HashMap<String, FactsAsked>,
@@ -237,6 +240,7 @@ impl Tree {
         tree.index_recipes();
         tree.index_looking_at();
         tree.index_nbt();
+        tree.index_slots();
         tree.index_player_facts();
         tree
     }
@@ -301,6 +305,28 @@ impl Tree {
     /// Whether a criterion of `trigger` may test an entity's `nbt`.
     pub fn may_test_nbt(&self, trigger: &str) -> bool {
         self.nbt_triggers.contains(trigger)
+    }
+    /// Index the triggers whose criteria name `slots`, or a
+    /// `minecraft:reference` to a predicate file that might: the text is
+    /// searched, nothing is read.
+    pub fn index_slots(&mut self) {
+        let keys = [
+            "\"minecraft:slots\"",
+            "\"slots\"",
+            "\"minecraft:reference\"",
+            "\"reference\"",
+        ];
+        self.slots_triggers = (self.list.iter().flat_map(|a| &a.criteria))
+            .filter(|c| {
+                let json = c.conditions.json();
+                keys.iter().any(|k| json.contains(k))
+            })
+            .map(|c| c.trigger.clone())
+            .collect();
+    }
+    /// Whether a criterion of `trigger` may read an entity's slots.
+    pub fn may_test_slots(&self, trigger: &str) -> bool {
+        self.slots_triggers.contains(trigger)
     }
     /// Whether any criterion may test an entity's `nbt`.
     pub fn tests_nbt(&self) -> bool {
@@ -709,6 +735,10 @@ pub struct EntityView {
     pub tick_count: Option<i32>,
     /// mainhand, offhand, head, chest, legs, feet, body.
     pub equipment: [Option<ItemView>; 7],
+    /// `Entity.getSlot` for the slots this view can supply, keyed by vanilla
+    /// slot id (`SlotRanges`). An absent id is a slot the view cannot supply,
+    /// and `minecraft:slots` fails on it rather than inventing a stack.
+    pub slots: BTreeMap<i32, ItemView>,
     pub vehicle: Option<Box<EntityView>>,
     /// `Entity.getPassengers`, for `PassengerPredicate`.
     pub passengers: Vec<EntityView>,
@@ -1161,6 +1191,7 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                             .is_some_and(|it| item(&p[*s], it, w))
                 })
             }
+            "minecraft:slots" => slots(p, e, w),
             "minecraft:vehicle" => e
                 .vehicle
                 .as_ref()
@@ -1255,6 +1286,68 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
         }
     }
     true
+}
+/// `SlotsPredicate.matches`: every named `SlotRange` needs a slot whose
+/// stack matches its `ItemPredicate`. A range the view cannot supply fails
+/// (vanilla skips a slot whose `getSlot` is null too).
+fn slots(v: &Value, e: &EntityView, w: &dyn World) -> bool {
+    v.as_object().is_some_and(|ranges| {
+        ranges.iter().all(|(range, item_pred)| {
+            slot_range_ids(range).is_some_and(|ids| {
+                ids.iter().any(|id| {
+                    e.slots
+                        .get(id)
+                        .is_some_and(|stack| item(item_pred, stack, w))
+                })
+            })
+        })
+    })
+}
+/// The numbered slots a `SlotRanges` name selects. These are the exact names
+/// its codec accepts (`container.N`, `container.*` and so on); any other
+/// name is no range and fails.
+fn slot_range_ids(name: &str) -> Option<Vec<i32>> {
+    let fixed = |ids: &[i32]| Some(ids.to_vec());
+    match name {
+        "contents" => fixed(&[0]),
+        "weapon" | "weapon.mainhand" => fixed(&[98]),
+        "weapon.offhand" => fixed(&[99]),
+        "weapon.*" => fixed(&[98, 99]),
+        "armor.head" => fixed(&[103]),
+        "armor.chest" => fixed(&[102]),
+        "armor.legs" => fixed(&[101]),
+        "armor.feet" => fixed(&[100]),
+        "armor.body" => fixed(&[105]),
+        "armor.*" => fixed(&[103, 102, 101, 100, 105]),
+        "saddle" => fixed(&[106]),
+        "horse.chest" | "player.cursor" => fixed(&[499]),
+        _ => {
+            for (prefix, start, len) in [
+                ("container.", 0, 54),
+                ("hotbar.", 0, 9),
+                ("inventory.", 9, 27),
+                ("enderchest.", 200, 27),
+                ("mob.inventory.", 300, 8),
+                ("horse.", 500, 15),
+                ("player.crafting.", 500, 4),
+            ] {
+                let Some(rest) = name.strip_prefix(prefix) else {
+                    continue;
+                };
+                if rest == "*" {
+                    return Some((start..start + len).collect());
+                }
+                let Ok(i) = rest.parse::<i32>() else {
+                    return None;
+                };
+                if i < 0 || i >= len || i.to_string() != rest {
+                    return None;
+                }
+                return Some(vec![start + i]);
+            }
+            None
+        }
+    }
 }
 /// The rest of `PlayerPredicate.matches` (expected from it): the experience
 /// level in the `level` bounds; the food (`FoodPredicate.matches`); each
@@ -2037,6 +2130,125 @@ impl Tree {
 mod tests {
     use super::*;
     use serde_json::json;
+    /// `SlotsPredicate.matches`: a range matches when one of its slots holds
+    /// a stack the `ItemPredicate` accepts, including its components.
+    #[test]
+    fn slots_predicate_matches_an_item_in_a_range() {
+        let mut view = mob("minecraft:zombie");
+        view.slots.insert(
+            98,
+            ItemView {
+                id: "minecraft:diamond_sword".into(),
+                count: 1,
+                damage: 5,
+                ..Default::default()
+            },
+        );
+        let ask = |v: Value| entity(&v, &view, &Flat, [0.0; 3]);
+        assert!(ask(json!({"minecraft:slots": {
+            "weapon.mainhand": {"items": "minecraft:diamond_sword"}
+        }})));
+        assert!(ask(json!({"minecraft:slots": {
+            "weapon.mainhand": {
+                "items": "minecraft:diamond_sword",
+                "components": {"minecraft:damage": 5}
+            }
+        }})));
+        assert!(!ask(json!({"minecraft:slots": {
+            "weapon.mainhand": {"components": {"minecraft:damage": 4}}
+        }})));
+        assert!(!ask(json!({"minecraft:slots": {
+            "weapon.mainhand": {"items": "minecraft:iron_sword"}
+        }})));
+        // `weapon.*` checks the main hand and the off hand; one match is enough.
+        assert!(ask(json!({"minecraft:slots": {
+            "weapon.*": {"items": "minecraft:diamond_sword"}
+        }})));
+    }
+    /// A range the view cannot supply fails instead of matching an invented
+    /// stack; a real empty slot still takes an empty predicate.
+    #[test]
+    fn slots_predicate_fails_for_a_missing_slot() {
+        let missing = mob("minecraft:zombie");
+        assert!(!entity(
+            &json!({"minecraft:slots": {"weapon.mainhand": {}}}),
+            &missing,
+            &Flat,
+            [0.0; 3]
+        ));
+        let mut empty = mob("minecraft:zombie");
+        empty.slots.insert(
+            98,
+            ItemView {
+                id: "minecraft:air".into(),
+                ..Default::default()
+            },
+        );
+        assert!(entity(
+            &json!({"minecraft:slots": {"weapon.mainhand": {}}}),
+            &empty,
+            &Flat,
+            [0.0; 3]
+        ));
+        assert!(!entity(
+            &json!({"minecraft:slots": {
+                "weapon.mainhand": {"items": "minecraft:diamond_sword"}
+            }}),
+            &empty,
+            &Flat,
+            [0.0; 3]
+        ));
+        assert!(!entity(
+            &json!({"minecraft:slots": {"not.a.range": {}}}),
+            &empty,
+            &Flat,
+            [0.0; 3]
+        ));
+    }
+    /// `SlotRanges` selects the player inventory slots vanilla numbers:
+    /// hotbar 0..9, inventory 9..36, container 0..54, the cursor 499 and the
+    /// 2x2 crafting grid 500..504.
+    #[test]
+    fn player_slot_ranges_select_inventory_slots() {
+        assert_eq!(slot_range_ids("hotbar.*"), Some((0..9).collect()));
+        assert_eq!(slot_range_ids("hotbar.2"), Some(vec![2]));
+        assert_eq!(slot_range_ids("inventory.*"), Some((9..36).collect()));
+        assert_eq!(slot_range_ids("inventory.0"), Some(vec![9]));
+        assert_eq!(slot_range_ids("container.*"), Some((0..54).collect()));
+        assert_eq!(slot_range_ids("player.cursor"), Some(vec![499]));
+        assert_eq!(
+            slot_range_ids("player.crafting.*"),
+            Some((500..504).collect())
+        );
+        assert_eq!(slot_range_ids("armor.head"), Some(vec![103]));
+        assert_eq!(slot_range_ids("weapon.offhand"), Some(vec![99]));
+        assert_eq!(slot_range_ids("enderchest.26"), Some(vec![226]));
+        assert_eq!(slot_range_ids("enderchest.27"), None);
+        assert_eq!(slot_range_ids("container.54"), None);
+        assert_eq!(slot_range_ids("weapon.mainhand.1"), None);
+
+        let mut slots = BTreeMap::new();
+        slots.insert(
+            9,
+            ItemView {
+                id: "minecraft:diamond".into(),
+                count: 1,
+                ..Default::default()
+            },
+        );
+        let view = EntityView {
+            kind: "minecraft:player".into(),
+            slots,
+            ..Default::default()
+        };
+        let ask = |v: Value| entity(&v, &view, &Flat, [0.0; 3]);
+        assert!(ask(json!({"minecraft:slots": {
+            "inventory.0": {"items": "minecraft:diamond"}
+        }})));
+        assert!(!ask(json!({"minecraft:slots": {
+            "hotbar.0": {"items": "minecraft:diamond"}
+        }})));
+    }
     #[test]
     fn conditional_advancements_select_before_filtering_and_cache_by_inventory() {
         let data = std::env::temp_dir().join(format!(
