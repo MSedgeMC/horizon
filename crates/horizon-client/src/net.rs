@@ -1384,10 +1384,9 @@ fn receive_play(
                     send,
                 )?
                 .map(|payload| Event::Packet(Box::new(play::Clientbound::CustomPayload(payload))))
+                    && !emit(send, &mut batch, payload)
                 {
-                    if !emit(send, &mut batch, payload) {
-                        return Ok(Reason::plain("Disconnected"));
-                    }
+                    return Ok(Reason::plain("Disconnected"));
                 }
             }
             other => {
