@@ -12,6 +12,7 @@ use horizon_client::{
     advancements::{self as adv, EntityView, Frame, ItemView, Progress, Tree},
     hud::{HudBatch, rgba},
     items::ItemStack,
+    mobs::Who,
     text::{self, Style, Text},
     toasts::Slide,
 };
@@ -170,6 +171,26 @@ struct View<'a, 'g>(&'a Game<'g>);
 impl adv::World for View<'_, '_> {
     fn predicate(&self, id: &str) -> Option<&Value> {
         self.0.fns.store.predicates.get(id)
+    }
+    /// The entity a relation names (`TargetedEntityPredicate`): the local
+    /// player with every fact a player predicate may read, or a live mob by
+    /// id. The view names its own target rather than expanding it, so a
+    /// target pair that points at each other cannot recurse.
+    fn entity_view(&self, who: Who) -> Option<EntityView> {
+        use super::commands::Target;
+        match who {
+            Who::Player => self
+                .0
+                .player
+                .as_ref()
+                .map(|_| self.0.entity_view_asking(Target::Player, adv::FactsAsked::ALL)),
+            Who::Mob(id) => self
+                .0
+                .mobs
+                .iter()
+                .find(|m| m.id == id)
+                .map(|m| self.0.mob_entity(m)),
+        }
     }
     fn dimension(&self) -> &str {
         self.0.dim.id()
@@ -534,7 +555,7 @@ impl Game<'_> {
     /// The predicate view of a command target.
     pub(super) fn entity_view_of(&self, t: super::commands::Target) -> EntityView {
         use super::commands::Target;
-        match t {
+        let mut view = match t {
             Target::Player => self.player_entity(),
             Target::Mob(id) => self
                 .mobs
@@ -575,7 +596,10 @@ impl Game<'_> {
                 position: self.target_position(other).unwrap_or_default(),
                 ..EntityView::default()
             },
-        }
+        };
+        view.entity_tags = Some(self.tags_of(t).into_iter().collect());
+        view.custom_data = self.custom_data_of(t);
+        view
     }
     /// A `ContextAwarePredicate` for `this` at `origin`.
     pub(super) fn conditions_hold(
@@ -767,6 +791,7 @@ impl Game<'_> {
             swimming: p.pose == horizon_client::pose::Pose::Swimming,
             flying: p.flying,
             on_ground: p.ground.on_ground,
+            supporting_block: p.ground.supporting_block.map(|b| [b.x, b.y, b.z]),
             in_water: p.fluids.was_touching_water,
             fall_flying: p.fall_flying,
             tick_count: Some(p.health.tick_count),
@@ -788,6 +813,12 @@ impl Game<'_> {
                 .collect(),
             gamemode: Some(self.mode.name().to_owned()),
             team: self.player_team().map(|t| t.name.clone()),
+            entity_tags: Some(
+                self.tags_of(super::commands::Target::Player)
+                    .into_iter()
+                    .collect(),
+            ),
+            custom_data: self.custom_data_of(super::commands::Target::Player),
             // Vanilla looks for it inside PlayerPredicate.matches whatever the
             // trigger; skipped for a trigger whose criteria can't ask.
             looking_at: looking
@@ -802,7 +833,14 @@ impl Game<'_> {
         Some(EntityView {
             kind: "minecraft:player".into(),
             position: [p.position.x, p.position.y, p.position.z],
+            supporting_block: p.ground.supporting_block.map(|b| [b.x, b.y, b.z]),
             gamemode: Some(self.mode.name().to_owned()),
+            entity_tags: Some(
+                self.tags_of(super::commands::Target::Player)
+                    .into_iter()
+                    .collect(),
+            ),
+            custom_data: self.custom_data_of(super::commands::Target::Player),
             ..Default::default()
         })
     }
@@ -820,6 +858,12 @@ impl Game<'_> {
                 .map(|m| self.mob_entity(m))
                 .chain(self.rider_entity(b.id))
                 .collect(),
+            entity_tags: Some(
+                self.tags_of(super::commands::Target::Boat(b.id))
+                    .into_iter()
+                    .collect(),
+            ),
+            custom_data: self.custom_data_of(super::commands::Target::Boat(b.id)),
             ..Default::default()
         }
     }
@@ -832,6 +876,12 @@ impl Game<'_> {
             on_fire: e.fire_ticks > 0,
             in_water: e.was_touching_water,
             tick_count: Some(e.ticks as i32),
+            entity_tags: Some(
+                self.tags_of(super::commands::Target::Item(e.id))
+                    .into_iter()
+                    .collect(),
+            ),
+            custom_data: self.custom_data_of(super::commands::Target::Item(e.id)),
             ..Default::default()
         }
     }
@@ -924,6 +974,7 @@ impl Game<'_> {
             on_fire: m.fire_ticks > 0,
             baby: m.is_baby(),
             on_ground: m.on_ground,
+            supporting_block: m.supporting,
             in_water: m.fluids.in_water,
             fall_flying: m.extra.fall_flying,
             tick_count: Some(m.age as i32),
@@ -959,12 +1010,33 @@ impl Game<'_> {
                     || horizon_client::mobs::raider::state(m).is_some_and(|s| s.raided),
                 is_captain: horizon_client::mobs::raider::is_captain(m),
             }),
+            // `Villager.getVillagerData().type()` (also ZombieVillager's
+            // implicit `minecraft:villager/variant` component).
+            variant: matches!(
+                m.species(),
+                horizon_client::mobs::Species::Villager
+                    | horizon_client::mobs::Species::ZombieVillager
+            )
+            .then(|| {
+                let table = horizon_client::mobs::render::VILLAGER_TYPES;
+                format!(
+                    "minecraft:{}",
+                    table[m.extra.variant as usize % table.len()]
+                )
+            }),
             components: horizon_client::mobs::finalize::variant_component(m)
                 .map(|(id, value)| (id.to_owned(), value))
                 .into_iter()
                 .collect(),
+            entity_tags: Some(
+                self.tags_of(super::commands::Target::Mob(m.id))
+                    .into_iter()
+                    .collect(),
+            ),
+            custom_data: self.custom_data_of(super::commands::Target::Mob(m.id)),
             custom_name: m.custom_name_text.as_ref().map(Text::component),
             passengers,
+            targeted_entity: m.ai.target,
             nbt,
             team: self.mob_team_of(m).map(|t| t.name.clone()),
             ..Default::default()

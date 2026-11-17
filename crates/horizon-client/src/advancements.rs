@@ -669,6 +669,12 @@ pub trait World {
     fn predicate(&self, _id: &str) -> Option<&Value> {
         None
     }
+    /// The view of the entity a relation names (`TargetedEntityPredicate`),
+    /// resolved when a predicate asks so a target cycle cannot recurse while
+    /// a view is built. `None` without entities or without that one.
+    fn entity_view(&self, _who: crate::mobs::Who) -> Option<EntityView> {
+        None
+    }
 }
 /// An item stack as predicates see it.
 #[derive(Clone, Debug, Default)]
@@ -726,6 +732,10 @@ pub struct EntityView {
     pub flying: bool,
     pub baby: bool,
     pub on_ground: bool,
+    /// `Entity.mainSupportingBlockPos`: the block the entity stood on after
+    /// its last move. `None` is no supporting block, not unprojected data
+    /// (the vanilla fallback uses the entity's position).
+    pub supporting_block: Option<[i32; 3]>,
     /// `Entity.isInWater` (`wasTouchingWater`).
     pub in_water: bool,
     /// `LivingEntity.isFallFlying` (gliding).
@@ -742,6 +752,11 @@ pub struct EntityView {
     pub vehicle: Option<Box<EntityView>>,
     /// `Entity.getPassengers`, for `PassengerPredicate`.
     pub passengers: Vec<EntityView>,
+    /// `Mob.getTarget`, for `TargetedEntityPredicate`: the entity this one
+    /// targets, as the world names it. The world resolves it to a view on
+    /// demand, so a target pair that points at each other cannot recurse
+    /// while a snapshot is built. Non-mobs, a player included, have no target.
+    pub targeted_entity: Option<crate::mobs::Who>,
     /// Player: what it looks at within 100 blocks (`PlayerPredicate.lookingAt`).
     pub looking_at: Option<Box<EntityView>>,
     pub effects: Vec<EffectView>,
@@ -766,9 +781,18 @@ pub struct EntityView {
     pub cube_size: Option<i32>,
     /// Raider: its raid and captain state; `None` for every other entity.
     pub raider: Option<RaiderView>,
+    /// `Entity.get(VILLAGER_VARIANT)` for a villager or zombie villager, as
+    /// the registry id a `minecraft:villager/variant` component predicate
+    /// tests; `None` for every other entity, which fails that predicate.
     pub variant: Option<String>,
     /// The data components the entity reports (`Entity.get`): id and value.
     pub components: Vec<(String, String)>,
+    /// `Entity.get(CUSTOM_DATA)` (`Entity.saveWithoutId`'s `data` compound).
+    /// `None` is an unprojected view; an empty compound is real absence.
+    pub custom_data: Option<horizon_core::nbt::Tag>,
+    /// `Entity.getTags`: the entity command tags. `None` is an unprojected
+    /// view; an empty set is a real entity with no tags.
+    pub entity_tags: Option<BTreeSet<String>>,
     /// `Entity.get(CUSTOM_NAME)`: the live Text component, preserving styles
     /// and siblings rather than treating its contents as a registry id.
     pub custom_name: Option<Value>,
@@ -1161,8 +1185,15 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
         let ok = match &*full(key) {
             "minecraft:entity_type" => id_matches(p, "entity_type", &e.kind, w),
             "minecraft:location" => location(p, e.position, w),
+            // `SteppingOnPredicate.matches`: only while on the ground, at the
+            // centre of `Entity.getOnPos()`.
             "minecraft:stepping_on" => {
-                location(p, [e.position[0], e.position[1] - 0.5, e.position[2]], w)
+                e.on_ground && location(p, block_center(on_pos(e, 1.0e-5, w)), w)
+            }
+            // `MovementAffectedByPredicate.matches`: at the centre of
+            // `Entity.getBlockPosBelowThatAffectsMyMovement()`.
+            "minecraft:movement_affected_by" => {
+                location(p, block_center(on_pos(e, 0.500001, w)), w)
             }
             "minecraft:distance" => distance(p, e.position, origin),
             "minecraft:movement" => e.movement.is_some_and(|m| movement(p, m)),
@@ -1201,6 +1232,12 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
                 .passengers
                 .iter()
                 .any(|passenger| entity(p, passenger, w, origin)),
+            // `TargetedEntityPredicate.matches`: the target of the Mob, when
+            // it has one, matches the nested predicate (a null target fails).
+            "minecraft:targeted_entity" => e
+                .targeted_entity
+                .and_then(|who| w.entity_view(who))
+                .is_some_and(|target| entity(p, &target, w, origin)),
             "minecraft:effects" => p.as_object().is_some_and(|m| {
                 // `MobEffectsPredicate.matches`: every listed effect instance
                 // exists and passes its amplifier, duration and flags.
@@ -1278,7 +1315,13 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
             "minecraft:team" => {
                 matches!((p.as_str(), &e.team), (Some(want), Some(have)) if want == have)
             }
-            "minecraft:predicates" => true,
+            // `EntityPartialComponentsPredicate.matches`: every listed
+            // component predicate must hold; a type this view cannot supply
+            // fails rather than passing unconstrained.
+            "minecraft:predicates" => entity_components(p, e, w),
+            // `EntityTagPredicate.matches`: any_of, all_of and none_of over
+            // `Entity.getTags`; omitted lists ask nothing.
+            "minecraft:entity_tags" => entity_tags(p, e),
             _ => false,
         };
         if !ok {
@@ -1286,6 +1329,96 @@ pub fn entity(v: &Value, e: &EntityView, w: &dyn World, origin: [f64; 3]) -> boo
         }
     }
     true
+}
+/// `Vec3.atCenterOf(BlockPos)`: the point a location predicate reads for a
+/// block a sub-predicate names.
+fn block_center(p: [i32; 3]) -> [f64; 3] {
+    [
+        f64::from(p[0]) + 0.5,
+        f64::from(p[1]) + 0.5,
+        f64::from(p[2]) + 0.5,
+    ]
+}
+/// `Entity.getOnPos(offset)`: the main supporting block, except that walls,
+/// fence gates and (below half a block) fences keep the entity's supporting
+/// block instead of the column below its feet; without a supporting block the
+/// column below the feet is used.
+fn on_pos(e: &EntityView, offset: f32, w: &dyn World) -> [i32; 3] {
+    let y = (e.position[1] - f64::from(offset)).floor() as i32;
+    let Some(p) = e.supporting_block else {
+        return [
+            e.position[0].floor() as i32,
+            y,
+            e.position[2].floor() as i32,
+        ];
+    };
+    if offset <= 1.0e-5 {
+        return p;
+    }
+    let (name, _) = w.block(p);
+    let keeps_support = w.in_tag("block", "minecraft:walls", &name)
+        || w.in_tag("block", "minecraft:fence_gates", &name)
+        || (offset <= 0.5 && w.in_tag("block", "minecraft:fences", &name));
+    if keeps_support { p } else { [p[0], y, p[2]] }
+}
+/// The optional string list a tag predicate field carries. `None` is the
+/// omitted field; a non-list or a non-string entry is no predicate.
+fn tag_list(p: &Value, key: &str) -> Result<Option<Vec<String>>, ()> {
+    match &p[key] {
+        Value::Null => Ok(None),
+        Value::Array(a) => a
+            .iter()
+            .map(|v| v.as_str().map(str::to_owned).ok_or(()))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Some),
+        _ => Err(()),
+    }
+}
+/// `EntityTagPredicate.matches`: the entity's command tags. A view without
+/// them fails rather than matching an invented empty set.
+fn entity_tags(p: &Value, e: &EntityView) -> bool {
+    let Some(tags) = e.entity_tags.as_ref() else {
+        return false;
+    };
+    if !p.is_object() {
+        return false;
+    }
+    let (Ok(any_of), Ok(all_of), Ok(none_of)) = (
+        tag_list(p, "any_of"),
+        tag_list(p, "all_of"),
+        tag_list(p, "none_of"),
+    ) else {
+        return false;
+    };
+    any_of.is_none_or(|list| list.iter().any(|tag| tags.contains(tag)))
+        && none_of.is_none_or(|list| !list.iter().any(|tag| tags.contains(tag)))
+        && all_of.is_none_or(|list| list.iter().all(|tag| tags.contains(tag)))
+}
+/// `EntityPartialComponentsPredicate.matches`: the component predicates an
+/// entity can carry. Of the registered predicate types, only `custom_data` and
+/// `villager/variant` name components an entity has; the others name item
+/// components, which `Entity.get` answers null for, so they fail. A component
+/// type key (`DataComponentPredicate.AnyValue`) is not projected and fails
+/// rather than passing unconstrained.
+fn entity_components(v: &Value, e: &EntityView, w: &dyn World) -> bool {
+    v.as_object().is_some_and(|map| {
+        map.iter().all(|(key, want)| match &*full(key) {
+            "minecraft:custom_data" => want.as_str().is_some_and(|s| {
+                e.custom_data.as_ref().is_some_and(|actual| {
+                    horizon_core::nbt::parse_snbt(s).is_ok_and(|(pattern, _)| {
+                        crate::nbt_path::compare_nbt(&pattern, Some(actual))
+                    })
+                })
+            }),
+            "minecraft:villager/variant" => {
+                !want.is_null()
+                    && e.variant
+                        .as_deref()
+                        .is_some_and(|variant| id_matches(want, "villager_type", variant, w))
+            }
+            _ => false,
+        })
+    })
 }
 /// `SlotsPredicate.matches`: every named `SlotRange` needs a slot whose
 /// stack matches its `ItemPredicate`. A range the view cannot supply fails
@@ -2777,6 +2910,265 @@ mod tests {
             &Flat,
             [0.0; 3]
         ));
+    }
+    /// `MovementAffectedByPredicate.matches`: the location predicate at the
+    /// centre of the block below the entity whose movement it affects, from
+    /// the main supporting block when there is one.
+    #[test]
+    fn movement_affected_by_predicate_uses_the_supporting_block() {
+        let o = [0.0; 3];
+        let mut e = mob("minecraft:zombie");
+        e.position = [1.0, 5.0, 2.0];
+        e.supporting_block = Some([3, 4, 2]);
+        let want = serde_json::json!({"minecraft:movement_affected_by": {
+            "position": {"x": 3.5, "y": 4.5, "z": 2.5}
+        }});
+        assert!(entity(&want, &e, &Flat, o), "the supporting block's column");
+        assert!(!entity(
+            &serde_json::json!({"minecraft:movement_affected_by": {
+                "position": {"y": 3.5}
+            }}),
+            &e,
+            &Flat,
+            o
+        ));
+        // Without a supporting block the column below the feet is used.
+        e.supporting_block = None;
+        assert!(entity(
+            &serde_json::json!({"minecraft:movement_affected_by": {
+                "position": {"x": 1.5, "y": 4.5, "z": 2.5}
+            }}),
+            &e,
+            &Flat,
+            o
+        ));
+    }
+    /// `SteppingOnPredicate.matches`: only while on the ground, at the centre
+    /// of `Entity.getOnPos()` (the supporting block, or the column below).
+    #[test]
+    fn stepping_on_predicate_needs_ground_and_uses_the_supporting_block() {
+        let o = [0.0; 3];
+        let mut e = mob("minecraft:zombie");
+        e.position = [1.0, 5.0, 2.0];
+        e.supporting_block = Some([3, 4, 2]);
+        let want = serde_json::json!({"minecraft:stepping_on": {
+            "position": {"x": 3.5, "y": 4.5, "z": 2.5}
+        }});
+        assert!(!entity(&want, &e, &Flat, o), "not on the ground");
+        e.on_ground = true;
+        assert!(entity(&want, &e, &Flat, o));
+        e.supporting_block = None;
+        assert!(entity(
+            &serde_json::json!({"minecraft:stepping_on": {
+                "position": {"x": 1.5, "y": 4.5, "z": 2.5}
+            }}),
+            &e,
+            &Flat,
+            o
+        ));
+    }
+    /// `TargetedEntityPredicate.matches`: the nested predicate tests
+    /// `Mob.getTarget()`, resolved by the world on demand, and recurses into
+    /// it; an entity without a target never matches, even an empty predicate.
+    #[test]
+    fn targeted_entity_predicate_tests_the_mobs_target() {
+        use crate::mobs::Who;
+        /// Targets by entity id, as `Mob.getTarget` names them.
+        struct Targeted(Vec<(u32, EntityView)>);
+        impl World for Targeted {
+            fn dimension(&self) -> &str {
+                Flat.dimension()
+            }
+            fn weather(&self) -> (bool, bool) {
+                Flat.weather()
+            }
+            fn biome(&self, p: [i32; 3]) -> String {
+                Flat.biome(p)
+            }
+            fn structures(&self, p: [i32; 3]) -> Vec<String> {
+                Flat.structures(p)
+            }
+            fn block(&self, p: [i32; 3]) -> (String, BTreeMap<String, String>) {
+                Flat.block(p)
+            }
+            fn fluid(&self, p: [i32; 3]) -> Option<String> {
+                Flat.fluid(p)
+            }
+            fn can_see_sky(&self, p: [i32; 3]) -> bool {
+                Flat.can_see_sky(p)
+            }
+            fn light(&self, p: [i32; 3]) -> i32 {
+                Flat.light(p)
+            }
+            fn smokey(&self, p: [i32; 3]) -> bool {
+                Flat.smokey(p)
+            }
+            fn in_tag(&self, registry: &str, tag: &str, id: &str) -> bool {
+                Flat.in_tag(registry, tag, id)
+            }
+            fn entity_view(&self, who: Who) -> Option<EntityView> {
+                match who {
+                    Who::Mob(id) => self
+                        .0
+                        .iter()
+                        .find(|(mob, _)| *mob == id)
+                        .map(|(_, view)| view.clone()),
+                    Who::Player => None,
+                }
+            }
+        }
+        let o = [0.0; 3];
+        let golem = mob("minecraft:iron_golem");
+        let prey = EntityView {
+            targeted_entity: Some(Who::Mob(8)),
+            ..mob("minecraft:pig")
+        };
+        let world = Targeted(vec![(7, prey), (8, golem)]);
+        let hunter = EntityView {
+            targeted_entity: Some(Who::Mob(7)),
+            ..mob("minecraft:zombie")
+        };
+        assert!(
+            !entity(
+                &serde_json::json!({"minecraft:targeted_entity": {}}),
+                &mob("minecraft:zombie"),
+                &world,
+                o
+            ),
+            "an empty nested predicate still needs a target"
+        );
+        assert!(entity(
+            &serde_json::json!({"minecraft:targeted_entity": {}}),
+            &hunter,
+            &world,
+            o
+        ));
+        assert!(entity(
+            &serde_json::json!({"minecraft:targeted_entity": {
+                "minecraft:entity_type": "minecraft:pig"
+            }}),
+            &hunter,
+            &world,
+            o
+        ));
+        assert!(!entity(
+            &serde_json::json!({"minecraft:targeted_entity": {
+                "minecraft:entity_type": "minecraft:cow"
+            }}),
+            &hunter,
+            &world,
+            o
+        ));
+        // The nested predicate recurses: the pig targets the golem.
+        assert!(entity(
+            &serde_json::json!({"minecraft:targeted_entity": {
+                "minecraft:targeted_entity": {
+                    "minecraft:entity_type": "minecraft:iron_golem"
+                }
+            }}),
+            &hunter,
+            &world,
+            o
+        ));
+        // A target the world cannot resolve is a missing projection and fails.
+        let orphan = EntityView {
+            targeted_entity: Some(Who::Mob(99)),
+            ..mob("minecraft:zombie")
+        };
+        assert!(!entity(
+            &serde_json::json!({"minecraft:targeted_entity": {}}),
+            &orphan,
+            &world,
+            o
+        ));
+    }
+    /// `EntityTagPredicate.matches`: any_of, all_of and none_of over the
+    /// entity's command tags; an omitted list asks nothing and an absent
+    /// projection fails.
+    #[test]
+    fn entity_tags_predicate_splits_any_all_none() {
+        let o = [0.0; 3];
+        let mut e = mob("minecraft:zombie");
+        e.entity_tags = Some(
+            ["alpha".to_owned(), "beta".to_owned()]
+                .into_iter()
+                .collect(),
+        );
+        let ask = |v: Value| entity(&v, &e, &Flat, o);
+        assert!(ask(serde_json::json!({"minecraft:entity_tags": {
+            "any_of": ["beta"]
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:entity_tags": {
+            "any_of": ["gamma"]
+        }})));
+        assert!(
+            !ask(serde_json::json!({"minecraft:entity_tags": {"any_of": []}})),
+            "an empty any_of wants at least one tag"
+        );
+        assert!(ask(serde_json::json!({"minecraft:entity_tags": {
+            "all_of": ["alpha", "beta"]
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:entity_tags": {
+            "all_of": ["alpha", "gamma"]
+        }})));
+        assert!(ask(serde_json::json!({"minecraft:entity_tags": {
+            "none_of": ["gamma"]
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:entity_tags": {
+            "none_of": ["alpha"]
+        }})));
+        assert!(ask(serde_json::json!({"minecraft:entity_tags": {}})));
+        let mut bare = e.clone();
+        bare.entity_tags = None;
+        assert!(
+            !entity(
+                &serde_json::json!({"minecraft:entity_tags": {}}),
+                &bare,
+                &Flat,
+                o
+            ),
+            "no tags projected"
+        );
+    }
+    /// `EntityPartialComponentsPredicate.matches`: only component predicates an
+    /// entity can carry are read; a missing custom-data projection fails and an
+    /// item-component predicate never matches an entity.
+    #[test]
+    fn entity_predicates_read_custom_data_and_villager_variant() {
+        let o = [0.0; 3];
+        let mut e = mob("minecraft:villager");
+        e.custom_data = Some(horizon_core::nbt::parse_snbt("{h289:1b}").unwrap().0);
+        e.variant = Some("minecraft:taiga".into());
+        let ask = |v: Value| entity(&v, &e, &Flat, o);
+        assert!(ask(serde_json::json!({"minecraft:predicates": {
+            "minecraft:custom_data": "{h289:1b}",
+            "minecraft:villager/variant": "minecraft:taiga"
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:predicates": {
+            "minecraft:custom_data": "{h289:2b}"
+        }})));
+        assert!(!ask(serde_json::json!({"minecraft:predicates": {
+            "minecraft:villager/variant": "minecraft:desert"
+        }})));
+        assert!(
+            !ask(serde_json::json!({"minecraft:predicates": {
+                "minecraft:damage": {"damage": {"min": 0}}
+            }})),
+            "an entity carries no item damage component"
+        );
+        let mut bare = mob("minecraft:villager");
+        bare.variant = Some("minecraft:taiga".into());
+        assert!(
+            !entity(
+                &serde_json::json!({"minecraft:predicates": {
+                    "minecraft:custom_data": "{}"
+                }}),
+                &bare,
+                &Flat,
+                o
+            ),
+            "no custom-data projection"
+        );
     }
     /// `MobEffectsPredicate.MobEffectInstancePredicate`: an expected `ambient`
     /// or `visible` must equal the instance's flag; an omitted one asks
