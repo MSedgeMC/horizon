@@ -1377,14 +1377,27 @@ fn receive_play(
                     payloads.clone(),
                     send.clone(),
                 );
-                if let Some(payload) = receive_application(
+                // A bundle owns its application payloads: a MAIN payload
+                // becomes the bundle's own `RawPayload` event, and what a
+                // NETWORK handler publishes on main is staged into the batch.
+                // Either way it travels inside `Event::Bundle`, in packet
+                // order, never as its own ingress item ahead of the bundle.
+                let staged = batch.is_some().then(|| Arc::new(Mutex::new(Vec::new())));
+                let delivered = receive_application(
                     &endpoint,
                     horizon_protocol::payload_negotiation::Phase::Play,
                     payload,
                     send,
-                )?
-                .map(|payload| Event::Packet(Box::new(play::Clientbound::CustomPayload(payload))))
-                    && !emit(send, &mut batch, payload)
+                    staged.as_ref(),
+                )?;
+                if let Some(staged) = staged
+                    && let Some(batch) = batch.as_mut()
+                {
+                    batch.extend(std::mem::take(&mut *staged.lock().unwrap()));
+                }
+                if let Some(payload) = delivered.map(|payload| {
+                    Event::Packet(Box::new(play::Clientbound::CustomPayload(payload)))
+                }) && !emit(send, &mut batch, payload)
                 {
                     return Ok(Reason::plain("Disconnected"));
                 }
@@ -1418,17 +1431,40 @@ fn receive_application(
     phase: horizon_protocol::payload_negotiation::Phase,
     payload: cfg::CustomPayload,
     send: &ingress::Producer<Event>,
+    bundle: Option<&Arc<Mutex<Vec<Event>>>>,
 ) -> Result<Option<cfg::CustomPayload>, Reason> {
     match crate::raw_payloads::Incoming::classify(endpoint.transport(), phase, payload)
         .map_err(|error| Reason::plain(error.to_string()))?
     {
         crate::raw_payloads::Classified::Other(payload) => Ok(Some(payload)),
         crate::raw_payloads::Classified::Application(incoming) => {
-            crate::raw_payloads::dispatch(
-                incoming,
-                endpoint.clone(),
-                crate::raw_payloads::MainQueue::Client(send.clone()),
-            );
+            match bundle {
+                // A bundled MAIN handler is applied by the game inside the
+                // group; its payload event is the bundle's own, so the handler
+                // never runs on the network executor and never publishes on
+                // the ordinary stream.
+                Some(staged)
+                    if matches!(&incoming.body, crate::raw_payloads::Body::Payload(_))
+                        && incoming.receiver.thread == mod_api::HandlerThread::Main =>
+                {
+                    staged
+                        .lock()
+                        .unwrap()
+                        .push(Event::RawPayload(Box::new(incoming)));
+                }
+                // A NETWORK handler still runs on this executor, in sub-packet
+                // order, but everything it enqueues on main joins the bundle.
+                Some(staged) => crate::raw_payloads::dispatch(
+                    incoming,
+                    endpoint.clone(),
+                    crate::raw_payloads::MainQueue::client_bundled(send.clone(), staged.clone()),
+                ),
+                None => crate::raw_payloads::dispatch(
+                    incoming,
+                    endpoint.clone(),
+                    crate::raw_payloads::MainQueue::Client(send.clone()),
+                ),
+            }
             Ok(None)
         }
         // Raw channels are server-side: a client's table has none.
@@ -1539,6 +1575,7 @@ fn configure(
                     horizon_protocol::payload_negotiation::Phase::Configuration,
                     p,
                     send,
+                    None,
                 )?
                 else {
                     continue;
@@ -3443,5 +3480,102 @@ mod tests {
         );
         writer.lock().unwrap().take().unwrap().shutdown();
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_bundle_owns_a_registered_application_payload() {
+        use crate::raw_payloads::test_support::{CLIENT_MAIN_CHANNEL, CLIENT_NETWORK_CHANNEL};
+        let (root, data) = empty_item_data("bundle-application");
+        crate::raw_payloads::test_support::with_client_peer(|payloads, main, network| {
+            let (client, server) = horizon_protocol::connection::Pipe::pair();
+            let (mut reader, writer) = Connection::local(client).split();
+            let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+            let (send, events) = event_channel();
+            let thread_writer = writer.clone();
+            let thread = std::thread::spawn(move || {
+                receive_play(
+                    &mut reader,
+                    &thread_writer,
+                    &Arc::new(AtomicBool::new(false)),
+                    &Language::new(),
+                    &send,
+                    &Cookies::default(),
+                    &crate::lod_net::Inbox::default(),
+                    &data,
+                    &Arc::new(Mutex::new(None)),
+                    &payloads,
+                )
+            });
+            let mut server = Connection::local(server);
+            let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+            let ping = |id| play::Clientbound::Ping(cfg::Ping { id }).encode();
+            let application = |channel: &str, byte: u8| {
+                play::Clientbound::CustomPayload(cfg::CustomPayload {
+                    channel: channel.into(),
+                    data: vec![byte],
+                })
+                .encode()
+            };
+            server.send(&delimiter).unwrap();
+            server.send(&ping(7)).unwrap();
+            server.send(&application(CLIENT_MAIN_CHANNEL, 1)).unwrap();
+            server
+                .send(&application(CLIENT_NETWORK_CHANNEL, 2))
+                .unwrap();
+            server
+                .send(&application(CLIENT_NETWORK_CHANNEL, 3))
+                .unwrap();
+            server.send(&ping(8)).unwrap();
+            // An open bundle neither runs a registered handler nor publishes.
+            std::thread::sleep(Duration::from_millis(200));
+            assert!(events.take_turn().is_empty(), "an open bundle was polled");
+            assert!(
+                network.calls().is_empty(),
+                "a bundled handler ran before the closing delimiter"
+            );
+            assert!(
+                main.calls().is_empty(),
+                "a bundled MAIN handler ran on the network thread"
+            );
+            server.send(&delimiter).unwrap();
+            let deadline = std::time::Instant::now() + Duration::from_secs(5);
+            while events.stats().queued_items == 0 && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            // No `Event::RawPayload` was published on its own: the closed bundle
+            // is the only receipt, and it carries the payload in packet order.
+            let turn = events.take_turn();
+            assert_eq!(
+                turn.len(),
+                1,
+                "an application payload was published outside its bundle"
+            );
+            let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+            let Event::Bundle(bundle) = event else {
+                panic!("a closed bundle must stay one polled unit");
+            };
+            assert_eq!(bundle.len(), 3, "the bundle lost or gained an event");
+            assert!(
+                matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
+            );
+            assert!(
+                matches!(&bundle[1], Event::RawPayload(incoming) if incoming.id.0 == CLIENT_MAIN_CHANNEL),
+                "the registered payload is not owned by the bundle"
+            );
+            assert!(
+                matches!(&bundle[2], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+            );
+            // The NETWORK handlers ran in bundle order, inside the group.
+            assert_eq!(network.calls(), vec![2, 3]);
+            // A MAIN handler executes only when the game applies the payload.
+            assert!(main.calls().is_empty());
+            assert!(
+                events.take_turn().is_empty(),
+                "the payload was also published separately"
+            );
+            writer.lock().unwrap().take().unwrap().shutdown();
+            assert!(thread.join().unwrap().is_err());
+            std::fs::remove_dir_all(root).unwrap();
+        });
     }
 }

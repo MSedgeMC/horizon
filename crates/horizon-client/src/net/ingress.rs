@@ -60,6 +60,13 @@ impl<T> Prepared<T> {
             value,
         })
     }
+    /// Take the prepared value back without publishing it. The reservation is
+    /// released for the caller to re-charge the value wherever it is staged.
+    pub fn defuse(self) -> T {
+        let Self { value, permit } = self;
+        drop(permit);
+        value
+    }
 }
 pub fn channel<T>(
     capacity: usize,

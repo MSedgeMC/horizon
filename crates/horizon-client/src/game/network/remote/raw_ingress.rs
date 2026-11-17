@@ -314,7 +314,9 @@ impl Game<'_> {
                 }
                 Event::RawPayload(mut incoming) => {
                     if !self.receive_client_payload(&mut incoming)? {
-                        debug_assert!(!in_bundle, "a bundle must not contain raw payloads");
+                        // A bundled payload's main root can defer (a busy guest).
+                        // It stays at the head, so the rest of the group follows
+                        // it in order once the root commits.
                         events.push_front(Received::Event(Event::RawPayload(incoming), _credit));
                         break;
                     }
