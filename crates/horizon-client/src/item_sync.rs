@@ -3212,8 +3212,11 @@ mod tests {
         assert!(!equippable(&helmet, &items).unwrap().swappable);
 
         // The server's patch: slot 4 (head), a registry sound, no asset id,
-        // camera overlay or allowed entities, dispensable and swappable false.
-        let mut bytes = vec![4, 1, 0, 0, 0, 0, 0];
+        // camera overlay or allowed entities, dispensable and swappable false,
+        // then the fields this reader doesn't keep (damageOnHurt,
+        // equipOnInteract and canBeSheared false, a registry shearing sound).
+        // A patch carries the whole component, not just the prefix read here.
+        let mut bytes = vec![4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1];
         let mut patch = vec![1, 0, component::EQUIPPABLE as u8, bytes.len() as u8];
         patch.append(&mut bytes);
         let mut stick = ItemStack::new("minecraft:stick", 1);
@@ -3224,7 +3227,7 @@ mod tests {
 
     /// A patch's `equippable` value: slot 4 (head), a registry sound, no asset
     /// id or camera overlay, `allowedEntities` appended by `entities`, then
-    /// `dispensable` and `swappable` both false.
+    /// `dispensable` and `swappable` both false, then the fields after them.
     fn equippable_value(entities: impl FnOnce(&mut Writer)) -> Vec<u8> {
         let mut w = Writer::new();
         w.varint(4);
@@ -3235,6 +3238,12 @@ mod tests {
         entities(&mut w);
         w.bool(false);
         w.bool(false);
+        // damageOnHurt, equipOnInteract, canBeSheared and shearingSound are
+        // part of the component even though this reader keeps none of them.
+        w.bool(false);
+        w.bool(false);
+        w.bool(false);
+        w.varint(1);
         w.data
     }
 
