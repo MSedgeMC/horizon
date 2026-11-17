@@ -2700,7 +2700,9 @@ mod goal_timing_tests {
                 }
             }
         };
-        if !with_built_test_world(&[], build, |w, _| {
+        // Without game resources the world cannot be built, the closure never runs
+        // and there is nothing to assert: skip rather than fail.
+        let _ = with_built_test_world(&[], build, |w, _| {
             let mut m = Mob::new(1, kind(), Vec3::new(0.5, 65.0, 0.5), 0.0);
             m.extra.tame = true;
             m.extra.sitting = false;
@@ -2718,9 +2720,7 @@ mod goal_timing_tests {
             };
             assert!(!goal.can_use(&mut m, &mut cx), "nowhere to lie down");
             assert_eq!(goal.0.next_start, 40, "CatLieOnBlockGoal.nextStartTick");
-        }) {
-            return;
-        }
+        });
     }
 }
 
