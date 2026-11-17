@@ -987,7 +987,7 @@ mod destroyed_contents_tests {
     /// `ItemEntity.tick`'s first line: an entity whose stack has gone empty is
     /// discarded before it moves or ages (a save or a mod can leave one).
     #[test]
-    #[ignore = "needs prepared resources in HORIZON_TEST_RESOURCES"]
+    #[ignore = "daily"]
     fn an_empty_item_stack_is_discarded_before_it_ticks() {
         let mut resources = None;
         let mut game = server_game(&mut resources);
