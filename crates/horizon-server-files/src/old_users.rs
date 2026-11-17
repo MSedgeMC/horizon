@@ -89,10 +89,10 @@ fn convert<E: Entry>(
     if !old.is_file() {
         return true;
     }
-    if list.file.exists() {
-        if let Err(e) = list.load() {
-            log::warn!("Could not load existing file {}: {e}", list.file.display());
-        }
+    if list.file.exists()
+        && let Err(e) = list.load()
+    {
+        log::warn!("Could not load existing file {}: {e}", list.file.display());
     }
     let text = match read_utf8(&old) {
         Ok(text) => text,
