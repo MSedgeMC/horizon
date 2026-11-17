@@ -376,6 +376,31 @@ impl ChunkDecoder {
         }
         Next::Decoding
     }
+
+    /// How many submitted packets would deliver now, in order, without
+    /// waiting. A bundle uses this to release only when all of its chunks are
+    /// decodable, so it never applies a prefix and defers the rest.
+    pub(super) fn ready_run(&self) -> usize {
+        let mut ret = match self.retirement.lock() {
+            Ok(r) => r,
+            Err(_) => return 0,
+        };
+        while let Ok(res) = ret.done.try_recv() {
+            ret.ready.insert(res.seq, (res.packet, res.column));
+        }
+        let mut seq = ret.next_deliver;
+        let mut ready = 0;
+        while ret.ready.contains_key(&seq) {
+            seq += 1;
+            ready += 1;
+        }
+        // A dead decoder cannot make progress. Let the bundle through; `next`
+        // reports `Lost` for the missing columns, as it does outside bundles.
+        if self.workers_alive.load(Ordering::Relaxed) == 0 {
+            return usize::MAX;
+        }
+        ready
+    }
 }
 
 impl Drop for ChunkDecoder {

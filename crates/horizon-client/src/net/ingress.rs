@@ -8,12 +8,14 @@ use std::{cell::Cell, fmt, marker::PhantomData, sync::mpsc::TryRecvError};
 pub struct Producer<T> {
     sender: byte_channel::Sender<T>,
     charge: fn(&T) -> usize,
+    capacity: usize,
 }
 impl<T> Clone for Producer<T> {
     fn clone(&self) -> Self {
         Self {
             sender: self.sender.clone(),
             charge: self.charge,
+            capacity: self.capacity,
         }
     }
 }
@@ -65,7 +67,11 @@ pub fn channel<T>(
 ) -> Result<(Producer<T>, Consumer<T>), byte_channel::InvalidCapacity> {
     let (sender, receiver) = byte_channel::channel(capacity)?;
     Ok((
-        Producer { sender, charge },
+        Producer {
+            sender,
+            charge,
+            capacity,
+        },
         Consumer {
             receiver,
             _single: PhantomData,
@@ -92,6 +98,12 @@ impl<T> Producer<T> {
     }
     pub fn stats(&self) -> Stats {
         self.sender.stats()
+    }
+    /// The channel's byte budget. Retained staging that has not been published
+    /// yet (a play bundle's packets) is bounded by what this budget still has
+    /// free, so the budget stays meaningful across the staging step.
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 }
 impl<T> Consumer<T> {

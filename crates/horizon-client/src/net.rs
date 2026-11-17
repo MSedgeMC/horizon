@@ -143,10 +143,24 @@ pub enum Event {
         key: Option<String>,
         from_server: bool,
     },
+    /// A closed server bundle. These travel as one channel item so
+    /// `Session::poll` never hands the game a prefix, and the receiving loop
+    /// applies every contained event before it can process anything after it.
+    Bundle(Box<[Event]>),
 }
 
+/// The play ingress byte budget. Bundle staging (raw payloads and decoded
+/// packets between delimiters) is charged against what is still free here
+/// before it is accepted, so staging cannot grow past the connection budget.
+const INGRESS_BUDGET: usize = 96 << 20;
+
 fn event_channel() -> (ingress::Producer<Event>, ingress::Consumer<Event>) {
-    ingress::channel(96 << 20, Event::ingress_charge).expect("positive incoming byte budget")
+    event_channel_with_capacity(INGRESS_BUDGET)
+}
+fn event_channel_with_capacity(
+    capacity: usize,
+) -> (ingress::Producer<Event>, ingress::Consumer<Event>) {
+    ingress::channel(capacity, Event::ingress_charge).expect("positive incoming byte budget")
 }
 impl Event {
     fn ingress_charge(&self) -> usize {
@@ -192,6 +206,13 @@ impl Event {
                 key,
                 from_server: _,
             } => reason.capacity().saturating_add(key.owned_heap_bytes()),
+            Self::Bundle(events) => {
+                let mut bytes = events.len().saturating_mul(size_of::<Self>());
+                for event in events.iter() {
+                    bytes = bytes.saturating_add(event.ingress_charge());
+                }
+                bytes
+            }
         };
         // Layout-derived allowance for a frozen receiving vector, actor backlog,
         // decoder marker and retained receipt, including vector spare capacity.
@@ -1157,6 +1178,36 @@ fn run(
     )
 }
 
+/// One still-open bundle packet: wire id, raw frame bytes and the decoded value.
+type BundleEntry = (i32, Vec<u8>, play::Clientbound);
+
+/// Bytes an open bundle retains per packet: the raw frame, the decoded packet,
+/// the entry slot and the event the packet will become. The final `Event::Bundle`
+/// is charged the sum of its events' [`Event::ingress_charge`]s, so this keeps
+/// the pre-acceptance check on the same order as the channel's own accounting.
+fn bundle_entry_bytes(payload_capacity: usize, packet: &play::Clientbound) -> usize {
+    use std::mem::size_of;
+    payload_capacity
+        .saturating_add(size_of::<play::Clientbound>())
+        .saturating_add(packet.owned_heap_bytes())
+        .saturating_add(size_of::<Event>())
+        .saturating_add(size_of::<BundleEntry>())
+        .saturating_add(8 * size_of::<(Event, ingress::ReceiveLease<Event>, usize, usize)>())
+}
+
+/// Route one game event either straight to the channel or into the open
+/// bundle. A bundle is published once, after its closing delimiter, so the
+/// game can only ever receive it whole.
+fn emit(send: &ingress::Producer<Event>, batch: &mut Option<Vec<Event>>, event: Event) -> bool {
+    match batch {
+        Some(events) => {
+            events.push(event);
+            true
+        }
+        None => send.send(event).is_ok(),
+    }
+}
+
 fn receive_play(
     reader: &mut ConnReader,
     shared_writer: &Arc<Mutex<Option<QueuedWriter>>>,
@@ -1171,9 +1222,15 @@ fn receive_play(
 ) -> Result<Reason, Reason> {
     // PacketBundlePacker.decode / BundlerInfo.startPacketBundling: a delimiter
     // opens a bundle, and the closing one hands every packet between them on
-    // together. Vanilla holds at most 4096 sub-packets.
-    let mut pending: VecDeque<(i32, Vec<u8>, play::Clientbound)> = VecDeque::new();
-    let mut bundling: Option<Vec<(i32, Vec<u8>, play::Clientbound)>> = None;
+    // together. Vanilla holds at most 4096 sub-packets. While a bundle is open
+    // its raw payloads and decoded packets are outside the ingress channel, so
+    // they are counted against the channel's remaining budget before they are
+    // kept; the closed bundle then travels as one channel item.
+    let mut pending: VecDeque<BundleEntry> = VecDeque::new();
+    let mut bundling: Option<Vec<BundleEntry>> = None;
+    let mut bundle_bytes = 0usize;
+    let mut batch: Option<Vec<Event>> = None;
+    let mut batch_left = 0usize;
     loop {
         let (id, payload, packet) = if let Some(packet) = pending.pop_front() {
             packet
@@ -1203,15 +1260,33 @@ fn receive_play(
             };
             if matches!(&packet, play::Clientbound::BundleDelimiter(_)) {
                 match bundling.take() {
-                    Some(bundle) => pending.extend(bundle),
+                    Some(bundle) if bundle.is_empty() => {}
+                    Some(bundle) => {
+                        batch = Some(Vec::with_capacity(bundle.len()));
+                        batch_left = bundle.len();
+                        pending.extend(bundle);
+                    }
                     None => bundling = Some(Vec::new()),
                 }
+                bundle_bytes = 0;
                 continue;
             }
             if let Some(bundle) = bundling.as_mut() {
+                // BundlerInfo.verifyNonTerminalPacket: a terminal packet would
+                // leave the rest of the bundle unapplied. For this client the
+                // only terminal play packet is StartConfiguration.
+                if matches!(&packet, play::Clientbound::StartConfiguration(_)) {
+                    return Err(Reason::plain("terminal packet in a bundle"));
+                }
+                let entry = bundle_entry_bytes(payload.capacity(), &packet);
+                let retained = send.stats().reserved_bytes.saturating_add(bundle_bytes);
+                if retained.saturating_add(entry) > send.capacity() {
+                    return Err(Reason::plain("bundle exceeds the incoming byte budget"));
+                }
                 if bundle.len() >= 4096 {
                     return Err(Reason::plain("Too many packets in a bundle"));
                 }
+                bundle_bytes = bundle_bytes.saturating_add(entry);
                 bundle.push((id, payload, packet));
                 continue;
             }
@@ -1230,10 +1305,10 @@ fn receive_play(
         match packet {
             play::Clientbound::KeepAlive(k) => reply(play::Serverbound::KeepAlive(k)),
             play::Clientbound::ResourcePackPush(p) => {
-                let _ = send.send(Event::PackPush(p));
+                let _ = emit(send, &mut batch, Event::PackPush(p));
             }
             play::Clientbound::ResourcePackPop(p) => {
-                let _ = send.send(Event::PackPop(p.id));
+                let _ = emit(send, &mut batch, Event::PackPop(p.id));
             }
             play::Clientbound::StartConfiguration(_) => {
                 payloads.begin_configuration();
@@ -1272,15 +1347,19 @@ fn receive_play(
                 cookies.lock().unwrap().insert(p.key, p.payload);
             }
             play::Clientbound::ServerLinks(p) => {
-                let _ = send.send(Event::ServerLinks(p.links));
+                let _ = emit(send, &mut batch, Event::ServerLinks(p.links));
             }
             // ClientCommonPacketListenerImpl.handleTransfer: the connection
             // ends and the game connects to the other address.
             play::Clientbound::Transfer(p) => {
-                let _ = send.send(Event::Transfer {
-                    host: p.host,
-                    port: p.port,
-                });
+                let _ = emit(
+                    send,
+                    &mut batch,
+                    Event::Transfer {
+                        host: p.host,
+                        port: p.port,
+                    },
+                );
                 return Ok(Reason::keyed("disconnect.transfer", lang));
             }
             play::Clientbound::Disconnect(d) => return Ok(Reason::tag(&d.reason, lang)),
@@ -1303,16 +1382,32 @@ fn receive_play(
                     horizon_protocol::payload_negotiation::Phase::Play,
                     payload,
                     send,
-                )? {
-                    send.send(Event::Packet(Box::new(play::Clientbound::CustomPayload(
-                        payload,
-                    ))))
-                    .map_err(|_| Reason::plain("Disconnected"))?;
+                )?
+                .map(|payload| Event::Packet(Box::new(play::Clientbound::CustomPayload(payload))))
+                {
+                    if !emit(send, &mut batch, payload) {
+                        return Ok(Reason::plain("Disconnected"));
+                    }
                 }
             }
             other => {
-                if send.send(Event::Packet(Box::new(other))).is_err() {
+                if !emit(send, &mut batch, Event::Packet(Box::new(other))) {
                     return Ok(Reason::plain("Disconnected"));
+                }
+            }
+        }
+        if batch_left > 0 {
+            batch_left -= 1;
+            if batch_left == 0 {
+                let events = batch.take().unwrap_or_default().into_boxed_slice();
+                if !events.is_empty() {
+                    send.send(Event::Bundle(events))
+                        .map_err(|refused| match refused.reason {
+                            ingress::Refusal::Pressure => {
+                                Reason::plain("bundle exceeds the incoming byte budget")
+                            }
+                            ingress::Refusal::Closed => Reason::plain("Disconnected"),
+                        })?;
                 }
             }
         }
@@ -3214,16 +3309,140 @@ mod tests {
         );
         server.send(&delimiter).unwrap();
         let timeout = Duration::from_secs(5);
-        let (event, _ping7) = events.recv_timeout_owned(timeout).unwrap().into_parts();
+        let (event, _credit) = events.recv_timeout_owned(timeout).unwrap().into_parts();
+        let Event::Bundle(bundle) = event else {
+            panic!("a closed bundle must be dispatched as one unit");
+        };
+        assert_eq!(bundle.len(), 2, "a bundle lost or gained a packet");
         assert!(
-            matches!(event, Event::Packet(p) if *p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
+            matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
         );
-        let (event, _ping8) = events.recv_timeout_owned(timeout).unwrap().into_parts();
         assert!(
-            matches!(event, Event::Packet(p) if *p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+            matches!(&bundle[1], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+        );
+        assert!(
+            events.try_recv_owned().is_err(),
+            "the bundle was split across publications"
         );
         writer.lock().unwrap().take().unwrap().shutdown();
         assert!(thread.join().unwrap().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn poll_returns_a_whole_bundle_and_never_a_prefix() {
+        let (root, data) = empty_item_data("bundle-poll");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let (send, events) = event_channel_with_capacity(1 << 20);
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        let ping = |id| play::Clientbound::Ping(cfg::Ping { id }).encode();
+        server.send(&delimiter).unwrap();
+        server.send(&ping(7)).unwrap();
+        server.send(&ping(8)).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        // `Session::poll` is `take_turn`: a bundle that is still open is not
+        // visible, and a closed one is never visible in parts.
+        assert!(events.take_turn().is_empty(), "an open bundle was polled");
+        server.send(&delimiter).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while events.stats().queued_items == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let turn = events.take_turn();
+        assert_eq!(turn.len(), 1, "poll returned a prefix of the bundle");
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        let Event::Bundle(bundle) = event else {
+            panic!("a closed bundle must be one polled unit");
+        };
+        assert_eq!(bundle.len(), 2);
+        assert!(
+            matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
+        );
+        assert!(
+            matches!(&bundle[1], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+        );
+        // A packet outside delimiters is still its own polled event.
+        server.send(&ping(9)).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while events.stats().queued_items == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let turn = events.take_turn();
+        assert_eq!(turn.len(), 1);
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        assert!(
+            matches!(event, Event::Packet(p) if *p == play::Clientbound::Ping(cfg::Ping { id: 9 }))
+        );
+        writer.lock().unwrap().take().unwrap().shutdown();
+        assert!(thread.join().unwrap().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_bundle_over_the_ingress_budget_is_rejected() {
+        let (root, data) = empty_item_data("bundle-budget");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        // A tiny budget keeps the test allocation small; the check itself is
+        // the production one, against the channel's capacity.
+        let (send, _events) = event_channel_with_capacity(4 << 10);
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        server.send(&delimiter).unwrap();
+        // Retained raw payload plus decoded packet exceeds the 4 KiB budget,
+        // long before the 4096-packet cap.
+        server
+            .send(
+                &play::Clientbound::CustomPayload(cfg::CustomPayload {
+                    channel: "horizon:test-large-bundle".into(),
+                    data: vec![0; 8 << 10],
+                })
+                .encode(),
+            )
+            .unwrap();
+        let Err(error) = thread.join().unwrap() else {
+            panic!("a bundle over the retained budget was accepted");
+        };
+        assert!(
+            error.text.contains("byte budget"),
+            "unexpected rejection reason: {}",
+            error.text
+        );
+        writer.lock().unwrap().take().unwrap().shutdown();
         std::fs::remove_dir_all(root).unwrap();
     }
 }
