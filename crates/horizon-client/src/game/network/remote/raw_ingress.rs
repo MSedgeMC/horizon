@@ -72,8 +72,11 @@ impl Game<'_> {
                         .iter()
                         .filter(|part| matches!(part, BundlePart::Chunk(_)))
                         .count();
-                    let ready = self.remote.as_ref().map_or(0, |r| r.decoder.ready_run());
-                    if chunk_count > 0 && ready < chunk_count {
+                    let ready = self
+                        .remote
+                        .as_ref()
+                        .map_or(0, |r| r.decoder.ready_run(chunk_count));
+                    if ready < chunk_count {
                         events.push_front(Received::Bundle(parts, credit));
                         break;
                     }

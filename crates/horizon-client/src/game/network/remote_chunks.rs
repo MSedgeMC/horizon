@@ -377,10 +377,14 @@ impl ChunkDecoder {
         Next::Decoding
     }
 
-    /// How many submitted packets would deliver now, in order, without
-    /// waiting. A bundle uses this to release only when all of its chunks are
-    /// decodable, so it never applies a prefix and defers the rest.
-    pub(super) fn ready_run(&self) -> usize {
+    /// How many of the next `required` submitted packets would deliver now,
+    /// in order, without waiting. A bundle asks for its own chunk count only,
+    /// so it never scans a whole decoded run; a bundle without chunks asks
+    /// for none and returns before touching the retirement lock.
+    pub(super) fn ready_run(&self, required: usize) -> usize {
+        if required == 0 {
+            return 0;
+        }
         let mut ret = match self.retirement.lock() {
             Ok(r) => r,
             Err(_) => return 0,
@@ -390,7 +394,7 @@ impl ChunkDecoder {
         }
         let mut seq = ret.next_deliver;
         let mut ready = 0;
-        while ret.ready.contains_key(&seq) {
+        while ready < required && ret.ready.contains_key(&seq) {
             seq += 1;
             ready += 1;
         }
@@ -699,6 +703,32 @@ mod tests {
             assert_eq!((column.x, column.z), (x, -3));
         }
         assert!(matches!(decoder.next(), Next::Decoding));
+    }
+
+    /// `ready_run` stops once the caller's count is reached: a bundle asks
+    /// only for its own chunks, not for everything decoded behind them.
+    #[test]
+    fn ready_run_stops_at_the_required_count() {
+        let overworld = DimensionType::vanilla("minecraft:overworld");
+        let format = Arc::new(ChunkFormat::new(&overworld, vec![0, 7, 9], 2));
+        let decoder = ChunkDecoder::new();
+        assert_eq!(decoder.ready_run(0), 0);
+        for x in 0..4 {
+            assert!(decoder.submit(format.clone(), packet(x, 1 + x)).is_none());
+        }
+        let start = std::time::Instant::now();
+        while decoder.ready_run(4) < 4 {
+            assert!(
+                start.elapsed() < std::time::Duration::from_secs(10),
+                "the decoder stopped"
+            );
+            std::thread::yield_now();
+        }
+        assert_eq!(decoder.ready_run(0), 0);
+        assert_eq!(decoder.ready_run(1), 1);
+        assert_eq!(decoder.ready_run(2), 2);
+        assert_eq!(decoder.ready_run(4), 4);
+        assert_eq!(decoder.ready_run(5), 4);
     }
 
     /// `LevelChunk.replaceBiomes`: the packet's containers go to the
