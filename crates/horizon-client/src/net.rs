@@ -1208,6 +1208,13 @@ fn emit(send: &ingress::Producer<Event>, batch: &mut Option<Vec<Event>>, event: 
     }
 }
 
+fn bundle_refusal(refused: ingress::Refused<Event>) -> Reason {
+    match refused.reason {
+        ingress::Refusal::Pressure => Reason::plain("bundle exceeds the incoming byte budget"),
+        ingress::Refusal::Closed => Reason::plain("Disconnected"),
+    }
+}
+
 fn receive_play(
     reader: &mut ConnReader,
     shared_writer: &Arc<Mutex<Option<QueuedWriter>>>,
@@ -1365,7 +1372,10 @@ fn receive_play(
                 match batch.take() {
                     Some(mut events) => {
                         events.push(transfer);
-                        let _ = send.send(Event::Bundle(events.into_boxed_slice()));
+                        // A refused bundle did not deliver a transfer target.
+                        // Do not report a successful handoff in that case.
+                        send.send(Event::Bundle(events.into_boxed_slice()))
+                            .map_err(bundle_refusal)?;
                     }
                     None => {
                         let _ = send.send(transfer);
@@ -1433,13 +1443,7 @@ fn receive_play(
             if batch_left == 0 {
                 let events = batch.take().unwrap_or_default().into_boxed_slice();
                 if !events.is_empty() {
-                    send.send(Event::Bundle(events))
-                        .map_err(|refused| match refused.reason {
-                            ingress::Refusal::Pressure => {
-                                Reason::plain("bundle exceeds the incoming byte budget")
-                            }
-                            ingress::Refusal::Closed => Reason::plain("Disconnected"),
-                        })?;
+                    send.send(Event::Bundle(events)).map_err(bundle_refusal)?;
                 }
             }
         }
@@ -3545,6 +3549,55 @@ mod tests {
             events.take_turn().is_empty(),
             "the transfer was also published separately"
         );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_bundled_transfer_refused_by_ingress_is_not_a_successful_handoff() {
+        let (root, data) = empty_item_data("bundle-transfer-refused");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let (send, events) = event_channel();
+        // The connection may still receive the bundle after its game consumer
+        // has closed. Successful decoding does not mean the target was delivered.
+        drop(events);
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        server.send(&delimiter).unwrap();
+        server
+            .send(&play::Clientbound::Ping(cfg::Ping { id: 7 }).encode())
+            .unwrap();
+        server
+            .send(
+                &play::Clientbound::Transfer(cfg::Transfer {
+                    host: "example.net".into(),
+                    port: 25566,
+                })
+                .encode(),
+            )
+            .unwrap();
+        server.send(&delimiter).unwrap();
+        let Err(reason) = thread.join().unwrap() else {
+            panic!("a refused bundled transfer was reported as a successful handoff");
+        };
+        assert_eq!(reason.text, "Disconnected");
+        writer.lock().unwrap().take().unwrap().shutdown();
         std::fs::remove_dir_all(root).unwrap();
     }
 
