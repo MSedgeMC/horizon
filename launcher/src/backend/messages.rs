@@ -39,6 +39,8 @@ pub enum Msg {
         jars: Vec<horizon_platform::mod_package::manifest::JarRef>,
         reply: std::sync::mpsc::Sender<bool>,
     },
+    /// The step a start of the game is on (`play_step::say`), already in the launcher's language.
+    PlayStep(String),
     JarClient {
         run: Option<String>,
         prepared: Box<Result<Command, String>>,
@@ -47,6 +49,8 @@ pub enum Msg {
     PackLine(String),
     /// A modpack step ended: the pack as it now is.
     PackDone(Result<Box<crate::modpacks::Imported>, String>),
+    /// The imported packs, read on a thread for the window's read of that number.
+    ImportedPacks(u64, Vec<crate::modpacks::Imported>),
     /// The modpacks other launchers keep on this computer (`modpacks::found_on_this_computer`).
     FoundPacks(Vec<crate::other_launchers::Found>),
     /// Where the native-mods build is (`native_mods::Step::label`), and how far along.

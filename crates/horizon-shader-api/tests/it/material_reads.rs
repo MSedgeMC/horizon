@@ -95,8 +95,8 @@ fn the_material_names_declared_resources_once_and_writes_none() {
     ] {
         refused(&material(reads), needle);
     }
-    let keys = "and `reads` of [material]: the terrain reads kept resources, compute passes \
-                write them";
+    let keys = "and `reads` of [material], [entity] and [sky]: they draw with kept resources, \
+                compute passes write them";
     for key in [
         "writes = [\"buf\"]",
         "compute = true",
@@ -105,8 +105,8 @@ fn the_material_names_declared_resources_once_and_writes_none() {
     ] {
         refused(&material(&format!("{key}\n")), keys);
     }
-    // The other stages read none.
-    for stage in ["vertex", "sky", "weather", "tonemap", "entity"] {
+    // The other stages read none (`[entity]` and `[sky]` do: entity_sky_reads.rs).
+    for stage in ["vertex", "weather", "tonemap"] {
         refused(
             &format!(
                 "{}[{stage}]\nfile = \"s.wgsl\"\nreads = [\"buf\"]\n",
@@ -219,8 +219,8 @@ fn a_material_without_reads_composes_as_before() {
     assert_eq!(
         hashes,
         [
-            "b5a77abc05a6b2034dbf8f127d71f94bc56e1f6cdad1bf52f1bb3403a271cff0",
-            "742466625a0a11b9eb6b1ef73e672167be29e44f9e35e7cd9961349c2e817f1f",
+            "3603cefa770143294f4a0fe1a9d799cd0daa52c95fd11ef9dad28a93d1619458",
+            "a8ba6e8a89b7865fb0e1b897330bbca5ab48605f55984f969aade62d5d890655",
         ]
     );
     let plain = pack(&material(""), &[("w.wgsl", WRITE), ("m.wgsl", PLAIN)]);

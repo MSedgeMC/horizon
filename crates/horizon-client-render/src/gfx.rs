@@ -13,7 +13,12 @@ use crate::{
 #[cfg(any(test, feature = "test-support"))]
 use glam::Vec4;
 use glam::{DVec3, Mat4, Vec3};
-use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Instant};
+use std::{
+    collections::HashMap,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use wgpu::util::DeviceExt;
 use winit::window::Window;
 // RenderPipelines.CRUMBLING: dst * src + src * dst, alpha replaced.
@@ -323,7 +328,7 @@ fn flat_vertices<'a>(
 /// The world's section lists and the arena pages they draw from, borrowed apart from the rest
 /// of the renderer: a shader pack's shadow passes draw the light's lists through them.
 #[derive(Clone, Copy)]
-pub(super) struct SectionLists<'a> {
+pub struct SectionLists<'a> {
     draws: &'a [[u32; 5]],
     pages: &'a [(u32, Option<u32>)],
     arena: &'a arena::Arena,
@@ -334,6 +339,8 @@ pub(super) struct SectionLists<'a> {
     /// The flat draws' lists, where they are made.
     pub flat: Option<&'a flat::Flat>,
     multi_draw: bool,
+    /// The pages' quad looks, bound beside them while the pack's pipelines take them.
+    looks: Option<&'a looks::LookGroups>,
 }
 
 impl<'a> SectionLists<'a> {
@@ -366,6 +373,10 @@ impl<'a> SectionLists<'a> {
                 ),
             };
             pass.set_vertex_buffer(0, vertices);
+            if let Some(looks) = self.looks {
+                let translucent = self.translucent_arena.is_some() && index_page.is_some();
+                pass.set_bind_group(looks::GROUP, looks.page(page, translucent), &[]);
+            }
             if pulled
                 && index_page.is_none()
                 && let Some(group) = self.flat.and_then(|f| f.page_group(page))
@@ -463,8 +474,12 @@ mod linear_blend;
 use frame_policy::frame_format;
 use frame_policy::{frame_configuration, hand_depth_store, horizon_tone_curve, overlay_format};
 mod lod;
+mod looks;
+#[cfg(any(test, feature = "test-support"))]
+pub use looks::PartLooks;
 pub mod mod_pipelines;
 pub mod native_entity;
+mod native_executor;
 mod native_material;
 mod native_pack;
 mod native_post;
@@ -497,6 +512,7 @@ pub mod panorama;
 mod readback;
 mod resident;
 mod reuse;
+mod rt;
 mod screenshot;
 pub use screenshot::{PendingScreenshot, ScreenshotSave};
 mod screenshot_readback;
@@ -510,6 +526,8 @@ mod sunrise_fan;
 mod timing;
 pub mod translucency;
 pub(crate) mod upload;
+mod upload_retry;
+use upload_retry::UploadRetries;
 mod view;
 mod view_sections;
 mod visbuffer;
@@ -1367,8 +1385,21 @@ pub struct Renderer {
     /// Sections upload their solid quads in the compact layout (`mesher::packed`): the solid
     /// passes read the arena themselves (`flat`) and no shader pack reads it as vertices.
     packed_quads: bool,
-    /// The terrain's acceleration structures, with ray tracing on (`ray_scene`).
-    ray_scene: Option<surface_setup::ray_query::ray_scene::RayScene>,
+    /// The running 0.2 pack's terrain pipelines take the quads' looks (`looks::wanted`):
+    /// sections upload them (`follow_terrain_looks`).
+    terrain_looks: bool,
+    /// Their groups, while they are on, and the layout the pack's terrain pipelines read them
+    /// with (`looks`), made for the first pack that takes them.
+    look_groups: Option<looks::LookGroups>,
+    looks_layout: Option<wgpu::BindGroupLayout>,
+    /// The world taken from a renderer that ran one of Horizon's packs (`take_world`) keeps
+    /// the looks and layouts that pack had until the game gives this renderer a pack again,
+    /// drops it or fails to load it (`set_native_shader_pack`, `drop_shader_packs`,
+    /// `release_world`): a renderer made again for another frame draws before its pack is back,
+    /// and following no pack then would mesh the world twice.
+    world_held: bool,
+    /// The terrain's acceleration structures, with ray tracing on (`rt::scene`).
+    ray_scene: Option<rt::scene::RayScene>,
     /// The compact layout is allowed (`HORIZON_PACKED_QUADS`, `set_packed_layout`).
     packed_on: bool,
     /// The visibility buffer for flat frames' solid terrain (`visbuffer`,
@@ -1593,6 +1624,8 @@ pub struct Renderer {
     detail_columns: FxHashMap<(i32, i32), SectionMask>,
     /// Bumped whenever a column becomes or stops being complete.
     detail_revision: u64,
+    /// Sections whose mesh the arena refused (`upload`), waiting to be meshed again.
+    upload_retries: UploadRetries,
     arena: arena::Arena,
     /// Translucent quads' own arena, with large pages, while the layout is split
     /// (`translucent_split`): the back-to-front list then stays in one page (and
@@ -1649,6 +1682,10 @@ pub struct Renderer {
     /// change. Empty-section tombstones remain until that section unloads so
     /// the static cache can remove deleted models without a global flush.
     block_entity_membership_revisions: FxHashMap<SectionKey, u64>,
+    /// Each section's block-entity marks (`visible_block_entities_in_frustum`) put together,
+    /// by the section's membership revision and the marks table they were worked out for.
+    /// A frame asks this of every section within 256 blocks, and the lists hardly change.
+    block_entity_marks: std::cell::RefCell<BlockEntityMarks>,
     /// When each section was first uploaded (`RenderSection.uploadedTime`): kept across meshing
     /// it again, gone with its column. Sections that fade in over far terrain are not in it.
     section_uploaded: FxHashMap<SectionKey, std::time::Instant>,
@@ -1703,9 +1740,9 @@ pub struct Renderer {
     pack_post: Option<(i32, Option<pack_post::PackPost>)>,
     /// A `shaders/` pack whose pipelines build on a thread of their own (`load_shader_pack`).
     pack_loading: Option<PackLoading>,
-    /// The post passes of one of Horizon's own shader packs; never beside `pack_post`'s.
-    native: Option<native_pack::NativePack>,
-    /// What it does in the renderer's place, kept from its install on (`replace_native`).
+    /// The manifest of the Horizon pack `external` runs, as the game reads it.
+    pack_metadata: Option<native_pack::Metadata>,
+    /// What `external` does in the renderer's place, kept from its install on (`replace_executor`).
     executor: Option<external::Capabilities>,
     /// Time the shader pack's passes on the GPU (F3, or a capture made with `--gpu`).
     pass_timing: bool,
@@ -2435,14 +2472,14 @@ impl Renderer {
             &device,
             Some(&layout),
             &shader,
-            config.format.remove_srgb_suffix(),
+            (frame_format, linear_light),
             &sprite_constants,
         );
         let terrain_model_pipelines = terrain_model::pipelines(
             &device,
             Some(&layout),
             &shader,
-            config.format.remove_srgb_suffix(),
+            (frame_format, linear_light),
             &sprite_constants,
         );
         let instance_attributes = wgpu::vertex_attr_array![5=>Float32x4];
@@ -4188,6 +4225,8 @@ impl Renderer {
             std::mem::size_of::<TerrainVertex>() as u64,
             flat.is_some(),
             translucent_split(translucent_batching, flat.is_some(), shader_pack, false),
+            // Nor sections with looks (`terrain_looks`).
+            false,
         );
         if let (Some(flat), Some(arena)) = (&mut flat, &translucent_arena) {
             flat.set_translucent_page_vertices(arena.page_vertices());
@@ -4217,13 +4256,13 @@ impl Renderer {
                 Ok("shader") => cull::DepthTest::InShader,
                 _ => depth_test,
             })
-            .map(|depth_test| {
-                let mut cull = cull::Cull::new(&device, frame_format, depth_test);
+            .and_then(|depth_test| {
+                let mut cull = cull::Cull::new(&device, frame_format, depth_test)?;
                 cull.always = cull_env.as_deref() == Ok("all");
                 if !cull.always && adapter_info.backend == wgpu::Backend::Metal {
                     cull.min_sections = cull::TILED_MIN_SECTIONS;
                 }
-                cull
+                Some(cull)
             });
         let depth = Self::depth(&device, &config);
         let world_post = world_post::Post::new(&device, frame_format);
@@ -4289,7 +4328,8 @@ impl Renderer {
             last_wait: std::time::Duration::ZERO,
             last_encode: std::time::Duration::ZERO,
             window,
-            ray_scene: surface_setup::ray_query::ray_scene::RayScene::forced(&device),
+            ray_scene: rt::scene::RayScene::forced(&device),
+            looks_layout: None,
             device,
             reuse,
             queue: submit::Queue::new(queue, submit::wanted()),
@@ -4302,6 +4342,9 @@ impl Renderer {
             translucent,
             flat_on: flat.is_some(),
             packed_quads,
+            terrain_looks: false,
+            look_groups: None,
+            world_held: false,
             packed_on: packed_wanted(),
             cull_on: cull.is_some(),
             sides_on: true,
@@ -4452,6 +4495,7 @@ impl Renderer {
             lod_pending: None,
             detail_columns: Default::default(),
             detail_revision: 0,
+            upload_retries: UploadRetries::default(),
             arena,
             translucent_arena,
             translucent_batching,
@@ -4479,6 +4523,7 @@ impl Renderer {
             block_entities: Default::default(),
             block_entity_section_revisions: Default::default(),
             block_entity_membership_revisions: Default::default(),
+            block_entity_marks: Default::default(),
             section_uploaded: Default::default(),
             newest_upload: None,
             newest_lod_fade: None,
@@ -4503,7 +4548,7 @@ impl Renderer {
             hdr_driver,
             pack_post: None,
             pack_loading: None,
-            native: None,
+            pack_metadata: None,
             executor: None,
             pass_timing: false,
             pass_detail: false,
@@ -4665,7 +4710,7 @@ impl Renderer {
         pass.draw(0..4, first..first + edges);
     }
     fn quad_indices(device: &wgpu::Device, quads: u32) -> wgpu::Buffer {
-        surface_setup::ray_query::quad_indices(device, quads)
+        rt::query::quad_indices(device, quads)
     }
     fn offscreen_target(
         device: &wgpu::Device,
@@ -5001,18 +5046,18 @@ impl Renderer {
     }
     /// Whether the running native pack gives any block a `[[lights]]` colour.
     pub fn has_light_colors(&self) -> bool {
-        self.native
+        self.pack_metadata
             .as_ref()
-            .is_some_and(|native| !native.light_colors.is_empty())
+            .is_some_and(|pack| !pack.light_colors.is_empty())
     }
     /// The running native pack's `[[lights]]` colour of the block `name`.
     pub fn light_color(&self, name: &str) -> Option<[f32; 3]> {
-        let native = self.native.as_ref()?;
-        horizon_shader_api::manifest::light_color(&native.light_colors, name)
+        let pack = self.pack_metadata.as_ref()?;
+        horizon_shader_api::manifest::light_color(&pack.light_colors, name)
     }
     /// The running native pack's `[[particle_lights]]`.
     pub fn particle_lights(&self) -> Option<&[horizon_shader_api::manifest::ParticleLight]> {
-        self.native.as_ref().map(|n| n.particle_lights.as_slice())
+        (self.pack_metadata.as_ref()).map(|n| n.particle_lights.as_slice())
     }
     /// Whether one of Horizon's own packs with `[shadow]` draws, whose shadow pass takes the
     /// frame's `shadow_only` quads.
@@ -5062,14 +5107,37 @@ impl Renderer {
     ) -> Option<bool> {
         self.occlusion.visible_for_camera(key, camera_section)
     }
-    pub fn upload(&mut self, key: SectionKey, mesh: &SectionMesh) {
+    /// Section `key`'s quads in, from `mesh`; whether the section has them now, a section
+    /// with no quads counting (there is nothing to draw). False when the arena had no room
+    /// for them: the mesh is gone once the game frees it, so the section is remembered here
+    /// (`queue_upload_retries`) and meshed again once memory allows.
+    pub fn upload(&mut self, key: SectionKey, mesh: &SectionMesh) -> bool {
         if let Some(copies) = &mut self.capture_copies {
             copies.section(key, mesh);
         }
         let facts = MeshFacts::of(mesh);
         let fading = self.before_mesh(key, &facts);
         let section = self.upload_mesh(mesh);
+        let drawn = section.is_some() || facts.empty;
+        if drawn {
+            self.upload_retries.uploaded(key);
+        } else {
+            let quads = ((mesh.solid.len() + mesh.translucent.len()) / 4) as u32;
+            self.upload_retries.refused(key, Instant::now(), quads);
+        }
         self.after_mesh(key, &facts, section, fading);
+        drawn
+    }
+    /// Puts the sections whose retry is due (`upload`) back in the mesh queue `dirty`
+    /// (`World::dirty_sections`), as an edit puts a changed section there: the game meshes
+    /// them again, and the next upload of them finds out whether the arena takes their
+    /// quads. How many went back.
+    pub fn queue_upload_retries(
+        &mut self,
+        dirty: &mut crate::world::DirtySections,
+        now: Instant,
+    ) -> usize {
+        self.upload_retries.queue_due(dirty, now)
     }
     /// Section `key`'s new mesh drawn from now on, its quads uploaded (`section`: none when it
     /// has none, or the arena had no room).
@@ -5221,6 +5289,22 @@ impl Renderer {
                     &mesh.translucent_sources,
                 );
         }
+        if self.terrain_looks {
+            let slots = looks::per_slot;
+            let uploads = &mut self.section_uploads;
+            let looks = slots(&mesh.solid_looks, packed, solid_slots);
+            (self.arena).write_looks(encoder, uploads, page, start, solid_slots, &looks);
+            let looks = slots(&mesh.translucent_looks, false, translucent_vertices);
+            let (at_page, at) = translucent_at;
+            (self.translucent_arena.as_ref().unwrap_or(&self.arena)).write_looks(
+                encoder,
+                uploads,
+                at_page,
+                at,
+                translucent_vertices,
+                &looks,
+            );
+        }
         let translucent_arena = self.translucent_arena.as_ref().unwrap_or(&self.arena);
         let solid_bytes: &[u8] = if packed {
             bytemuck::cast_slice(&mesh.packed)
@@ -5337,6 +5421,7 @@ impl Renderer {
             indices: &self.indices,
             flat: self.flat.as_ref(),
             multi_draw: self.multi_draw,
+            looks: self.look_groups.as_ref(),
         };
         lists.draw(pass, indirect, base, first, count, pulled);
     }
@@ -5523,14 +5608,25 @@ impl Renderer {
     /// check in the game. Sections wholly inside the frustum skip that finer
     /// check; sections outside it are kept only when a renderer needs to draw
     /// geometry extending beyond its block (beacon beams, gateways, outlines).
+    ///
+    /// `marks` holds each state's flags: 1, drawn off screen (a section holding one is kept
+    /// wherever it is); 2, drawn as far as 256 blocks (a section holding one is kept that far).
+    /// States past its end have none. An empty or absent table keeps nothing for either.
+    /// The cache retains the immutable allocation, so editing with `Arc::make_mut` or replacing
+    /// the table always changes its identity; a dropped table's address cannot be reused.
     pub fn visible_block_entities_in_frustum<'a>(
         &'a self,
         fade_seconds: f32,
         camera: DVec3,
         frustum: Option<JoinedFrusta>,
-        keep_section: impl Fn(u32) -> bool + 'a,
-        keep_long_range: impl Fn(u32) -> bool + 'a,
+        marks: Option<&'a Arc<[u8]>>,
     ) -> impl Iterator<Item = (&'a ([i32; 3], u32), bool)> + 'a {
+        let section_count = self.block_entities.len();
+        let marks_cache = &self.block_entity_marks;
+        let revisions = &self.block_entity_membership_revisions;
+        let section_marks = move |key: &SectionKey, blocks: &[([i32; 3], u32)]| -> u8 {
+            cached_section_mark(marks_cache, revisions, section_count, key, blocks, marks)
+        };
         let fade = fade_millis(fade_seconds);
         let now = Instant::now();
         // No section uploaded within the fade: all are whole, none is looked up.
@@ -5553,8 +5649,7 @@ impl Renderer {
                 let max = min + Vec3::splat(18.0);
                 let distance_squared = Vec3::ZERO.max(min).min(max).length_squared();
                 let in_range = distance_squared <= 64.0 * 64.0
-                    || (distance_squared <= 256.0 * 256.0
-                        && blocks.iter().any(|(_, state)| keep_long_range(*state)));
+                    || (distance_squared <= 256.0 * 256.0 && section_marks(key, blocks) & 2 != 0);
                 if !in_range {
                     return None;
                 }
@@ -5562,7 +5657,7 @@ impl Renderer {
                     let fully_inside = view.contains(min, max);
                     (fully_inside || view.intersects(min, max), fully_inside)
                 });
-                (intersects || blocks.iter().any(|(_, state)| keep_section(*state)))
+                (intersects || section_marks(key, blocks) & 1 != 0)
                     .then_some((blocks, fully_inside))
             })
             .flat_map(|(blocks, fully_inside)| {
@@ -5628,6 +5723,7 @@ impl Renderer {
         self.block_entities.clear();
         self.block_entity_section_revisions.clear();
         self.block_entity_membership_revisions.clear();
+        self.block_entity_marks.borrow_mut().sections.clear();
         self.section_uploaded.clear();
         self.newest_upload = None;
         self.newest_lod_fade = None;
@@ -5641,6 +5737,7 @@ impl Renderer {
         self.lod_pending = None;
         self.detail_columns.clear();
         self.detail_revision += 1;
+        self.upload_retries.clear();
         // A dimension change drops every page at once: freed later, off this thread.
         self.graveyard.add(self.arena.clear());
         if let Some(gpu) = &mut self.gpu_culling {
@@ -5670,6 +5767,9 @@ impl Renderer {
     /// them (large pages beside the translucent arena, else pages flat draws bind):
     /// the game meshes them again (`take_dropped_sections`).
     fn follow_translucent_layout(&mut self) {
+        if self.world_held {
+            return;
+        }
         let pack = self.pack_post.as_ref().and_then(|p| p.1.as_ref());
         let split = translucent_split(
             self.translucent_batching,
@@ -5689,6 +5789,7 @@ impl Renderer {
             std::mem::size_of::<TerrainVertex>() as u64,
             self.flat.is_some(),
             split,
+            self.terrain_looks,
         );
         if let (Some(flat), Some(arena)) = (&mut self.flat, &self.translucent_arena) {
             flat.set_translucent_page_vertices(arena.page_vertices());
@@ -5699,6 +5800,9 @@ impl Renderer {
     /// programs outside flat draws (flat ones unpack the records, `pack_atlas::PULL_FLAT`).
     /// Leaving it drops every section and far tile for the game to mesh again.
     fn follow_packed_layout(&mut self) {
+        if self.world_held {
+            return;
+        }
         let pack = self.pack_post.as_ref().and_then(|p| p.1.as_ref()).is_some();
         let want = self.flat.is_some() && (!pack || self.pack_terrain_flat) && self.packed_on;
         if want == self.packed_quads {
@@ -5828,6 +5932,13 @@ impl Renderer {
         if let Some(copies) = &mut self.capture_copies {
             copies.remove_columns(&columns);
         }
+        if !self.upload_retries.is_empty() && !columns.is_empty() {
+            // Nothing meshes a section of a column that left the view: the retry would
+            // only fill the queue for a chunk that is gone.
+            let dropped: crate::fast_hash::FxHashSet<_> = columns.iter().copied().collect();
+            self.upload_retries
+                .retain_columns(|x, z| !dropped.contains(&(x, z)));
+        }
         // Most of the view at once (a teleport at render distance 32 drops some 3700
         // columns): a pass over each store instead of a lookup per section key, which
         // took 10 ms of one frame. Far terrain fades the sections out instead.
@@ -5852,6 +5963,7 @@ impl Renderer {
                 block_entities |= self.block_entities.remove(&key).is_some();
                 self.block_entity_section_revisions.remove(&key);
                 self.block_entity_membership_revisions.remove(&key);
+                self.block_entity_marks.borrow_mut().sections.remove(&key);
                 if self.light_blocks.remove(&key).is_some() {
                     self.light_revision += 1;
                 }
@@ -6201,13 +6313,18 @@ impl Renderer {
         });
         self.pack_post = Some((dimension, post));
         if self.pack_post.as_ref().is_some_and(|p| p.1.is_some()) {
-            self.replace_native(None);
+            self.replace_executor(None);
         }
         Ok(report)
     }
-    /// Sets the external shader pipeline world frames call (`external`), or none.
-    pub fn set_external_pipeline(&mut self, pipeline: Option<Box<dyn external::ExternalPipeline>>) {
-        self.external = pipeline;
+    /// Sets the external shader pipeline world frames call (`external`), or none. Why it was
+    /// refused, if it was (`ExternalPipeline::take_over`): then the one that ran keeps running,
+    /// unless it can't.
+    pub fn set_external_pipeline(
+        &mut self,
+        pipeline: Option<Box<dyn external::ExternalPipeline>>,
+    ) -> Option<String> {
+        self.replace_executor(pipeline)
     }
     /// Makes the running shader pack, of either kind, forget what it kept from earlier frames:
     /// the next frame draws as a freshly loaded pack's first. Nothing to do without a pack.
@@ -6221,10 +6338,6 @@ impl Renderer {
         if let Some((_, Some(post))) = &mut self.pack_post {
             post.reset_history(&self.device);
         }
-        if let Some(native) = &mut self.native {
-            native.frame.reset_history();
-            native.post.reset_history();
-        }
     }
     /// The running shader pack's kind: `iris` (a `shaders/` pack) or `native` (one of
     /// Horizon's own).
@@ -6235,9 +6348,63 @@ impl Renderer {
             _ => None,
         }
     }
+    /// Whether the running Horizon pack's terrain takes the quads' looks (`looks::wanted`).
+    fn native_looks(&self) -> bool {
+        self.executor.is_some_and(|c| c.looks)
+    }
+    /// Whether sections carry their quads' looks: the game meshes the world again when it
+    /// changes. Their buffers are made empty or dropped only then; a renderer that takes the
+    /// world (`take_world`) takes them with it, and one that doesn't starts without looks, with
+    /// every section meshed again.
+    pub fn terrain_looks(&self) -> bool {
+        self.terrain_looks
+    }
+    /// Before a world frame, the arenas' looks follow the pack that runs: a pack replaced by
+    /// another that takes them too (the picker drops one and loads the other in a frame) leaves
+    /// them as they are.
+    fn follow_terrain_looks(&mut self) {
+        if self.world_held {
+            return;
+        }
+        let want = self.native_looks();
+        if want != self.terrain_looks {
+            self.set_terrain_looks(want);
+        }
+    }
+    /// Sections uploaded from now on carry their quads' looks (`on`), or none; the arenas'
+    /// pages get or lose their buffers of looks. The game meshes the world again. Where an
+    /// arena's pages no longer hold (`Arena::set_looks`: their most changes, as a translucent
+    /// page's does with looks, or a page got no looks), every section goes now, as on a change
+    /// of layout, and new pages keep to the limit. So do they when looks turn on: a resident
+    /// section's looks are the new buffers' zeros (face 0, down), and this frame draws before the
+    /// game meshes the world again.
+    fn set_terrain_looks(&mut self, on: bool) {
+        log::info!(
+            "Horizon renderer: terrain quad looks {}",
+            if on { "on" } else { "off" }
+        );
+        self.terrain_looks = on;
+        self.look_groups = (self.looks_layout.clone())
+            .filter(|_| on)
+            .map(|layout| looks::LookGroups::new(&self.device, layout));
+        let mut holds = self.arena.set_looks(&self.device, on);
+        if let Some(arena) = &mut self.translucent_arena {
+            holds &= arena.set_looks(&self.device, on);
+        }
+        if !holds || on {
+            self.sections_dropped |=
+                self.sections.len() > 0 || !self.lods.is_empty() || self.lod_pending.is_some();
+            self.clear_sections(self.layout);
+            // Flat draws size a translucent page's table by it when they make the table: it
+            // changes with `clear_sections`, which drops the tables.
+            if let (Some(flat), Some(arena)) = (&mut self.flat, &self.translucent_arena) {
+                flat.set_translucent_page_vertices(arena.page_vertices());
+            }
+        }
+    }
     /// The running Horizon pack's name, from its manifest.
     pub fn native_pack_name(&self) -> Option<&str> {
-        self.native.as_ref().map(|pack| pack.name.as_str())
+        self.pack_metadata.as_ref().map(|pack| pack.name.as_str())
     }
     /// `screenshot-sequence`: waits (30 seconds at most) for the frame just drawn to finish on
     /// the GPU, and takes the centre depth a `shaders/` pack copied in it, which its next frame
@@ -6396,11 +6563,19 @@ impl Renderer {
     pub fn shader_pack_loading(&self) -> bool {
         self.pack_loading.is_some()
     }
+    /// The game won't give this renderer the pack whose world it holds (`world_held`): its
+    /// load failed. Unless a pack of Horizon's runs, the world follows no pack again.
+    pub fn release_world(&mut self) {
+        if self.external.is_none() {
+            self.world_held = false;
+        }
+    }
     /// Drops the running shader pack, of either kind.
     pub fn drop_shader_packs(&mut self) {
+        self.world_held = false;
         self.pack_loading = None;
         self.pack_post = None;
-        self.replace_native(None);
+        self.replace_executor(None);
         self.pack_atlas = None;
         self.separate_ao = false;
     }
@@ -6430,6 +6605,7 @@ impl Renderer {
             block_light::LightTable,
         )>,
     ) -> std::result::Result<Vec<String>, String> {
+        self.world_held = false;
         let linear = pack.is_some();
         if (linear || self.output.frame.format == LINEAR_FRAME)
             && linear != (self.output.frame.format == LINEAR_FRAME)
@@ -6441,9 +6617,13 @@ impl Renderer {
             );
         }
         let Some((report, constants, sprite_tags, sprite_materials, lights)) = pack else {
-            self.replace_native(None);
+            self.replace_executor(None);
             return Ok(Vec::new());
         };
+        let terrain_looks = looks::wanted(&self.adapter, report.looks())?;
+        if terrain_looks && self.looks_layout.is_none() {
+            self.looks_layout = Some(looks::layout(&self.device));
+        }
         let terrain = native_material::TerrainShape {
             globals: &self.terrain_layout,
             flat: self.flat.as_ref().map(|f| &f.draw_layout),
@@ -6457,7 +6637,9 @@ impl Renderer {
             retained_entities: &self.static_entity_pipeline.get_bind_group_layout(1),
             weather_groups: [&self.weather.entity_layout, &self.weather.time_layout],
             pbr: self.pbr_maps.as_ref().and_then(|arrays| arrays.first()),
+            looks: self.looks_layout.as_ref().filter(|_| terrain_looks),
         };
+        let metadata = native_pack::Metadata::of(&report);
         let (pack, labels) = native_pack::NativePack::new(
             &self.device,
             &self.queue,
@@ -6466,9 +6648,10 @@ impl Renderer {
             &constants,
             lights,
         )?;
-        if let Some(refused) = self.replace_native(Some(pack)) {
+        if let Some(refused) = self.replace_executor(Some(Box::new(pack))) {
             return Err(refused);
         }
+        self.pack_metadata = Some(metadata);
         self.pack_post = None;
         self.pack_atlas = None;
         self.pack_material_atlases = None;
@@ -7018,6 +7201,7 @@ impl Renderer {
         // through a pack dropped (Shader Options) or not loaded yet (`Renderer::new`),
         // so the next world's sections, which the level loading screen uploads, stay.
         if !frame.title {
+            self.follow_terrain_looks();
             self.follow_translucent_layout();
             self.follow_packed_layout();
         }
@@ -7277,7 +7461,15 @@ impl Renderer {
                 views.primary().aspect,
                 views.primary().tan_half_fov,
             ],
-            inverse_view: view.inverse().to_cols_array_2d(),
+            // The sky turns with the view bob and the nausea spin, as the world,
+            // the sun and the clouds do. `GameRenderer.renderLevel` puts both into
+            // the projection the sky is drawn with; without them the sky stands
+            // still while everything else sways.
+            inverse_view: views
+                .primary()
+                .posed_view(pose)
+                .inverse()
+                .to_cols_array_2d(),
             sunrise: frame.sky.sunrise_color,
             sun: [sun.x, sun.y, sun.z, frame.sky.star_brightness],
             fog_ends: [
@@ -7357,11 +7549,11 @@ impl Renderer {
         self.uploads
             .buffer(&mut encoder, &self.globals, 0, bytemuck::bytes_of(&globals));
         // The sunrise fan as sixteen triangles. Its clip positions use the sky's
-        // own view (no TAA jitter, bob or spin: `fs_sky`'s `view_ray` has none),
+        // own view (no TAA jitter; the bob and the spin, as `fs_sky`'s `view_ray`),
         // and its apex weight interpolates the barycentric the shader used to
         // compute for every sky pixel.
         if frame.sky.sunrise_color[3] > 0.001 && !frame.title && frame.skybox {
-            let sky_view_proj = views.primary().view_proj(Mat4::IDENTITY);
+            let sky_view_proj = views.primary().view_proj(pose);
             let mut mesh = [[0.0f32; 5]; sunrise_fan::VERTICES];
             for (to, from) in mesh
                 .iter_mut()
@@ -7458,10 +7650,6 @@ impl Renderer {
             .filter(|_| !frame.title)
             .and_then(|p| p.shadow_view(frame))
             .or_else(|| {
-                // One of Horizon's own packs with `[shadow]` uses the same lists.
-                (self.native.as_ref().filter(|_| !frame.title)?).shadow_request(frame)
-            })
-            .or_else(|| {
                 self.external
                     .as_ref()
                     .filter(|_| !frame.title)?
@@ -7503,7 +7691,8 @@ impl Renderer {
             && !pack_terrain
             && shadow_view.is_none()
             && mirror_plane.is_none()
-            && !displaced;
+            && !displaced
+            && !gpu_culling::looks_lose_base_vertex(&self.info, self.terrain_looks);
         #[cfg(debug_assertions)]
         if gpu_frame {
             if self.gpu_checks.is_multiple_of(64) {
@@ -7768,21 +7957,22 @@ impl Renderer {
         }
         // `[displacement]`: the visible sections' solid quads, nearest first, for its grid to
         // take those it reaches.
-        if let Some(n) = &mut self.native {
-            let sections = visible.iter().filter(|_| !frame.title).filter_map(|v| {
+        if let Some(n) = &mut self.external {
+            let mut sections = visible.iter().filter(|_| !frame.title).filter_map(|v| {
                 let s = self.sections.get(v.slot);
-                (s.solid > 0).then(|| displace::Near {
+                (s.solid > 0).then(|| external::Near {
                     buffer: self.arena.buffer(s.page),
+                    looks: self.arena.looks(s.page),
                     base: s.solid_base(),
                     quads: s.solid,
                     origin: v.origin,
                 })
             });
-            n.prepare_displacement(native_material::DisplacementPrepare {
+            n.prepare_displacement(external::DisplacementPrepare {
                 device: &self.device,
                 queue: &self.queue,
                 encoder: &mut encoder,
-                sections,
+                sections: &mut sections,
                 view_proj,
             });
         }
@@ -8869,11 +9059,15 @@ impl Renderer {
             _ => false,
         };
         // Each page's group binds the page for the solid draws, flat or not.
+        if let Some(looks) = &mut self.look_groups {
+            looks.refresh(&self.device, &self.arena, self.translucent_arena.as_ref());
+        }
         if let Some(flat) = &mut self.flat {
             let arena = &self.arena;
             flat.bind_pages(&self.device, |page| {
                 arena.has_page(page).then(|| arena.buffer(page))
             });
+            flat.bind_looks(self.look_groups.as_ref());
         }
         if flat_frame {
             section_draw_calls = self.flat.as_ref().map_or(0, |f| f.shadow_calls[0]);
@@ -8978,6 +9172,7 @@ impl Renderer {
             &self.device,
             [self.config.width, self.config.height],
             pack_reads_world || fg,
+            pack_post,
         );
         let (world_view, world_depth) = match &scaled {
             Some((color, depth)) => (color, depth),
@@ -9065,9 +9260,9 @@ impl Renderer {
         // pass of its own, so that it has a time of its own.
         let mut native_sky_pass = false;
         if !frame.title
-            && let Some(native) = &mut self.native
+            && let Some(native) = &mut self.external
         {
-            native_sky_pass = native.start_frame(native_pack::FrameStart {
+            native_sky_pass = native.start_frame(external::FrameStart {
                 device: &self.device,
                 queue: &self.queue,
                 frame,
@@ -9085,9 +9280,9 @@ impl Renderer {
         }
         // One of Horizon's own packs: its shadow passes, from the shadow camera's lists.
         if !frame.title
-            && let Some(native) = &mut self.native
+            && let Some(native) = &mut self.external
         {
-            let lists = shadow_view.is_some().then(|| native_shadow::ShadowLists {
+            let lists = shadow_view.is_some().then(|| external::ShadowLists {
                 group: &self.group,
                 sections: SectionLists {
                     draws: &self.draws,
@@ -9098,6 +9293,7 @@ impl Renderer {
                     indices: &self.indices,
                     flat: self.flat.as_ref(),
                     multi_draw: self.multi_draw,
+                    looks: self.look_groups.as_ref(),
                 },
                 flat_frame,
                 instances: &self.instances,
@@ -9109,7 +9305,7 @@ impl Renderer {
                 shadow_only_quads,
                 outline_base,
             });
-            native.draw_shadow(native_shadow::ShadowDraws {
+            native.draw_shadow(external::ShadowDraws {
                 encoder: &mut encoder,
                 timing: self.own_timing.as_mut(),
                 lists,
@@ -9117,8 +9313,8 @@ impl Renderer {
             let scene = self.ray_scene.as_ref().and_then(|s| s.traced(frame.camera));
             native.before_world(&self.device, &mut encoder, scene.as_ref());
         }
-        if native_sky_pass && let Some(native) = &mut self.native {
-            native.draw_sky_pass(native_sky::SkyPass {
+        if native_sky_pass && let Some(native) = &mut self.external {
+            native.draw_sky_pass(external::SkyPass {
                 device: &self.device,
                 encoder: &mut encoder,
                 target: (world_view, self.output.frame.format),
@@ -9242,8 +9438,8 @@ impl Renderer {
         }
         // One of Horizon's own packs: the mirror its material reads, and its copies of the world
         // before translucent terrain and its surface target, the size of this frame's targets.
-        if let Some(native) = &mut self.native {
-            native.prepare_world_targets(native_pack::WorldTargets {
+        if let Some(native) = &mut self.external {
+            native.prepare_world_targets(external::WorldTargets {
                 device: &self.device,
                 encoder: &mut encoder,
                 reflection,
@@ -9258,9 +9454,9 @@ impl Renderer {
         laps.lap("r_mirror");
         // One of Horizon's own packs with a material stage, or an entity stage: terrain draws with
         // its layers, and the entities with its pipelines, which read the pack's frame at group 3.
-        let native = self.native.as_ref().filter(|_| !frame.title);
-        let material = native.and_then(native_pack::NativePack::terrain_layers);
-        let entity_stage = native.and_then(|n| Some((n.entity.as_ref()?, &n.frame.group)));
+        let native = (self.external.as_deref()).filter(|_| !frame.title);
+        let material = native.and_then(|n| n.terrain_layers());
+        let entity_stage = native.and_then(|n| n.entity_layers());
         // Without HDR output, the solid shaders without its lighting (`SolidPipeline`).
         let hdr = self.hdr.is_some();
         let solid_pipeline = material.map_or(self.solid.get(hdr), |m| m.solid);
@@ -9352,7 +9548,7 @@ impl Renderer {
                     && frame.skybox
                     && !pack_draws_sky
                     && !native_sky_pass
-                    && self.native.as_ref().is_some_and(|n| n.draw_sky(&mut pass));
+                    && (self.external.as_ref()).is_some_and(|n| n.draw_sky(&mut pass));
                 if native_sky {
                     // The sky binds the frame's own group; a material stage that traces draws
                     // with the scene's.
@@ -9406,16 +9602,20 @@ impl Renderer {
                         }
                     }
                     if celestial_vertices > 0 && !pack_draws_celestial {
-                        // The Overworld's bodies start with the sun's quad
-                        // (`Game::celestial_geometry`): a pack sky drawing its own skips it.
-                        let own_sun = !frame.end_sky && self.executor.is_some_and(|c| c.hides_sun);
-                        let first = if own_sun { 6 } else { 0 };
+                        // The Overworld's bodies are the sun's quad and the moon's
+                        // (`Game::celestial_geometry`): a pack sky drawing its own skips one.
+                        let own = |hides: fn(&external::Capabilities) -> bool| {
+                            !frame.end_sky && self.executor.as_ref().is_some_and(hides)
+                        };
+                        let own_sun = own(|c| c.hides_sun);
+                        let own_moon = own(|c| c.hides_moon);
                         // A resource pack's core/sky isn't vanilla's sky times the sky's
                         // lift, which the sun's disc pass assumes: today's add there.
                         let lifted = hdr_gain
                             && self.hdr.as_ref().is_some_and(|h| h.lighting)
                             && !self.core_sky.as_ref().is_some_and(|c| c.draws_disc());
-                        let bodies = first..(celestial_vertices as u32 / 4) * 6;
+                        let quads = &frame.celestial[..celestial_vertices];
+                        let bodies = celestial::bodies(quads, own_sun, own_moon);
                         pass.set_vertex_buffer(0, self.celestial_buffer.slice(..));
                         self.celestial.draw_bodies(&mut pass, lifted, bodies);
                     }
@@ -9687,7 +9887,13 @@ impl Renderer {
                                 pass.set_pipeline(pipeline);
                                 // GPU culling's draws first, all within the render distance.
                                 if let Some(gpu) = gpu {
-                                    gpu.draw(&mut pass, &self.arena, page_group, 0);
+                                    gpu.draw(
+                                        &mut pass,
+                                        &self.arena,
+                                        page_group,
+                                        0,
+                                        self.look_groups.as_ref(),
+                                    );
                                     pass.set_vertex_buffer(1, self.instances.slice(..));
                                 }
                                 if !occluding {
@@ -9734,7 +9940,13 @@ impl Renderer {
                                 pass.stage(self.own_timing.as_mut(), "solid terrain phase 2");
                                 for (pipeline, draws, _) in passes {
                                     pass.set_pipeline(pipeline);
-                                    gpu.draw(&mut pass, &self.arena, page_group, 1);
+                                    gpu.draw(
+                                        &mut pass,
+                                        &self.arena,
+                                        page_group,
+                                        1,
+                                        self.look_groups.as_ref(),
+                                    );
                                     pass.set_vertex_buffer(1, self.instances.slice(..));
                                     self.draw_sections_from(
                                         &mut pass,
@@ -9752,14 +9964,14 @@ impl Renderer {
             }
             // `[displacement]`'s grid over the flat quads it took over, writing its depth.
             if let Some(n) = self
-                .native
+                .external
                 .as_ref()
                 .filter(|_| !frame.title && !pack_draws_terrain)
-                && let Some(grid) = material.and_then(|m| n.displaced_grid(m))
+                && let Some(m) = material.filter(|m| m.displaced.is_some())
             {
                 pass.stage(self.own_timing.as_mut(), "displacement");
                 pass.set_bind_group(0, &self.group, &[]);
-                grid.draw(&mut pass);
+                n.draw_displaced(&mut pass, m);
             }
             if surface.is_some() {
                 drop(pass);
@@ -9776,7 +9988,7 @@ impl Renderer {
             }
             if static_entity_quads > 0 {
                 pass.stage(self.own_timing.as_mut(), "static block entities");
-                native_entity::set_pipeline(
+                external::set_entity_pipeline(
                     &mut pass,
                     entity_stage,
                     &self.static_entity_pipeline,
@@ -9805,7 +10017,12 @@ impl Renderer {
             pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
             if entity_quads > 0 || !self.prepared_draws.is_empty() {
                 pass.stage(self.own_timing.as_mut(), "entities");
-                native_entity::set_pipeline(&mut pass, entity_stage, &self.entity_pipeline, false);
+                external::set_entity_pipeline(
+                    &mut pass,
+                    entity_stage,
+                    &self.entity_pipeline,
+                    false,
+                );
                 pass.set_bind_group(0, &self.entity_group, &[]);
                 pass.set_vertex_buffer(0, self.entity_buffer.slice(..));
                 if self.prepared_draws.is_empty() {
@@ -10025,11 +10242,11 @@ impl Renderer {
                 && oit.is_none()
                 && !(flat_frame && self.flat.is_some());
             if (reads_opaque || per_section)
-                && let Some(native) = &self.native
+                && let Some(native) = &self.external
             {
                 drop(pass);
                 if reads_opaque {
-                    native.copy_opaque(native_material::OpaqueCopy {
+                    native.copy_opaque(external::OpaqueCopy {
                         device: &self.device,
                         encoder: &mut encoder,
                         depth: world_depth.texture(),
@@ -10326,7 +10543,7 @@ impl Renderer {
             pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
             if !pack_draws_weather && !oit_on {
                 pass.stage(self.own_timing.as_mut(), "weather");
-                let native = self.native.as_ref().filter(|_| !frame.title);
+                let native = self.external.as_ref().filter(|_| !frame.title);
                 if !native
                     .is_some_and(|n| n.draw_weather(&mut pass, &self.weather, &self.entity_group))
                 {
@@ -10512,9 +10729,9 @@ impl Renderer {
             self.pack_post = Some((dimension, Some(post)));
         } else if let Some((color, depth)) = &scaled
             && native_post
-            && let Some(native) = &mut self.native
+            && let Some(native) = &mut self.external
         {
-            native.run_post(native_pack::WorldPost {
+            native.run_post(external::WorldPost {
                 device: &self.device,
                 encoder: &mut encoder,
                 world: (color, depth),
@@ -11337,6 +11554,125 @@ mod frame_policy_tests;
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    /// #16769: a graphics driver that never answers the device search must end the
+    /// start with a message, not hold it on the boot screen forever.
+    #[test]
+    fn an_unanswered_device_search_fires_the_watchdog() {
+        let (fired, fired_back) = std::sync::mpsc::channel();
+        let searched = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let _armed = super::arm_search_watchdog(
+            Duration::from_millis(20),
+            Duration::from_millis(0),
+            searched,
+            || {},
+            move || {
+                let _ = fired.send(());
+            },
+        );
+        fired_back
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the watchdog fired at the timeout");
+    }
+
+    /// The disarm itself proves it: the watchdog thread is joined, not slept past.
+    #[test]
+    fn a_disarmed_watchdog_does_not_fire() {
+        let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let also = fired.clone();
+        let searched = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (disarm, watchdog) = super::arm_search_watchdog(
+            Duration::from_millis(20),
+            Duration::from_millis(0),
+            searched,
+            || {},
+            move || {
+                also.store(true, std::sync::atomic::Ordering::Relaxed);
+            },
+        );
+        disarm.send(()).expect("the watchdog was there to disarm");
+        watchdog
+            .expect("the watchdog thread started")
+            .join()
+            .expect("the watchdog thread ends on its disarm");
+        assert!(
+            !fired.load(std::sync::atomic::Ordering::Relaxed),
+            "a finished search is not reported as a hung driver"
+        );
+    }
+
+    /// A search that answers inside the grace window was slow, not hung: it must not end
+    /// the start it had just finished (#16769).
+    #[test]
+    fn a_search_that_answers_inside_the_grace_runs_on() {
+        let (timeout_tx, timeout_rx) = std::sync::mpsc::channel();
+        let fired = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let also = fired.clone();
+        let searched = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (disarm, watchdog) = super::arm_search_watchdog(
+            Duration::from_millis(20),
+            Duration::from_millis(400),
+            searched.clone(),
+            move || {
+                timeout_tx.send(()).unwrap();
+            },
+            move || {
+                also.store(true, std::sync::atomic::Ordering::Relaxed);
+            },
+        );
+        // Past the timeout, inside the grace: this is the window the grace exists for.
+        timeout_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("timeout reported before grace");
+        assert!(!fired.load(std::sync::atomic::Ordering::Relaxed));
+        searched.store(true, std::sync::atomic::Ordering::Release);
+        drop(disarm);
+        watchdog
+            .expect("the watchdog thread started")
+            .join()
+            .expect("the watchdog thread ends");
+        assert!(
+            !fired.load(std::sync::atomic::Ordering::Relaxed),
+            "a slow search that answered is not a hung driver"
+        );
+    }
+
+    #[test]
+    fn the_timeout_message_names_the_stuck_api_and_the_remedy() {
+        let message = super::device_search_timed_out(Duration::from_secs(30));
+        assert!(message.contains("Horizon renderer:"), "{message}");
+        assert!(message.contains("HORIZON_GRAPHICS_API"), "{message}");
+    }
+
+    /// A machine whose driver is slow but alive can be talked out of the default.
+    #[test]
+    fn the_timeout_can_be_raised_and_ignores_what_is_not_a_positive_whole_number() {
+        use super::parse_device_open_timeout;
+        use std::time::Duration;
+        assert_eq!(
+            parse_device_open_timeout(Some("90")),
+            Duration::from_secs(90)
+        );
+        assert_eq!(
+            parse_device_open_timeout(Some(" 45 ")),
+            Duration::from_secs(45)
+        );
+        for bad in [
+            None,
+            Some(""),
+            Some("0"),
+            Some("-5"),
+            Some("30s"),
+            Some("soon"),
+        ] {
+            assert_eq!(
+                parse_device_open_timeout(bad),
+                super::DEVICE_OPEN_TIMEOUT,
+                "{bad:?} keeps the default"
+            );
+        }
+    }
+
     #[test]
     fn taa_culling_covers_jittered_view_edges_but_still_rejects_behind_the_camera() {
         use super::*;
@@ -12071,7 +12407,7 @@ mod tests {
                 // occlusion test is appended to gpu_culling.wgsl, on Vulkan alone.
                 continue;
             } else if name == "rt_unpack.wgsl" {
-                // Appended to terrain.wgsl (`ray_scene`'s `Unpacker`), on ray tracing devices.
+                // Appended to terrain.wgsl (`rt::scene`'s `Unpacker`), on ray tracing devices.
                 continue;
             } else if name == "terrain.wgsl"
                 || name == "entity.wgsl"
@@ -13471,5 +13807,243 @@ struct CancelOnDrop(std::sync::Arc<std::sync::atomic::AtomicBool>);
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
         self.0.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// `Renderer::block_entity_marks`: the immutable marks table they were worked out for and each
+/// section's (membership revision, marks). Keeping the allocation alive prevents address reuse.
+#[derive(Default)]
+struct BlockEntityMarks {
+    table: Option<Arc<[u8]>>,
+    sections: FxHashMap<SectionKey, (u64, u8)>,
+}
+
+/// The OR of `marks` over `blocks`, remembered while `key`'s membership revision is unchanged.
+fn cached_section_mark(
+    cache: &std::cell::RefCell<BlockEntityMarks>,
+    revisions: &FxHashMap<SectionKey, u64>,
+    section_count: usize,
+    key: &SectionKey,
+    blocks: &[([i32; 3], u32)],
+    marks: Option<&Arc<[u8]>>,
+) -> u8 {
+    let Some(marks) = marks else {
+        return 0;
+    };
+    if marks.is_empty() {
+        return 0;
+    }
+    let worked = || {
+        blocks.iter().fold(0u8, |all, (_, state)| {
+            all | marks.get(*state as usize).copied().unwrap_or(0)
+        })
+    };
+    let Some(&revision) = revisions.get(key) else {
+        return worked();
+    };
+    let mut cache = cache.borrow_mut();
+    if !cache
+        .table
+        .as_ref()
+        .is_some_and(|table| Arc::ptr_eq(table, marks))
+        || cache.sections.len() > 2 * section_count + 64
+    {
+        cache.table = Some(marks.clone());
+        cache.sections.clear();
+    }
+    match cache.sections.get(key) {
+        Some(&(kept, mark)) if kept == revision => mark,
+        _ => {
+            let mark = worked();
+            cache.sections.insert(*key, (revision, mark));
+            mark
+        }
+    }
+}
+
+#[cfg(test)]
+mod block_entity_mark_tests {
+    use super::*;
+    use std::time::Instant;
+
+    fn or_scan(blocks: &[([i32; 3], u32)], marks: &[u8]) -> u8 {
+        blocks.iter().fold(0u8, |all, (_, state)| {
+            all | marks.get(*state as usize).copied().unwrap_or(0)
+        })
+    }
+
+    #[test]
+    fn a_sections_marks_are_remembered_until_its_revision_changes() {
+        let cache = std::cell::RefCell::new(BlockEntityMarks::default());
+        let mut revisions = FxHashMap::default();
+        let key = (1, 2, 3);
+        revisions.insert(key, 7);
+        let marks: Arc<[u8]> = Arc::from([0u8, 1, 2, 3]);
+        let blocks = vec![([0, 0, 0], 1u32), ([1, 0, 0], 2)];
+        let first = cached_section_mark(&cache, &revisions, 1, &key, &blocks, Some(&marks));
+        assert_eq!(first, or_scan(&blocks, &marks));
+        assert_eq!(first, 3);
+        // A second ask with the same revision does not depend on a new walk matching: the stored
+        // mark is what comes back even if the caller would now fold something else.
+        let stale = vec![([0, 0, 0], 0u32)];
+        assert_eq!(
+            cached_section_mark(&cache, &revisions, 1, &key, &stale, Some(&marks)),
+            first
+        );
+        revisions.insert(key, 8);
+        assert_eq!(
+            cached_section_mark(&cache, &revisions, 1, &key, &stale, Some(&marks)),
+            0
+        );
+        assert_eq!(
+            cached_section_mark(&cache, &revisions, 1, &key, &blocks, None),
+            0
+        );
+    }
+
+    #[test]
+    fn replacing_or_editing_the_marks_table_invalidates_section_marks() {
+        let cache = std::cell::RefCell::new(BlockEntityMarks::default());
+        let key = (1, 2, 3);
+        let revisions = FxHashMap::from_iter([(key, 7)]);
+        let blocks = [([0, 0, 0], 1u32)];
+        let mut marks: Arc<[u8]> = Arc::from([0u8, 1]);
+        assert_eq!(
+            cached_section_mark(&cache, &revisions, 1, &key, &blocks, Some(&marks)),
+            1
+        );
+        // The retained table makes mutation copy-on-write even when the caller is its only owner.
+        assert!(Arc::get_mut(&mut marks).is_none());
+        Arc::make_mut(&mut marks)[1] = 2;
+        assert!(!Arc::ptr_eq(cache.borrow().table.as_ref().unwrap(), &marks));
+        assert_eq!(
+            cached_section_mark(&cache, &revisions, 1, &key, &blocks, Some(&marks)),
+            2
+        );
+        drop(marks);
+        let replacement: Arc<[u8]> = Arc::from([0u8, 3]);
+        assert_eq!(
+            cached_section_mark(&cache, &revisions, 1, &key, &blocks, Some(&replacement)),
+            3
+        );
+    }
+
+    const SECTIONS: usize = 400;
+    const BLOCKS: usize = 64;
+
+    type SectionBlocks = (SectionKey, Vec<([i32; 3], u32)>);
+
+    fn mark_scene() -> (Arc<[u8]>, FxHashMap<SectionKey, u64>, Vec<SectionBlocks>) {
+        let marks = (0..20_000).map(|i| if i == 1500 { 2 } else { 0 }).collect();
+        let mut revisions = FxHashMap::default();
+        let mut sections = Vec::with_capacity(SECTIONS);
+        for s in 0..SECTIONS {
+            let key = (s as i32, 0, 1);
+            revisions.insert(key, 1);
+            let blocks = (0..BLOCKS)
+                .map(|i| ([i as i32, 0, 0], if i == 3 { 1500 } else { i as u32 }))
+                .collect();
+            sections.push((key, blocks));
+        }
+        (marks, revisions, sections)
+    }
+
+    #[test]
+    fn filled_and_cached_section_marks_match_a_full_scan() {
+        let (marks, revisions, sections) = mark_scene();
+        let cache = std::cell::RefCell::new(BlockEntityMarks::default());
+        for _ in 0..2 {
+            for (key, blocks) in &sections {
+                assert_eq!(
+                    cached_section_mark(
+                        &cache,
+                        &revisions,
+                        sections.len(),
+                        key,
+                        blocks,
+                        Some(&marks)
+                    ),
+                    or_scan(blocks, &marks),
+                );
+            }
+        }
+    }
+
+    // Set HORIZON_MEASURE_SECTION_MARKS=1 and run the measure_section_marks test with --nocapture.
+    #[test]
+    fn measure_section_marks() {
+        if std::env::var("HORIZON_MEASURE_SECTION_MARKS").as_deref() != Ok("1") {
+            return;
+        }
+        const RUNS: usize = 11;
+        let (marks, revisions, sections) = mark_scene();
+        let cache = std::cell::RefCell::new(BlockEntityMarks::default());
+        let fold = || {
+            let start = Instant::now();
+            let mut n = 0u32;
+            for (_, blocks) in &sections {
+                n += u32::from(or_scan(blocks, &marks));
+            }
+            (start.elapsed().as_nanos(), n)
+        };
+        let cached = || {
+            let start = Instant::now();
+            let mut n = 0u32;
+            for (key, blocks) in &sections {
+                n += u32::from(cached_section_mark(
+                    &cache,
+                    &revisions,
+                    sections.len(),
+                    key,
+                    blocks,
+                    Some(&marks),
+                ));
+            }
+            (start.elapsed().as_nanos(), n)
+        };
+        // Fill the cache, then time repeats. The first cached pass is the fill and is not a sample.
+        let (_, fill_n) = cached();
+        assert_eq!(fill_n, (SECTIONS * 2) as u32);
+        let mut samples = Vec::with_capacity(RUNS);
+        for run in 0..RUNS {
+            let (order, (fold_ns, fold_n), (cached_ns, cached_n)) = if run % 2 == 0 {
+                ("fold,cached", fold(), cached())
+            } else {
+                let hit = cached();
+                ("cached,fold", fold(), hit)
+            };
+            assert_eq!(fold_n, fill_n);
+            assert_eq!(cached_n, fill_n);
+            samples.push((order, fold_ns, cached_ns));
+        }
+        let mut scans: Vec<_> = samples.iter().map(|&(_, fold, _)| fold).collect();
+        let mut hits: Vec<_> = samples.iter().map(|&(_, _, cached)| cached).collect();
+        scans.sort_unstable();
+        hits.sort_unstable();
+        let med = |s: &[u128]| s[s.len() / 2];
+        let p95 = |s: &[u128]| s[((s.len() as f64) * 0.95).ceil() as usize - 1];
+        let mut report = format!(
+            "scene sections={SECTIONS} blocks_per_section={BLOCKS} states={} runs={RUNS}\n\
+             fold_ns median={} p95={} worst={}\n\
+             cached_ns median={} p95={} worst={}\n",
+            marks.len(),
+            med(&scans),
+            p95(&scans),
+            scans[scans.len() - 1],
+            med(&hits),
+            p95(&hits),
+            hits[hits.len() - 1],
+        );
+        use std::fmt::Write as _;
+        for (index, (order, fold_ns, cached_ns)) in samples.into_iter().enumerate() {
+            writeln!(
+                report,
+                "sample={} order={order} fold_ns={fold_ns} cached_ns={cached_ns}",
+                index + 1,
+            )
+            .unwrap();
+        }
+        std::fs::write(std::env::temp_dir().join("hz-measure-frustum.txt"), &report).unwrap();
+        println!("{report}");
     }
 }

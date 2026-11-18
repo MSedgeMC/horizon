@@ -99,6 +99,8 @@ pub struct Report {
     pub loot_tables_upgraded: usize,
     /// Advancements whose criteria were rewritten ([`upgrade_advancement`]).
     pub advancements_upgraded: usize,
+    /// Predicate files rewritten in 26.3's shape ([`upgrade_predicate`]).
+    pub predicates_upgraded: usize,
     /// Blocks whose jar has no loot table but drop themselves in the oracle:
     /// the mod registers that table in code, and carry-over writes it.
     pub loot_tables_added: usize,
@@ -151,7 +153,7 @@ pub struct Pack<'a> {
     pub mods: &'a dyn Fn(&str) -> bool,
 }
 
-/// Vanilla blocks by their sorted property names.
+/// Vanilla blocks by their sorted property names, under their 26.3 ids.
 const TEMPLATES: &[(&str, &str)] = &[
     ("", "minecraft:stone"),
     ("axis", "minecraft:oak_log"),
@@ -174,7 +176,7 @@ const TEMPLATES: &[(&str, &str)] = &[
     ("facing", "minecraft:carved_pumpkin"),
     ("facing,lit", "minecraft:furnace"),
     ("lit", "minecraft:redstone_lamp"),
-    ("waterlogged", "minecraft:chain"),
+    ("waterlogged", "minecraft:iron_chain"),
     ("age", "minecraft:wheat"),
     ("distance,persistent,waterlogged", "minecraft:oak_leaves"),
     ("stage", "minecraft:oak_sapling"),
@@ -353,6 +355,15 @@ pub fn upgrade_recipe(recipe: &mut Value) -> bool {
 /// when copper chains came in). A data file naming the old id fails to load
 /// in 26.3: a recipe, a loot entry, a processor's block match.
 const RENAMED_IDS: [(&str, &str); 1] = [("minecraft:chain", "minecraft:iron_chain")];
+
+/// A 1.21.1 block or item id under its 26.3 name ([`RENAMED_IDS`]); other ids
+/// as they are.
+pub fn renamed_id(id: &str) -> &str {
+    RENAMED_IDS
+        .iter()
+        .find(|(old, _)| *old == id)
+        .map_or(id, |(_, new)| new)
+}
 
 /// Every string of a data file that is a renamed id ([`RENAMED_IDS`]) set to
 /// the new one, in place; whether any was.
@@ -583,6 +594,22 @@ fn rename_kind(v: &mut Value, key: &str) {
         && let Some(kind) = o.remove(key)
     {
         o.insert("type".to_owned(), kind);
+    }
+}
+
+/// A 1.21.1 predicate file (`data/<ns>/predicate/`) in 26.3's shape: its
+/// condition as in a loot table ([`upgrade_condition`]), and a list of
+/// conditions, which 1.21.1 read as all of them, one `minecraft:all_of`.
+pub fn upgrade_predicate(v: &mut Value) {
+    if let Value::Array(list) = v {
+        let mut list = std::mem::take(list);
+        list.iter_mut().for_each(upgrade_condition);
+        *v = match <[Value; 1]>::try_from(list) {
+            Ok([c]) => c,
+            Err(list) => json!({"type": "minecraft:all_of", "terms": list}),
+        };
+    } else {
+        upgrade_condition(v);
     }
 }
 
@@ -873,6 +900,11 @@ fn contains(haystack: &[u8], needle: &[u8]) -> bool {
 /// set, so they stay out of the carry.
 fn unreadable(name: &str, bytes: &mut Vec<u8>) -> Option<String> {
     if let Err(e) = horizon_mod_package::content::check_path(name) {
+        return Some(e);
+    }
+    // A mod's helper script among its assets (a `#!` shell script that
+    // generated its textures) would have the game refuse the whole mod.
+    if let Err(e) = horizon_mod_package::content::check_bytes(name, bytes) {
         return Some(e);
     }
     if !(name.ends_with(".json") || name.ends_with(".mcmeta")) {
@@ -1231,6 +1263,19 @@ pub fn carry(
                         bytes = serde_json::to_vec_pretty(&table).unwrap_or(bytes);
                     }
                 }
+            } else if rel.starts_with("predicate/")
+                && name.starts_with("data/")
+                && name.ends_with(".json")
+            {
+                if let Ok(mut predicate) = serde_json::from_slice::<Value>(&bytes) {
+                    let before = predicate.clone();
+                    upgrade_predicate(&mut predicate);
+                    renamed_ids(&mut predicate);
+                    if predicate != before {
+                        report.predicates_upgraded += 1;
+                        bytes = serde_json::to_vec_pretty(&predicate).unwrap_or(bytes);
+                    }
+                }
             } else if let Some(b) = rel
                 .strip_prefix("blockstates/")
                 .and_then(|b| b.strip_suffix(".json"))
@@ -1471,9 +1516,15 @@ pub fn carry(
     } else {
         for (b, state) in &blockstates {
             match block_template(b, state) {
-                Some(t) => {
+                Some(t) if allowed(t) => {
                     write_decl("block", b, &json!({"template": t}))?;
                     report.blocks.insert(b.clone(), t.to_owned());
+                }
+                // A declaration naming a block the game lacks fails the whole
+                // content root at start.
+                Some(t) => {
+                    let why = format!("template {t} is not one of the game's blocks");
+                    report.blocks_unknown.insert(b.clone(), why);
                 }
                 None => {
                     let props: Vec<String> = properties(state).into_iter().collect();
@@ -2150,6 +2201,43 @@ mod tests {
         );
     }
 
+    /// 26.3 predicates dispatch on `type`: a 1.21.1 predicate file keyed by
+    /// `condition`, or a list of conditions, is carried in 26.3's shape.
+    #[test]
+    fn predicate_files_are_carried_in_26_3_shape() {
+        let dir = temp_dir("predicates");
+        let jar = dir.join("predicates.jar");
+        write_jar(
+            &jar,
+            &[
+                (
+                    "data/example/predicate/ensnared.json",
+                    br##"{"condition":"minecraft:entity_properties","entity":"this","predicate":{"type":"#example:ignores"}}"##,
+                ),
+                (
+                    "data/example/predicate/both.json",
+                    br#"[{"condition":"minecraft:random_chance","chance":0.5},{"condition":"minecraft:survives_explosion"}]"#,
+                ),
+            ],
+        );
+        let out = dir.join("work/mods/example");
+        let report = carry_alone(&jar, &out).unwrap();
+        assert_eq!(report.predicates_upgraded, 2);
+        let read = |name: &str| -> Value {
+            let file = out.join(format!("carry/data/example/predicate/{name}.json"));
+            serde_json::from_slice(&fs::read(file).unwrap()).unwrap()
+        };
+        let ensnared = read("ensnared");
+        assert_eq!(ensnared["type"], "minecraft:entity_properties");
+        assert!(ensnared.get("condition").is_none());
+        assert!(ensnared["predicate"].get("type").is_none());
+        let both = read("both");
+        assert_eq!(both["type"], "minecraft:all_of");
+        assert_eq!(both["terms"][0]["type"], "minecraft:random_chance");
+        assert_eq!(both["terms"][1]["type"], "minecraft:survives_explosion");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn enter_block_criteria_name_their_blocks() {
         let mut a = json!({"criteria": {
@@ -2419,6 +2507,72 @@ mod tests {
         assert_eq!(block_template("gem_vine", &vine), Some("minecraft:vine"));
         let odd = json!({"variants": {"charge=1,mode=fast": {}}});
         assert_eq!(template("gem_core", &properties(&odd)), None);
+        // 26.3 calls 1.21.1's chain the iron chain; `minecraft:chain` is no block.
+        let chain = json!({"variants": {"waterlogged=false": {}}});
+        assert_eq!(
+            template("gem_track", &properties(&chain)),
+            Some("minecraft:iron_chain")
+        );
+    }
+
+    /// What the game would refuse in a content mod stays out of the carry, so
+    /// the rest of the mod loads: a helper script among the assets, and a block
+    /// whose template the game doesn't have.
+    #[test]
+    fn content_the_game_refuses_stays_out() {
+        let dir = temp_dir("refused");
+        let jar = dir.join("refused.jar");
+        write_jar(
+            &jar,
+            &[
+                (
+                    "assets/example/blockstates/track.json",
+                    br#"{"variants":{"waterlogged=false":{"model":"example:block/track"}}}"#,
+                ),
+                (
+                    "assets/example/blockstates/stone.json",
+                    br#"{"variants":{"":{"model":"example:block/stone"}}}"#,
+                ),
+                (
+                    "assets/example/textures/block/generate_colors.sh",
+                    b"#!/bin/sh\nmagick convert a.png b.png\n",
+                ),
+                ("assets/example/textures/block/stone.png", b"png"),
+            ],
+        );
+        let out = dir.join("work/mods/example");
+        let info = crate::jar::JarInfo {
+            mod_id: "example".into(),
+            ..Default::default()
+        };
+        let pack = Pack {
+            loaded: &|_| true,
+            mods: &|_| false,
+        };
+        let game_has = |b: &str| b != "minecraft:iron_chain";
+        let report = carry(&jar, &info, &out, None, &game_has, &pack, &BTreeMap::new()).unwrap();
+        let script = "assets/example/textures/block/generate_colors.sh";
+        assert!(
+            report.unreadable[script].contains("executable"),
+            "{:?}",
+            report.unreadable
+        );
+        assert!(!out.join("carry").join(script).exists());
+        assert!(
+            out.join("carry/assets/example/textures/block/stone.png")
+                .exists()
+        );
+        assert_eq!(report.blocks["stone"], "minecraft:stone");
+        assert!(
+            report.blocks_unknown["track"].contains("minecraft:iron_chain"),
+            "{:?}",
+            report.blocks_unknown
+        );
+        assert!(
+            !out.join("carry/data/example/horizon/block/track.json")
+                .exists()
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// A small NeoForge jar carried over is a content mod Horizon loads.
