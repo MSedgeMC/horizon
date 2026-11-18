@@ -1352,19 +1352,39 @@ fn receive_play(
             // ClientCommonPacketListenerImpl.handleTransfer: the connection
             // ends and the game connects to the other address.
             play::Clientbound::Transfer(p) => {
-                let _ = emit(
-                    send,
-                    &mut batch,
-                    Event::Transfer {
-                        host: p.host,
-                        port: p.port,
-                    },
-                );
+                // The transfer is the last event the game sees on this
+                // connection. A closed bundle's events are still staged on
+                // `batch` until its final packet is handled, so publish them
+                // together with the transfer here; the terminal return would
+                // otherwise drop them. Outside a bundle the transfer stays a
+                // standalone event.
+                let transfer = Event::Transfer {
+                    host: p.host,
+                    port: p.port,
+                };
+                match batch.take() {
+                    Some(mut events) => {
+                        events.push(transfer);
+                        let _ = send.send(Event::Bundle(events.into_boxed_slice()));
+                    }
+                    None => {
+                        let _ = send.send(transfer);
+                    }
+                }
                 return Ok(Reason::keyed("disconnect.transfer", lang));
             }
             play::Clientbound::Disconnect(d) => return Ok(Reason::tag(&d.reason, lang)),
             play::Clientbound::CustomPayload(p) if p.channel == "minecraft:brand" => {
-                receive_brand(&p, send);
+                // A brand packet inside a closed bundle belongs to the
+                // bundle's batch so it keeps its packet order; a brand outside
+                // a bundle is still published directly.
+                if batch.is_some() {
+                    if let Some(event) = brand_event(&p) {
+                        let _ = emit(send, &mut batch, event);
+                    }
+                } else {
+                    receive_brand(&p, send);
+                }
             }
             // A far tile, straight to the sampler waiting for it.
             play::Clientbound::CustomPayload(p) if p.channel == crate::lod_net::CHANNEL => {
@@ -1708,20 +1728,31 @@ fn configure(
     }
 }
 
-#[horizon_mod_api_macros::replaceable]
-fn receive_brand(payload: &cfg::CustomPayload, send: &ingress::Producer<Event>) {
+/// The event a custom payload carries, or none for an unrelated or malformed
+/// payload. `receive_brand` publishes it directly; a closed bundle stages it
+/// with its other events instead.
+fn brand_event(payload: &cfg::CustomPayload) -> Option<Event> {
     if payload.channel == "minecraft:brand"
         && let Ok(brand) = horizon_protocol::buf::Reader::new(&payload.data).string(32767)
     {
-        let _ = send.send(Event::Brand(brand));
+        Some(Event::Brand(brand))
     } else if payload.channel == horizon_protocol::quiet::CHANNEL {
-        let _ = send.send(Event::QuietCommands);
+        Some(Event::QuietCommands)
     } else if payload.channel == horizon_protocol::custom_book::CHANNEL {
-        let _ = send.send(Event::CustomBooks);
+        Some(Event::CustomBooks)
     } else if payload.channel == crate::lod_net::CHANNEL
         && let Some(offer) = crate::lod_net::Offer::decode(&payload.data)
     {
-        let _ = send.send(Event::FarTerrain(offer));
+        Some(Event::FarTerrain(offer))
+    } else {
+        None
+    }
+}
+
+#[horizon_mod_api_macros::replaceable]
+fn receive_brand(payload: &cfg::CustomPayload, send: &ingress::Producer<Event>) {
+    if let Some(event) = brand_event(payload) {
+        let _ = send.send(event);
     }
 }
 
@@ -3362,6 +3393,158 @@ mod tests {
         );
         writer.lock().unwrap().take().unwrap().shutdown();
         assert!(thread.join().unwrap().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_bundle_carries_a_brand_event_in_packet_order() {
+        let (root, data) = empty_item_data("bundle-brand");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let (send, events) = event_channel();
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        let ping = |id| play::Clientbound::Ping(cfg::Ping { id }).encode();
+        let brand_payload = play::Clientbound::CustomPayload(cfg::CustomPayload {
+            channel: "minecraft:brand".into(),
+            data: brand(),
+        })
+        .encode();
+        server.send(&delimiter).unwrap();
+        server.send(&ping(7)).unwrap();
+        server.send(&brand_payload).unwrap();
+        server.send(&ping(8)).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(
+            events.take_turn().is_empty(),
+            "a bundled brand was published before the bundle closed"
+        );
+        server.send(&delimiter).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while events.stats().queued_items == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let turn = events.take_turn();
+        assert_eq!(turn.len(), 1, "the brand was published outside its bundle");
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        let Event::Bundle(bundle) = event else {
+            panic!("a closed bundle must stay one polled unit");
+        };
+        assert_eq!(bundle.len(), 3, "the bundle lost or gained an event");
+        assert!(
+            matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
+        );
+        assert!(
+            matches!(&bundle[1], Event::Brand(brand) if brand.as_str() == "vanilla"),
+            "the brand is not in packet order inside the bundle"
+        );
+        assert!(
+            matches!(&bundle[2], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+        );
+        assert!(
+            events.take_turn().is_empty(),
+            "the brand was also published separately"
+        );
+        // A brand outside a bundle is still published directly.
+        server.send(&brand_payload).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while events.stats().queued_items == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let turn = events.take_turn();
+        assert_eq!(turn.len(), 1);
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        assert!(matches!(event, Event::Brand(brand) if brand == "vanilla"));
+        writer.lock().unwrap().take().unwrap().shutdown();
+        assert!(thread.join().unwrap().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_transfer_inside_a_closed_bundle_publishes_the_events_staged_before_it() {
+        let (root, data) = empty_item_data("bundle-transfer");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let (send, events) = event_channel();
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        let ping = |id| play::Clientbound::Ping(cfg::Ping { id }).encode();
+        let transfer = play::Clientbound::Transfer(cfg::Transfer {
+            host: "example.net".into(),
+            port: 25566,
+        })
+        .encode();
+        server.send(&delimiter).unwrap();
+        server.send(&ping(7)).unwrap();
+        server.send(&ping(8)).unwrap();
+        server.send(&transfer).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(events.take_turn().is_empty(), "an open bundle was polled");
+        server.send(&delimiter).unwrap();
+        // The transfer is the terminal return. The events staged before it
+        // in the closed bundle must already be published when it happens.
+        assert!(thread.join().unwrap().is_ok());
+        let turn = events.take_turn();
+        assert_eq!(
+            turn.len(),
+            1,
+            "the transfer dropped the staged events instead of publishing them"
+        );
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        let Event::Bundle(bundle) = event else {
+            panic!("a closed bundle must stay one polled unit");
+        };
+        assert_eq!(
+            bundle.len(),
+            3,
+            "the staged events or the transfer were lost"
+        );
+        assert!(
+            matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
+        );
+        assert!(
+            matches!(&bundle[1], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+        );
+        assert!(
+            matches!(&bundle[2], Event::Transfer { host, port: 25566 } if host == "example.net"),
+            "the transfer is not after the events it closed"
+        );
+        assert!(
+            events.take_turn().is_empty(),
+            "the transfer was also published separately"
+        );
         std::fs::remove_dir_all(root).unwrap();
     }
 
