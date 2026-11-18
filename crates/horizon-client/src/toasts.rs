@@ -144,15 +144,18 @@ impl SystemToast {
     /// portion (`Toast.xPos`): the title and message wrap at 200 GUI px
     /// (`splitToLength`), and the background is as tall as their rows.
     pub fn draw(&self, atlas: &HudAtlas, batch: &mut HudBatch, y: f32) {
-        let title = atlas.font.split(&self.title, Self::MAX_LINE_SIZE);
+        // `Font.split` uses the formatted splitter, which keeps no row for empty text.
+        let title = atlas.font.split_formatted(&self.title, Self::MAX_LINE_SIZE);
         let message = self.message.as_ref().map_or_else(Vec::new, |message| {
-            atlas.font.split(message, Self::MAX_LINE_SIZE)
+            atlas.font.split_formatted(message, Self::MAX_LINE_SIZE)
         });
         let width = title
             .iter()
             .chain(&message)
             .map(|line| atlas.font.width_text(line))
-            .fold(0.0, f32::max)
+            // `SystemToast.recalculateWidth`: an empty stream uses 200, not 0.
+            .reduce(f32::max)
+            .unwrap_or(Self::MAX_LINE_SIZE)
             .ceil()
             .max(160.0)
             + 30.0;
@@ -408,6 +411,40 @@ fn draw_now_playing_text(
 mod tests {
     use super::*;
     use crate::hud::Rect;
+
+    /// `SystemToast.recalculateWidth`: no split rows uses 200 px before the
+    /// 30-px margin. `height` still removes the absent title row.
+    #[test]
+    fn an_empty_toast_uses_vanillas_fallback_width() {
+        let mut atlas = HudAtlas::fonts(&crate::resource_source::ResourceSource::indexed(
+            Default::default(),
+        ))
+        .unwrap();
+        atlas.sprites.insert(
+            "gui/sprites/toast/system".into(),
+            Rect {
+                u0: 0.0,
+                v0: 0.0,
+                u1: 1.0,
+                v1: 1.0,
+                w: 160,
+                h: 64,
+            },
+        );
+        for message in [None, Some(Text::empty())] {
+            let mut batch = HudBatch::scratch([1000, 500]);
+            let toast = SystemToast::new(Text::empty(), message);
+            toast.draw(&atlas, &mut batch, 0.0);
+            let extent = |axis: usize| {
+                batch
+                    .vertices
+                    .iter()
+                    .map(|v| v.pos[axis])
+                    .fold(f32::MIN, f32::max)
+            };
+            assert_eq!((extent(0) - batch.width, extent(1)), (230.0, 20.0));
+        }
+    }
 
     /// `SystemToast.splitToLength`: a title or message wider than 200 GUI px
     /// wraps, the toast grows a 12-px row per line (`height`), and its width
