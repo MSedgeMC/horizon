@@ -1426,7 +1426,25 @@ fn receive_play(
                 }
                 return Ok(Reason::keyed("disconnect.transfer", lang));
             }
-            play::Clientbound::Disconnect(d) => return Ok(Reason::tag(&d.reason, lang)),
+            play::Clientbound::Disconnect(d) => {
+                // The disconnect is the last event the game sees on this
+                // connection. A closed bundle's events are still staged on
+                // `batch` until its final packet is handled, so publish them
+                // together with the disconnect here; the terminal return would
+                // otherwise drop them. Outside a bundle the disconnect stays
+                // the standalone event the session publishes after this
+                // returns.
+                let reason = Reason::tag(&d.reason, lang);
+                if let Some(mut events) = batch.take() {
+                    events.push(Event::Disconnected {
+                        reason: reason.text.clone(),
+                        key: reason.key.clone(),
+                        from_server: true,
+                    });
+                    publish_bundle(send, events)?;
+                }
+                return Ok(reason);
+            }
             play::Clientbound::CustomPayload(p) if p.channel == "minecraft:brand" => {
                 // A brand packet inside a closed bundle belongs to the
                 // bundle's batch so it keeps its packet order; a brand outside
@@ -3991,6 +4009,84 @@ mod tests {
         assert!(
             events.take_turn().is_empty(),
             "the transfer was also published separately"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_disconnect_inside_a_closed_bundle_publishes_the_events_staged_before_it() {
+        let (root, data) = empty_item_data("bundle-disconnect");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let (send, events) = event_channel();
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        let ping = |id| play::Clientbound::Ping(cfg::Ping { id }).encode();
+        let disconnect = play::Clientbound::Disconnect(cfg::Disconnect {
+            reason: Tag::String("Closed by the server".into()),
+        })
+        .encode();
+        server.send(&delimiter).unwrap();
+        server.send(&ping(7)).unwrap();
+        server.send(&ping(8)).unwrap();
+        server.send(&disconnect).unwrap();
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(events.take_turn().is_empty(), "an open bundle was polled");
+        server.send(&delimiter).unwrap();
+        // The disconnect is the terminal return. The events staged before it
+        // in the closed bundle must already be published when it happens.
+        let Ok(reason) = thread.join().unwrap() else {
+            panic!("the server's disconnect was reported as an error");
+        };
+        assert_eq!(reason.text, "Closed by the server");
+        let turn = events.take_turn();
+        assert_eq!(
+            turn.len(),
+            1,
+            "the disconnect dropped the staged events instead of publishing them"
+        );
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        let Event::Bundle(bundle) = event else {
+            panic!("a closed bundle must stay one polled unit");
+        };
+        assert_eq!(
+            bundle.len(),
+            3,
+            "the staged events or the disconnect were lost"
+        );
+        assert!(
+            matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
+        );
+        assert!(
+            matches!(&bundle[1], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 8 }))
+        );
+        assert!(
+            matches!(
+                &bundle[2],
+                Event::Disconnected { reason, key: None, from_server: true }
+                    if reason == "Closed by the server"
+            ),
+            "the disconnect is not after the events it closed"
+        );
+        assert!(
+            events.take_turn().is_empty(),
+            "the disconnect was also published separately"
         );
         std::fs::remove_dir_all(root).unwrap();
     }
