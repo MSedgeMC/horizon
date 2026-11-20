@@ -388,7 +388,7 @@ impl Launcher {
         let running = self.client.is_some();
         let follows = self
             .selected_instance()
-            .is_some_and(|i| i.version.is_none());
+            .is_some_and(|i| i.follows_horizon());
         let stable = self
             .selected_instance()
             .is_some_and(|i| i.channel == horizon_launcher::instances::Channel::Stable);
@@ -534,8 +534,7 @@ impl Launcher {
                 .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
                     cx.stop_propagation();
                     if building {
-                        this.play_after_build = None;
-                        native_mods::cancel();
+                        this.stop_native_build();
                     } else {
                         this.stop_pre_launch();
                     }

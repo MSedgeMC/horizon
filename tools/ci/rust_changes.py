@@ -3,7 +3,7 @@
 
 The default answers Rust selection; --launcher uses the launcher's dependency paths.
 --all emits the shared Rust, launcher and tooling decisions in one answer.
-server_build: whether verify's clippy of the server build has anything new to check (needs_server_build).
+server_build: needs_server_build's answer, which no job reads (see SERVER_BUILD_CHECK).
 """
 
 import argparse
@@ -17,8 +17,9 @@ from tools import release_train  # noqa: E402
 
 # The root workspace's manifest and toolchain files: the launcher's path crates inherit from them.
 ROOT_RUST = {"Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "rustfmt.toml", "clippy.toml"}
-# The check itself: a change to it runs it.
-LAUNCHER_CHECK = {".github/workflows/ci.yml", "tools/ci/rust_changes.py", "tools/release_train.py"}
+# The check itself: a change to it runs it. install_rust.sh sets the job up (needs_rust already counts it: tools/ shell).
+LAUNCHER_CHECK = {".github/workflows/ci.yml", "tools/ci/rust_changes.py", "tools/release_train.py",
+                  "tools/ci/install_rust.sh"}
 
 
 # The Python under tools/ and tests/: verify's Python steps and the parity jobs run it, and no Rust build or test reads
@@ -27,7 +28,32 @@ LAUNCHER_CHECK = {".github/workflows/ci.yml", "tools/ci/rust_changes.py", "tools
 RUST_DECIDES = {"tools/ci/rust_changes.py", "tools/release_train.py"}
 
 
+# Files needs_rust's rules would skip that Rust compiles in (include_str!, include_bytes!, include!), each with the
+# Rust files that embed it: a change to one selects what a change to those files would. Kept exact by
+# tests/test_ci_rust_changes.py, which finds every embed in the Rust sources.
+EMBEDDED = {
+    "crates/horizon-mod-api-gen/coverage-notes.md": ("crates/horizon-mod-api-gen/src/wire/host.rs",),
+    "docs/media/nether.webp": ("launcher/src/glass_server_dialog.rs",),
+    "docs/media/underwater.webp": ("launcher/src/glass_server_dialog.rs",),
+    "docs/media/village.webp": ("launcher/src/glass_server_dialog.rs",),
+    "docs/modpacks/atm10-mods.csv": ("crates/horizon-port-pack/src/classify.rs",),
+    "docs/parity/random-chance-seeded.jsonl": (
+        "crates/horizon-client/src/advancements.rs",
+        "crates/horizon-client/src/game/interface/advancements/mod.rs",
+    ),
+}
+
+
+def with_embedders(paths):
+    return [embedder for path in paths for embedder in (path, *EMBEDDED.get(path, ()))]
+
+
 def needs_rust(paths):
+    return needs_rust_alone(with_embedders(paths))
+
+
+def needs_rust_alone(paths):
+    """needs_rust without EMBEDDED."""
     return any(not (
         path.startswith("docs/") or path.endswith(".md")
         or path.startswith(("tools/", "tests/")) and path.endswith(".py") and path not in RUST_DECIDES
@@ -35,8 +61,9 @@ def needs_rust(paths):
 
 
 # verify's second clippy, the server build (horizon-client without default features): what it checks differently from
-# the first is the feature-gated code of the client crates and the features the manifests choose. Pull requests that
-# change neither skip it; main's pushes and the merge queue always run it.
+# the first is the feature-gated code of the client crates and the features the manifests choose. ci.yml does not read
+# the answer: verify-server runs on every pull request that changes Rust, because a crate below the client can break
+# the server build without touching either, and not in the merge queue.
 SERVER_BUILD_CHECK = {".github/workflows/ci.yml", "tools/ci/rust_changes.py"}
 
 
@@ -50,7 +77,7 @@ def needs_launcher(paths):
         path.startswith(tuple(release_train.LAUNCHER_PATHS))
         and not path.startswith(tuple(release_train.LAUNCHER_IGNORED))
         and not path.endswith(".md")
-    ) for path in paths)
+    ) for path in with_embedders(paths))
 
 
 # Stands for "everything changed" when no diff can be computed: a root manifest every check and shard selector

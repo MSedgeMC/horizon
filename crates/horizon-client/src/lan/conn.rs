@@ -295,6 +295,9 @@ pub struct PlayerSender {
     /// The `horizon:menu_extra` payload layout the client reads: its revision answer,
     /// 0 for one that did not answer (the legacy layout, a menu of a block only).
     pub menu_extra_rev: u8,
+    /// The play packets sent and received, by id, while a mod counts them; shared with the
+    /// connection's network thread, which counts what it receives.
+    pub packet_counts: Arc<super::packet_counts::PacketCounts>,
     /// The host and port the client typed in its handshake ([`typed_address`]), None for a
     /// connection that sent none.
     pub connect: Option<(Arc<str>, u16)>,
@@ -370,6 +373,7 @@ impl PlayerSender {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         }
     }
@@ -409,6 +413,7 @@ impl PlayerSender {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         };
         (sender, move || inspect.queued_contents())
@@ -427,6 +432,7 @@ impl PlayerSender {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         }
     }
@@ -527,6 +533,7 @@ impl PlayerSender {
             self.close();
             return;
         }
+        self.packet_counts.add_body(&body);
         if HOLDING.get() {
             self.held().push(body);
         } else {
@@ -571,6 +578,7 @@ impl PlayerSender {
                 self.close();
                 return;
             }
+            self.packet_counts.add_body(&body);
             held.push(body);
         }
     }
@@ -600,6 +608,7 @@ impl PlayerSender {
                     self.close();
                     return;
                 }
+                self.packet_counts.add_body(&body);
                 outbox.send(vec![body], Some(io_pool::End::Disconnect));
             }
         }
@@ -810,6 +819,22 @@ fn serve_connection(
             Ok(())
         }
         handshake::LOGIN | handshake::TRANSFER => {
+            // `player_handshake`: the mods read, rewrite or refuse the handshake before the login.
+            let mut intention = intention;
+            match shared.handshake.pass(
+                (!c.is_memory()).then_some(address.ip()),
+                &intention.host,
+                intention.port,
+                intention.protocol,
+                super::handshake_gate::WAIT,
+                || translatable("multiplayer.disconnect.generic", &[]),
+            ) {
+                Ok(host) => intention.host = host,
+                Err(reason) => {
+                    login_disconnect(&mut c, &reason);
+                    return Ok(());
+                }
+            }
             if let Some(version) = older_client(&shared, intention.protocol) {
                 c.serve_older(version);
             } else if intention.protocol != PROTOCOL_VERSION {
@@ -1358,6 +1383,15 @@ fn login_and_configure(
     let mut payload_negotiation = horizon_protocol::payload_negotiation::Negotiation::new(
         payload_transport.local.manifest.clone(),
     );
+    // This build's name goes first, so a Horizon client can name it if the negotiation fails
+    // (crate::build_mismatch). A vanilla client discards it, as it discards the Query.
+    send(
+        c,
+        cfg::Clientbound::CustomPayload(cfg::CustomPayload {
+            channel: crate::build_mismatch::CHANNEL.into(),
+            data: crate::build_mismatch::encode(&crate::build_mismatch::this_build()),
+        }),
+    )?;
     // Query must precede known packs even for empty installations: a client
     // answers it before its pack reply, so the barrier cannot overtake its Offer.
     send_payload_control(c, horizon_protocol::payload_negotiation::Control::Query)?;
@@ -1433,16 +1467,14 @@ fn login_and_configure(
                 datapack_offer = Some(p.data);
             }
             cfg::Serverbound::SelectKnownPacks(p) => {
-                let admission = payload_negotiation
-                    .finish_without_offer()
-                    .map_err(|e| e.to_string())
-                    .and_then(|()| {
-                        if payload_transport.epoch().is_some() {
-                            return Ok(());
-                        }
+                // A Horizon client that never answered predates the negotiation.
+                if let Err(error) = payload_negotiation.finish_without_offer() {
+                    return Err(negotiation_disconnect(c, error));
+                }
+                if payload_transport.epoch().is_none()
+                    && let Err(error) =
                         payload_transport.accept(payload_negotiation.accepted().unwrap_or_default())
-                    });
-                if let Err(error) = admission {
+                {
                     return Err(payload_disconnect(c, error));
                 }
                 break p.packs == vec![core.clone()];
@@ -1699,6 +1731,22 @@ fn payload_disconnect(c: &mut ConfigIo<'_>, error: String) -> String {
     c.disconnect(reason);
     error
 }
+/// [`payload_disconnect`] for a failed `horizon:payloads` negotiation: the reason names this
+/// build and the client's when they differ (crate::build_mismatch).
+fn negotiation_disconnect(
+    c: &mut ConfigIo<'_>,
+    error: horizon_protocol::payload_negotiation::Error,
+) -> String {
+    let error = error.to_string();
+    let this = crate::build_mismatch::this_build();
+    match crate::build_mismatch::refusal(Some(&this), c.client_build.as_deref(), &error) {
+        Some(text) => {
+            c.disconnect(super::data::component_nbt(&text.component()));
+            text.plain()
+        }
+        None => payload_disconnect(c, error),
+    }
+}
 
 /// Consume transport metadata in every configuration receive loop. Application
 /// payloads stay ordered for the configuration dispatcher (not implemented here).
@@ -1712,11 +1760,17 @@ fn receive_configuration(
     let packet = cfg::Serverbound::decode_with_payload_codecs(id, bytes, &transport.local.codecs)
         .map_err(|e| payload_disconnect(c, e.to_string()))?;
     if let cfg::Serverbound::CustomPayload(payload) = &packet
+        && payload.channel == crate::build_mismatch::CHANNEL
+    {
+        c.client_build = crate::build_mismatch::decode(&payload.data);
+        return Ok(None);
+    }
+    if let cfg::Serverbound::CustomPayload(payload) = &packet
         && payload.channel == horizon_protocol::payload_negotiation::CHANNEL
     {
         let result = horizon_protocol::payload_negotiation::Control::decode(&payload.data)
             .and_then(|control| negotiation.receive(control));
-        let reply = result.map_err(|e| payload_disconnect(c, e.to_string()))?;
+        let reply = result.map_err(|e| negotiation_disconnect(c, e))?;
         if let Some(reply) = reply {
             send_payload_control(c, reply)?;
         }
@@ -2054,6 +2108,7 @@ fn play(
         alive: Arc::new(AtomicI64::new(-1)),
     });
     let undrained = Arc::<Undrained>::default();
+    let packet_counts = Arc::<super::packet_counts::PacketCounts>::default();
     let sender = PlayerSender {
         undrained: undrained.clone(),
         pending,
@@ -2066,6 +2121,7 @@ fn play(
         announced: parts.channels.announced.clone().unwrap_or_default(),
         viewed_levels: parts.channels.viewed_levels.answer(),
         menu_extra_rev: parts.channels.menu_extra_rev.revision(),
+        packet_counts: packet_counts.clone(),
         connect: typed,
     };
     let required_pack = shared
@@ -2088,6 +2144,7 @@ fn play(
         watch,
         counted,
         undrained,
+        packet_counts,
     };
     // The ServerPlayer is made with the configuration's client information (updateOptions).
     shared.set_listed(parts.uuid, parts.info.allows_listing);
@@ -2137,7 +2194,16 @@ struct PlayConn {
     counted: Option<super::Counted>,
     /// Shared with the player's [`PlayerSender`]: what the hub hasn't taken yet.
     undrained: Arc<Undrained>,
+    /// Shared with the player's [`PlayerSender`]: the packets counted while a mod asks.
+    packet_counts: Arc<super::packet_counts::PacketCounts>,
 }
+/// The id an inbound play packet is counted under: its own when the protocol has it, else -1.
+fn counted_id(id: i32) -> i32 {
+    let known = usize::try_from(id)
+        .is_ok_and(|id| id < horizon_protocol::ids::play::serverbound::NAMES.len());
+    if known { id } else { -1 }
+}
+
 impl PlayConn {
     /// `IntegratedServer.isSingleplayerOwner`: the integrated server's own player,
     /// by name (ignoring case).
@@ -2155,13 +2221,23 @@ impl io_pool::Session for PlayConn {
     /// nobody asked for, a malformed packet.
     fn packet(&mut self, id: i32, payload: Vec<u8>) -> io_pool::Verdict {
         use io_pool::Verdict;
-        let kick = |(reason, text): (horizon_core::nbt::Tag, String)| {
+        // The disconnect the I/O thread sends for a kick does not pass the player's sender: counted here.
+        let counts = self.packet_counts.clone();
+        let kick = move |(reason, text): (horizon_core::nbt::Tag, String)| {
             let body = play::Clientbound::Disconnect(cfg::Disconnect { reason }).encode();
+            counts.add_body(&body);
             Verdict::Kick(text, body)
         };
         if self.payload_transport.closed() {
             return Verdict::Go;
         }
+        // Only the ids the protocol has: a client sending others (up to 2^31 of them) must not grow the
+        // connection's table, so all of those are counted under one id, -1.
+        self.packet_counts.add(
+            false,
+            counted_id(id),
+            horizon_protocol::buf::varint_size(id) + payload.len(),
+        );
         let now = Instant::now();
         if let Some(average) = self.rate.as_mut().and_then(|r| r.received(now)) {
             return kick(rate_exceeded(&self.shared, average));
@@ -2285,7 +2361,10 @@ impl io_pool::Session for PlayConn {
     /// after the last was answered. The game thread times a client out
     /// ([`PlayerSender::timed_out`]).
     fn tick(&mut self, now: Instant) -> Option<Vec<u8>> {
-        self.payload_tick(now)
+        // The keep-alive goes out through the I/O thread, not the player's sender: counted here.
+        let body = self.payload_tick(now)?;
+        self.packet_counts.add_body(&body);
+        Some(body)
     }
     fn left(&mut self, reason: String) {
         let _ = self.shared.events.send(NetEvent::Left(self.conn, reason));
@@ -2883,15 +2962,28 @@ mod tests {
                 .encode(),
             )
             .unwrap();
+            // A client that negotiates names its build first; one from before never does.
+            let client_build = "Nightly 2000-01-01 · 0000000";
             if wrong_version {
-                c.send(
-                    &cfg::Serverbound::CustomPayload(cfg::CustomPayload {
-                        channel: horizon_protocol::payload_negotiation::CHANNEL.into(),
-                        data: vec![0, horizon_protocol::payload_negotiation::RAW_PROTOCOL + 1],
-                    })
-                    .encode(),
-                )
-                .unwrap();
+                for (channel, data) in [
+                    (
+                        crate::build_mismatch::CHANNEL,
+                        crate::build_mismatch::encode(client_build),
+                    ),
+                    (
+                        horizon_protocol::payload_negotiation::CHANNEL,
+                        vec![0, horizon_protocol::payload_negotiation::RAW_PROTOCOL + 1],
+                    ),
+                ] {
+                    c.send(
+                        &cfg::Serverbound::CustomPayload(cfg::CustomPayload {
+                            channel: channel.into(),
+                            data,
+                        })
+                        .encode(),
+                    )
+                    .unwrap();
+                }
             }
             loop {
                 let (id, payload) = c.recv().unwrap();
@@ -2923,6 +3015,21 @@ mod tests {
                         } else {
                             "missing response"
                         }));
+                        // The reason says which builds met, and that an older client updates.
+                        let server = crate::build_mismatch::this_build();
+                        assert!(
+                            text.starts_with(&format!("This server runs Horizon {server}; ")),
+                            "{text}"
+                        );
+                        if wrong_version {
+                            assert!(
+                                text.contains(&format!("your game is Horizon {client_build}."))
+                            );
+                        } else {
+                            assert!(text.contains(
+                                "your game is an older Horizon build. Update your game to join."
+                            ));
+                        }
                         break;
                     }
                     cfg::Clientbound::FinishConfiguration(_) => {
@@ -3625,6 +3732,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            packet_counts: Arc::default(),
         };
         // The bodies after the packets' one-byte VarInt ids.
         let packets = |sequence: i32| {
@@ -3763,6 +3871,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            packet_counts: Arc::default(),
         };
         let answer = |c: &mut PlayConn, id: i64| c.packet(KEEP_ALIVE, id.to_be_bytes().to_vec());
         // The pending one: accepted.
@@ -3816,6 +3925,7 @@ mod tests {
             next_keep_alive: Instant::now(),
             counted: None,
             undrained: Arc::default(),
+            packet_counts: Arc::default(),
         };
         // The body after the packet's one-byte VarInt id.
         let response = play::Serverbound::CookieResponse(cfg::CookieResponse {
@@ -3898,6 +4008,7 @@ mod outgoing_budget_tests {
             announced: Arc::default(),
             viewed_levels: Default::default(),
             menu_extra_rev: 0,
+            packet_counts: Arc::default(),
             connect: None,
         }
     }
@@ -4040,3 +4151,96 @@ mod outgoing_budget_tests {
 #[cfg(test)]
 #[path = "datapack_offer_tests.rs"]
 mod datapack_offer_tests;
+
+#[cfg(test)]
+mod handshake_hook_tests {
+    use super::*;
+
+    fn lan() -> crate::lan::Lan {
+        let config = crate::lan::NetConfig {
+            announce: false,
+            listen: false,
+            ..crate::lan::NetConfig::loopback(0, "Handshake".into(), 8)
+        };
+        crate::lan::Lan::start_with(Arc::new(crate::lan::data::SyncData::empty()), config).unwrap()
+    }
+
+    fn send_handshake(c: &mut Connection, host: &str, intent: i32) {
+        c.send(
+            &handshake::Serverbound::Intention(handshake::Intention {
+                protocol: horizon_protocol::PROTOCOL_VERSION,
+                host: host.into(),
+                port: 25570,
+                intent,
+            })
+            .encode(),
+        )
+        .unwrap();
+    }
+
+    /// A mod that refuses the handshake gets its reason to the client as a login disconnect,
+    /// before any login packet; the question carries what the client sent, once.
+    #[test]
+    fn a_refused_handshake_disconnects_before_the_login() {
+        let lan = lan();
+        lan.shared.handshake.set_listened(true);
+        let mut c = Connection::local(lan.connect_local().unwrap());
+        send_handshake(&mut c, "play.example\0data", handshake::LOGIN);
+        let ask = loop {
+            if let Some(ask) = lan.shared.handshake.take().pop() {
+                break ask;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(
+            (ask.host.as_str(), ask.port, ask.address),
+            ("play.example\0data", 25570, None)
+        );
+        assert_eq!(ask.protocol, horizon_protocol::PROTOCOL_VERSION);
+        let reason = crate::text::Text::literal("Bedrock key rejected").component();
+        ask.answer(crate::lan::handshake_gate::Answer {
+            host: "play.example".into(),
+            refusal: Some(crate::lan::data::component_nbt(&reason)),
+        });
+        let (id, payload) = c.recv().unwrap();
+        match login::Clientbound::decode(id, &payload).unwrap() {
+            login::Clientbound::Disconnect(d) => {
+                assert_eq!(d.reason_json, "\"Bedrock key rejected\"")
+            }
+            other => panic!("expected a disconnect, got {other:?}"),
+        }
+        assert!(lan.shared.handshake.take().is_empty(), "asked once");
+    }
+
+    /// A status ping is not a login: the mods are not asked.
+    #[test]
+    fn a_status_ping_is_not_asked() {
+        let lan = lan();
+        lan.shared.handshake.set_listened(true);
+        let mut c = Connection::local(lan.connect_local().unwrap());
+        send_handshake(&mut c, "play.example", handshake::STATUS);
+        c.send(&status::Serverbound::StatusRequest(Empty).encode())
+            .unwrap();
+        let (id, payload) = c.recv().unwrap();
+        assert!(matches!(
+            status::Clientbound::decode(id, &payload).unwrap(),
+            status::Clientbound::StatusResponse(_)
+        ));
+        assert!(lan.shared.handshake.take().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod counted_id_tests {
+    use super::counted_id;
+
+    #[test]
+    fn unknown_inbound_ids_share_one_counter() {
+        let last = horizon_protocol::ids::play::serverbound::NAMES.len() as i32 - 1;
+        assert_eq!(counted_id(0), 0);
+        assert_eq!(counted_id(last), last);
+        for unknown in [last + 1, 1_000_000, i32::MAX, -5] {
+            assert_eq!(counted_id(unknown), -1, "{unknown}");
+        }
+    }
+}

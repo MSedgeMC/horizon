@@ -132,7 +132,7 @@ const TONEMAP_RESOURCES: [Resource; 4] = [
         binding: 3,
         name: "previous",
         ty: "var previous: texture_2d<f32>",
-        doc: "The post chain's picture at the window's size (without a post chain, the world's at the world's size), linear light: what `input.color` samples, for a curve that reads around the pixel.",
+        doc: "The post chain's picture at the window's size (without a post chain, the world's at the world's size: a tonemap that reads it keeps TAA from upscaling the world), linear light: what `input.color` samples, for a curve that reads around the pixel.",
     },
     LINEAR_SAMPLER,
     NEAREST_SAMPLER,
@@ -527,6 +527,28 @@ pub const RAY_ENTITY_SAMPLER_BINDING: u32 = 62;
 /// And the block entities the renderer keeps on the GPU (a closed chest), the quads of the
 /// layer's, in the stream's layout and atlas: the last of the layer's bindings.
 pub const RAY_ENTITY_RETAINED_BINDING: u32 = 63;
+/// The light sources around the camera and a grid over them, only for a pack with
+/// `[ray_tracing] lights = true`, in the passes whose files name them (`CheckedStage::traces_lights`): one
+/// storage buffer of `u32`. `RAY_LIGHT_HEADER` words of header: the sources' count, the grid's
+/// cells a side, the side of a cell in blocks as `f32` bits, the most sources a cell lists, the
+/// grid's corner camera-relative as three `f32` (word 4, rewritten each frame), then where the
+/// cells' counts (word 8) and lists (word 9) start. Then `RAY_LIGHT_WORDS` words a source: its
+/// block's centre from the grid's corner and its level, as four `f32`, its `[[lights]]` colour
+/// as written as three `f32`, its `[[materials]]` id; then a count a cell, and
+/// `RAY_LIGHT_PER_CELL` indices a cell.
+pub const RAY_LIGHTS_BINDING: u32 = 80;
+pub const RAY_LIGHT_HEADER: u32 = 16;
+pub const RAY_LIGHT_WORDS: u32 = 8;
+/// The most sources the buffer holds, the nearest the camera first.
+pub const RAY_LIGHT_MAX: u32 = 1024;
+/// Cells along each side of the grid, and the side of one in blocks: the grid spans 128 blocks.
+pub const RAY_LIGHT_GRID: u32 = 16;
+pub const RAY_LIGHT_CELL: f32 = 8.0;
+/// The most sources one cell lists, the strongest where it is first.
+pub const RAY_LIGHT_PER_CELL: u32 = 24;
+/// The look of each quad of the terrain store (`RAY_STORE_BINDING`), only in a stage that reads a
+/// terrain hit's `tint`, `shade` or `ao`: two words a quad, `mesher::QuadLook`.
+pub const RAY_LOOKS_BINDING: u32 = 81;
 /// The bit of an entity vertex's layer that puts its quad in the entity layer, above the
 /// renderer's kind bits: a quad without it lets every ray through.
 pub const RAY_ENTITY_QUAD: u32 = 1 << 28;
@@ -544,6 +566,52 @@ fn layered(text: &str, entities: bool) -> String {
         .map(|line| line.strip_prefix(keep).unwrap_or(line))
         .collect()
 }
+
+/// `text` as the prelude of a stage that reads a terrain hit's look (`looks`: `RayHit.tint`,
+/// `shade` or `ao`) has it, or as every other stage's: a line marked `?|` is only the
+/// first's, one marked `!|` only the others'. As `layered`, the others' is the same as before.
+fn looked(text: &str, looks: bool) -> String {
+    let (keep, drop) = if looks { ("?|", "!|") } else { ("!|", "?|") };
+    text.split_inclusive('\n')
+        .filter(|line| !line.starts_with(drop))
+        .map(|line| line.strip_prefix(keep).unwrap_or(line))
+        .collect()
+}
+
+/// A quad look's shade code as its shade (`mesher::SHADES` by code, 1 for none): the body of the
+/// material wrapper's `horizon_look_shade` and of the scene's `horizon_ray_look_shade`
+/// (`look_shade`), so a hit and the material stage shade a quad alike.
+pub const LOOK_SHADE: &str = "    switch code {
+        case 1u: { return 0.5; }
+        case 2u: { return 0.6; }
+        case 3u: { return 0.8; }
+        case 4u: { return 0.9; }
+        case 6u: { return 0.72; }
+        case 7u: { return 0.54; }
+        default: { return 1.0; }
+    }
+";
+
+/// `LOOK_SHADE` as the WGSL function `name(code: u32) -> f32`.
+pub fn look_shade(name: &str) -> String {
+    format!("fn {name}(code: u32) -> f32 {{\n{LOOK_SHADE}}}\n")
+}
+
+/// The terrain quads' looks a stage that reads a terrain hit's look has besides the scene
+/// (`looked`), then `look_shade`.
+const RAY_LOOKS: &str = "\
+// One look a quad of `horizon_ray_store`, at its first corner's index over 4 (`mesher::QuadLook`):
+// the tint (bits 0-23) with the shade code (24-26, 0 where the quad has no look) and the face, the
+// four corners' ambient occlusion a byte each. Zero past the buffer.
+@group(3) @binding(81) var<storage, read> horizon_ray_looks: array<u32>;
+fn horizon_ray_look(quad: u32) -> vec2<u32> {
+    let first = quad * 2u;
+    if first + 1u >= arrayLength(&horizon_ray_looks) {
+        return vec2<u32>(0u);
+    }
+    return vec2<u32>(horizon_ray_looks[first], horizon_ray_looks[first + 1u]);
+}
+";
 
 /// The scene's layers and the functions that read solid terrain alone, with the scene or without
 /// it: `trace_layers` and `trace_any_layers` come before (`RAY_SCENE`, `RAY_STUB`). `layered`.
@@ -638,7 +706,11 @@ pub const PBR_MAPS_TERRAIN: &str =
 /// first sprite array.
 const PBR_MAPS_POST: &str = pbr_maps!("nearest_sampler", "horizon_ray_sprites_0");
 
-/// A traced post, compute or before-world pass's `block_pbr_maps`, as the material prelude's.
+/// A traced entity stage's, against the scene: the frame's bilinear `block_light_sampler`, which
+/// reads a hit's texel at its centre (`horizon_hit_pbr`) as it is.
+const PBR_MAPS_ENTITY: &str = pbr_maps!("block_light_sampler", "horizon_ray_sprites_0");
+
+/// A traced post, entity, compute or before-world pass's `block_pbr_maps`, as the material prelude's.
 const POST_PBR: &str = "\
 // LabPBR: whether the resource packs ship normal (`_n`) or specular (`_s`) maps beside their
 // block textures. Without them `hit_normal_map` and `hit_specular_map` give their defaults.
@@ -881,9 +953,19 @@ fn trace_layers(origin: vec3<f32>, direction: vec3<f32>, max_distance: f32, laye
     let translucent = hit.instance_index >= horizon_ray_space.solid_instances;
     let fluid = select(0u, select(2u, 1u, translucent), fluid_quad);
     let emission = f32(15u - (flags >> 4u)) / 15.0;
+?|    // The quad's look, read as the material stage reads it: the tint flat and apart from the
+?|    // shade, the shade from its code, the corners' ambient occlusion blended over the triangle
+?|    // and decoded once. Without a look, use the vertex colour, with shade and AO 1.
+?|    let look = horizon_ray_look(t.corners.x / 4u);
+?|    let has = ((look.x >> 24u) & 7u) != 0u;
+?|    let corners = (vec3<u32>(look.y) >> ((t.corners - vec3<u32>(t.corners.x)) * 8u)) & vec3<u32>(255u);
+?|    let ao = select(1.0, horizon_decode(vec3<f32>(dot(vec3<f32>(corners) / 255.0, t.weights))).x, has);
+?|    let tint = vec4<f32>(horizon_decode(select(color.rgb, unpack4x8unorm(look.x).rgb, has)), 1.0);
+?|    let shade = horizon_decode(vec3<f32>(horizon_ray_look_shade((look.x >> 24u) & 7u))).x;
     let horizon_shaded = vec4<f32>(horizon_decode(color.rgb), 1.0);
     return RayHit(hit.t, origin + direction * hit.t, normal, uv,
-        horizon_decode_rgba(horizon_ray_texel(layer, uv)), horizon_shaded, 1.0, 1.0,
+!|        horizon_decode_rgba(horizon_ray_texel(layer, uv)), horizon_shaded, 1.0, 1.0,
+?|        horizon_decode_rgba(horizon_ray_texel(layer, uv)), tint, shade, ao,
         min(vec2<f32>(block, sky) / 240.0, vec2<f32>(1.0)), material, tags, emission, fluid,
 -|        translucent, back, horizon_ray_tangent(t, e1, e2, normal), layer@shaded_tint@);
 +|        translucent, back, false, horizon_ray_tangent(t, e1, e2, normal), layer@shaded_tint@);
@@ -892,6 +974,100 @@ fn trace_layers(origin: vec3<f32>, direction: vec3<f32>, max_distance: f32, laye
 fn trace_any_layers(origin: vec3<f32>, direction: vec3<f32>, max_distance: f32, layers: u32) -> bool {
     return horizon_ray_cast(origin, direction, max_distance, layers, true).kind
         != RAY_QUERY_INTERSECTION_NONE;
+}
+";
+
+/// The light sources for a stage whose files name them (`names_lights`), with the scene.
+const RAY_LIGHTS_SCENE: &str = "\
+// The light sources (blocks that give off light) within 64 blocks or so of the camera, the
+// nearest first, and a grid of 8-block cells over them, each listing the sources that reach it.
+@group(3) @binding(80) var<storage, read> horizon_ray_lights: array<u32>;
+// A light source: the centre of its block, camera-relative, its light level (1 to 15), its
+// `[[lights]]` colour, linear (white for a block the pack gives none), and its `[[materials]]` id.
+struct RayLight {
+    position: vec3<f32>,
+    level: f32,
+    color: vec3<f32>,
+    material: u32,
+}
+fn horizon_ray_light_float(i: u32) -> f32 {
+    return bitcast<f32>(horizon_ray_lights[i]);
+}
+fn horizon_ray_light_vec(i: u32) -> vec3<f32> {
+    return vec3<f32>(horizon_ray_light_float(i), horizon_ray_light_float(i + 1u),
+        horizon_ray_light_float(i + 2u));
+}
+// How many sources `ray_light` reads, 0 to 1024.
+fn ray_light_count() -> u32 {
+    return horizon_ray_lights[0];
+}
+// The source `i`, below `ray_light_count()`; level 0 past it (and for `ray_light_at`'s
+// 0xffffffffu).
+fn ray_light(i: u32) -> RayLight {
+    let none = RayLight(vec3<f32>(0.0), 0.0, vec3<f32>(0.0), 0u);
+    if i >= ray_light_count() {
+        return none;
+    }
+    let at = 16u + i * 8u;
+    if at + 7u >= arrayLength(&horizon_ray_lights) {
+        return none;
+    }
+    return RayLight(horizon_ray_light_vec(at) + horizon_ray_light_vec(4u),
+        horizon_ray_light_float(at + 3u), horizon_decode(horizon_ray_light_vec(at + 4u)),
+        horizon_ray_lights[at + 7u]);
+}
+// The sources that reach the camera-relative `position`, as the first and the count of the
+// indices to read with `ray_light_at`: at most 24, the strongest there first; none outside the
+// grid.
+fn ray_lights_near(position: vec3<f32>) -> vec2<u32> {
+    let n = horizon_ray_lights[1];
+    let cell = floor((position - horizon_ray_light_vec(4u)) / horizon_ray_light_float(2));
+    if n == 0u || any(cell < vec3<f32>(0.0)) || any(cell >= vec3<f32>(f32(n))) {
+        return vec2<u32>(0u);
+    }
+    let c = vec3<u32>(cell);
+    let index = c.x + n * (c.y + n * c.z);
+    return vec2<u32>(index * horizon_ray_lights[3], horizon_ray_lights[horizon_ray_lights[8] + index]);
+}
+// The index, for `ray_light`, of the source `i` of a cell's list (`ray_lights_near`);
+// 0xffffffffu, which `ray_light` reads as no source, where `i` is past its cell's count.
+fn ray_light_at(i: u32) -> u32 {
+    let n = horizon_ray_lights[1];
+    let per = max(horizon_ray_lights[3], 1u);
+    let counts = horizon_ray_lights[8];
+    let lists = horizon_ray_lights[9];
+    let length = arrayLength(&horizon_ray_lights);
+    let cell = i / per;
+    if cell >= n * n * n || counts >= length || cell >= length - counts {
+        return 0xffffffffu;
+    }
+    if i % per >= horizon_ray_lights[counts + cell] || lists >= length || i >= length - lists {
+        return 0xffffffffu;
+    }
+    return horizon_ray_lights[lists + i];
+}
+";
+
+/// `RAY_LIGHTS_SCENE` without the scene: no sources.
+const RAY_LIGHTS_STUB: &str = "\
+// A light source. The scene isn't there (`frame.has_ray_tracing` is false): there are none.
+struct RayLight {
+    position: vec3<f32>,
+    level: f32,
+    color: vec3<f32>,
+    material: u32,
+}
+fn ray_light_count() -> u32 {
+    return 0u;
+}
+fn ray_light(i: u32) -> RayLight {
+    return RayLight(vec3<f32>(0.0), 0.0, vec3<f32>(0.0), 0u);
+}
+fn ray_lights_near(position: vec3<f32>) -> vec2<u32> {
+    return vec2<u32>(0u);
+}
+fn ray_light_at(i: u32) -> u32 {
+    return 0xffffffffu;
 }
 ";
 
@@ -1088,7 +1264,7 @@ struct HorizonMaterialIn {
     let input = MaterialInput(horizon_decode_rgba(in.albedo), horizon_decode_rgba(in.tint), in.shade,
         in.ao, in.light, horizon_decode(in.lightmap), in.world, in.uv, in.translucent != 0u, in.tags,
         in.material, in.position.xy / frame.resolution, in.face, fluid, in.emission, normal, tangent,
-        vec3<f32>(0.0), 0.0@shaded_tint@);
+        vec3<f32>(0.0), 0.0@light_source@@lit_tint@@shaded_tint@);
     return horizon_encode_rgba(material(input).color);
 }
 "
@@ -1240,7 +1416,7 @@ struct HorizonEntityIn {
     let input = EntityInput(horizon_decode_rgba(in.albedo), horizon_decode_rgba(in.tint),
         horizon_decode_rgba(in.overlay), horizon_decode(in.lightmap), horizon_decode(vec3<f32>(in.shade)).x,
         in.world, in.full_light != 0u, horizon_entity_normal(in.world), in.kind, vec3<f32>(0.0),
-        in.translucent != 0u, in.light, in.uv, in.position.xy / frame.resolution);
+        in.translucent != 0u, in.light, in.uv, in.position.xy / frame.resolution@light_source@);
     return horizon_encode_rgba(entity(input).color);
 }
 ";
@@ -1334,25 +1510,41 @@ impl StageKind {
     }
 
     /// `prelude` with what `tracing` holds of the scene: in every stage the frame's two fields
-    /// for it, and in the post, material, compute and before-world stages `RayHit`, `trace`,
+    /// for it, and in the post, material, entity, compute and before-world stages `RayHit`, `trace`,
     /// `trace_any`, their `_layers` forms with `RAY_SOLID` and `RAY_TRANSLUCENT`,
     /// `hit_normal_map` and `hit_specular_map`, and outside the material stage, which has its
     /// own, `block_pbr_maps`.
     pub fn prelude_traced(self, tracing: Tracing) -> String {
         let rays = matches!(
             self,
-            StageKind::Post | StageKind::Material | StageKind::Compute | StageKind::BeforeWorld
+            StageKind::Post
+                | StageKind::Material
+                | StageKind::Entity
+                | StageKind::Compute
+                | StageKind::BeforeWorld
         );
-        self.prelude_rays(tracing, rays, false, false, false, false, false)
+        self.prelude_rays(
+            tracing, rays, false, false, false, false, false, false, false, false, false, false,
+            false,
+        )
     }
 
-    /// `prelude_traced`, with the ray names only where `rays`: a material, compute or
+    /// `prelude_traced`, with the ray names only where `rays`: a material, entity, compute or
     /// before-world stage that calls none of the trace functions is built as it was before
     /// them. `kept`: the frame's epochs, for a pack with `[[resource]]`. With `entities` (the
     /// pack's files name `RAY_ENTITY`) the trace functions have the entity layer too. `fog`:
     /// `vanilla_fog`, for a pack with `[frame] fog = "pack"`.
     /// `shaded`: `SHADED_TINT` last in the terrain's inputs and `RayHit`, for a pack whose files
-    /// name it. `moon_phase`: the frame's `moon_phase`, for a pack whose files name it.
+    /// name it. `lit`: `LIT_TINT` in `MaterialInput`, for a pack whose files name it.
+    /// `moon_phase`: the frame's `moon_phase`, for a pack whose files name it.
+    /// `light_source`: the input's `inputs::light_source` fields, for a pack whose files name
+    /// one of them (`names_light_source`). `full_lightmap`: the frame's `full_lightmap`, for a
+    /// pack whose files name it. `jitter`: the frame's `jitter` and `previous_jitter`, for a pack
+    /// whose files name one of them (`names_jitter`).
+    /// `looks`: a terrain hit reads its quad's look (`RAY_LOOKS`), for a stage that
+    /// reads one (`check::RAY_LOOK_FIELDS`). With `lights` (the pack's files name the light
+    /// functions, `names_lights`) the light sources are there.
+    #[allow(clippy::too_many_arguments)]
     fn prelude_rays(
         self,
         tracing: Tracing,
@@ -1362,6 +1554,12 @@ impl StageKind {
         fog: bool,
         shaded: bool,
         moon_phase: bool,
+        light_source: bool,
+        full_lightmap: bool,
+        jitter: bool,
+        lit: bool,
+        looks: bool,
+        lights: bool,
     ) -> String {
         let rays = rays && tracing != Tracing::None;
         let mut out = match tracing {
@@ -1373,11 +1571,18 @@ impl StageKind {
             crate::API,
             crate::reference::PATH
         );
-        out += &Frame::declared_wgsl(tracing != Tracing::None, kept, moon_phase);
+        out += &Frame::declared_wgsl(
+            tracing != Tracing::None,
+            kept,
+            moon_phase,
+            full_lightmap,
+            jitter,
+        );
         if kept {
             out += &crate::kept::reasons_wgsl();
         }
-        out += &crate::inputs::shaded(self.input(), shaded && self.terrain());
+        let terrain = self.terrain();
+        out += &crate::inputs::declared(self.input(), light_source, lit, shaded && terrain);
         if matches!(self, StageKind::Material | StageKind::Entity) {
             out += &SURFACE.wgsl();
         }
@@ -1412,19 +1617,31 @@ impl StageKind {
         }
         if rays {
             out += &crate::inputs::shaded(&ray_hit(entities), shaded);
+            let looks = looks && tracing == Tracing::Scene;
             let scene = match tracing {
-                Tracing::Scene => RAY_SCENE,
-                _ => RAY_STUB,
+                Tracing::Scene => looked(RAY_SCENE, looks),
+                _ => RAY_STUB.to_owned(),
             };
-            out += &shaded_entries(&layered(scene, entities), shaded);
+            out += &shaded_entries(&layered(&scene, entities), shaded);
+            if looks {
+                out += RAY_LOOKS;
+                out += &look_shade("horizon_ray_look_shade");
+            }
             if tracing == Tracing::Scene && entities {
                 out += &shaded_entries(RAY_ENTITY_SCENE, shaded);
             }
             out += &layered(RAY_LAYERS, entities);
+            if lights {
+                out += match tracing {
+                    Tracing::Scene => RAY_LIGHTS_SCENE,
+                    _ => RAY_LIGHTS_STUB,
+                };
+            }
             // The material stage's renderer, or the check's stand-in, reads the LabPBR maps.
             if self != StageKind::Material {
-                out += match tracing {
-                    Tracing::Scene => PBR_MAPS_POST,
+                out += match (tracing, self) {
+                    (Tracing::Scene, StageKind::Entity) => PBR_MAPS_ENTITY,
+                    (Tracing::Scene, _) => PBR_MAPS_POST,
                     _ => PBR_STUB,
                 };
                 out += POST_PBR;
@@ -1687,7 +1904,7 @@ pub fn compose(pack: &Pack, kind: StageKind, file: &str) -> Composed {
 }
 
 /// `compose` for a pack with `[ray_tracing]` where the renderer binds the scene: its post
-/// stage traces it, and its material, compute and before-world stages where they call a trace
+/// stage traces it, and its material, entity, compute and before-world stages where they call a trace
 /// function (`TRACE_NAMES`).
 /// Such a module needs a device with ray queries.
 pub fn compose_scene(pack: &Pack, kind: StageKind, file: &str) -> Composed {
@@ -1773,6 +1990,30 @@ pub fn names_ray_entity(pack: &Pack) -> bool {
     pack.manifest.ray_tracing.is_some() && pack.manifest.files().into_iter().any(named)
 }
 
+/// The names the light sources bring (`RAY_LIGHTS_SCENE`), taken only under
+/// `[ray_tracing] lights = true`.
+pub(crate) const LIGHT_NAMES: [&str; 5] = [
+    "RayLight",
+    "ray_light_count",
+    "ray_light",
+    "ray_lights_near",
+    "ray_light_at",
+];
+
+/// Whether `pack` has `[ray_tracing] lights = true`.
+pub(crate) fn lights_on(pack: &Pack) -> bool {
+    (pack.manifest.ray_tracing.as_ref()).is_some_and(|r| r.lights)
+}
+
+/// Whether `texts`, a stage's files, name one of the light functions or `RayLight`.
+fn names_lights<'a>(mut texts: impl Iterator<Item = &'a str>) -> bool {
+    texts.any(|text| {
+        identifiers(text)
+            .iter()
+            .any(|(_, n)| LIGHT_NAMES.contains(n))
+    })
+}
+
 /// Whether the files of `pack` name `shaded_tint` anywhere outside a comment, dead code
 /// included: only then do `MaterialInput`, `VertexInput` and `RayHit` have it (a false positive
 /// only declares the field).
@@ -1798,6 +2039,27 @@ pub fn shaded_entries(entries: &str, shaded: bool) -> String {
     )
 }
 
+/// Whether the files of `pack` name `lit_tint` anywhere outside a comment, dead code included:
+/// only then does `MaterialInput` have it, and the renderer's terrain the varying that carries
+/// it (a false positive only declares the field and takes the varying).
+pub fn names_lit_tint(pack: &Pack) -> bool {
+    files_name(pack, &[crate::inputs::LIT_TINT.name])
+}
+
+/// Where an entry point's constructor of `MaterialInput` takes `lit_tint` in a pack that names
+/// it, after `LIGHT_SOURCE_ARGUMENT` and before `SHADED_TINT_ARGUMENT`.
+pub const LIT_TINT_ARGUMENT: &str = "@lit_tint@";
+
+/// `entries` with `LIT_TINT_ARGUMENT` filled in with `argument` (after a comma) for a pack that
+/// names `lit_tint`, removed for one that doesn't (`None`).
+pub fn lit_entries(entries: &str, argument: Option<&str>) -> String {
+    entries.replace(LIT_TINT_ARGUMENT, argument.unwrap_or_default())
+}
+
+/// The check's stand-in for `lit_tint`: the product smoothed apart (the renderer smooths it at
+/// each corner, in a varying the check's entry point has no room left for).
+const LIT_TINT_STUB: &str = ", horizon_decode(in.shaded.rgb * in.lightmap)";
+
 /// Whether the files of `pack` name `moon_phase` anywhere outside a comment, dead code included:
 /// only then does its `Frame` have the field, so a pack that doesn't is built from the WGSL it
 /// had before it.
@@ -1811,10 +2073,68 @@ pub fn names_moon_phase(pack: &Pack) -> bool {
     pack.manifest.files().into_iter().any(named)
 }
 
-/// Whether a material stage's files, `texts`, name a trace function: only then does its prelude
-/// have them and the renderer build its terrain against the scene.
-fn traces<'a>(mut texts: impl Iterator<Item = &'a str>) -> bool {
-    let ray = |(_, name): &(usize, &str)| TRACE_NAMES.contains(name);
+/// The names of `inputs::MATERIAL_LIGHT_SOURCE`.
+const LIGHT_SOURCE_NAMES: [&str; 3] = [
+    "light_source_tier",
+    "light_source_whole",
+    "light_source_threshold",
+];
+
+/// Whether the files of `pack` name one of `names` anywhere outside a comment, dead code included.
+fn files_name(pack: &Pack, names: &[&str]) -> bool {
+    let named = |file: &str| {
+        let text = pack.source(file).unwrap_or_default();
+        identifiers(text)
+            .iter()
+            .any(|(_, name)| names.contains(name))
+    };
+    pack.manifest.files().into_iter().any(named)
+}
+
+/// Whether the files of `pack` name `light_source_tier`, `light_source_whole` or
+/// `light_source_threshold`: only then do `MaterialInput` and `EntityInput` have their
+/// `inputs::light_source` fields, so a pack that doesn't is built from the WGSL it had before
+/// them (a false positive only declares the fields).
+pub fn names_light_source(pack: &Pack) -> bool {
+    files_name(pack, &LIGHT_SOURCE_NAMES)
+}
+
+/// Whether the files of `pack` name `full_lightmap`: only then does its `Frame` have the field.
+pub fn names_full_lightmap(pack: &Pack) -> bool {
+    files_name(pack, &["full_lightmap"])
+}
+
+/// Whether the files of `pack` name `jitter` or `previous_jitter`: only then does its `Frame`
+/// have both fields (`Frame::JITTER_FIELDS`).
+pub fn names_jitter(pack: &Pack) -> bool {
+    files_name(pack, &["jitter", "previous_jitter"])
+}
+
+/// Where an entry point's constructor of `MaterialInput` or `EntityInput` takes its
+/// `inputs::light_source` fields in a pack that names them, before `SHADED_TINT_ARGUMENT`.
+pub const LIGHT_SOURCE_ARGUMENT: &str = "@light_source@";
+
+/// `entries` with `LIGHT_SOURCE_ARGUMENT` filled in with `arguments` (each after a comma) for a
+/// pack that names the fields, removed for one that doesn't (`None`).
+pub fn light_source_entries(entries: &str, arguments: Option<&str>) -> String {
+    entries.replace(LIGHT_SOURCE_ARGUMENT, arguments.unwrap_or_default())
+}
+
+/// The check's stand-ins for the light-source fields, by stage (`light_source_entries`).
+fn light_source_stub(kind: StageKind) -> &'static str {
+    match kind {
+        StageKind::Material => ", 0u, false, 0.0",
+        _ => ", 0u",
+    }
+}
+
+/// Whether the stage's files, `texts`, name a trace function, or with `lights` (the pack's
+/// `[ray_tracing] lights = true`) a light one. Outside post passes, only stages that name one
+/// are built against the scene.
+fn traces<'a>(mut texts: impl Iterator<Item = &'a str>, lights: bool) -> bool {
+    let ray = |(_, name): &(usize, &str)| {
+        TRACE_NAMES.contains(name) || lights && LIGHT_NAMES.contains(name)
+    };
     texts.any(|text| identifiers(text).iter().any(ray))
 }
 
@@ -1876,8 +2196,8 @@ pub(crate) fn compose_traced(
     let source = |f: &&str| pack.source(f).unwrap_or_default();
     let rays = match kind {
         StageKind::Post => true,
-        StageKind::Material | StageKind::Compute | StageKind::BeforeWorld => {
-            tracing != Tracing::None && traces(files.iter().map(source))
+        StageKind::Material | StageKind::Entity | StageKind::Compute | StageKind::BeforeWorld => {
+            tracing != Tracing::None && traces(files.iter().map(source), lights_on(pack))
         }
         _ => false,
     };
@@ -1886,8 +2206,31 @@ pub(crate) fn compose_traced(
     let fog = m.fog == crate::Fog::Pack;
     let shaded = names_shaded_tint(pack);
     let moon_phase = names_moon_phase(pack);
-    let mut prelude = kind.prelude_rays(tracing, rays, kept, entities, fog, shaded, moon_phase)
-        + &texture_declarations(&pack.manifest.textures);
+    let light = names_light_source(pack);
+    let full_lightmap = names_full_lightmap(pack);
+    let jitter = names_jitter(pack);
+    let lit = names_lit_tint(pack);
+    // Read off the stage as the stub builds it, which has the same files and `RayHit`.
+    let looks = rays
+        && tracing == Tracing::Scene
+        && crate::check::reads_hit_looks(&compose_traced(pack, kind, file, at, false).text);
+    // Only the stages whose own files name them: a pass that doesn't has no binding 80.
+    let lights = rays && lights_on(pack) && names_lights(files.iter().map(source));
+    let mut prelude = kind.prelude_rays(
+        tracing,
+        rays,
+        kept,
+        entities,
+        fog,
+        shaded,
+        moon_phase,
+        light,
+        full_lightmap,
+        jitter,
+        lit,
+        looks,
+        lights,
+    ) + &texture_declarations(&pack.manifest.textures);
     if matches!(kind, StageKind::Post | StageKind::Compute) {
         prelude += &post_target_declarations(&pack.manifest);
     }
@@ -1901,10 +2244,15 @@ pub(crate) fn compose_traced(
     for f in &files {
         push(f, source(f));
     }
+    let entries = |text: &str| {
+        let stub = light.then(|| light_source_stub(kind));
+        let lit = lit_entries(&shaded_entries(text, shaded), lit.then_some(LIT_TINT_STUB));
+        light_source_entries(&lit, stub)
+    };
     if kind == StageKind::Material && m.displacement.is_some() {
         push(
             "<entries>",
-            &(shaded_entries(kind.entries(), shaded) + DISPLACEMENT_ENTRIES),
+            &(entries(kind.entries()) + DISPLACEMENT_ENTRIES),
         );
     } else if let (StageKind::Compute | StageKind::BeforeWorld, Some(stage)) = (kind, stage) {
         push("<entries>", &compute_entries(stage));
@@ -1914,7 +2262,7 @@ pub(crate) fn compose_traced(
     {
         push("<entries>", POST_ENTRIES_KEPT);
     } else {
-        push("<entries>", &shaded_entries(kind.entries(), shaded));
+        push("<entries>", &entries(kind.entries()));
     }
     composed
 }

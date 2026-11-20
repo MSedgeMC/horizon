@@ -73,6 +73,13 @@ alone, with a warning. The check is still reported on the head.
 
 Failed harnesses' logs are uploaded as the `parity-logs` artifact.
 
+**Hosted parity.** A maintainer can also run harnesses on Blacksmith's runners, away from the Mac mini:
+`gh workflow run parity-hosted.yml --ref <branch> -f harnesses="..."`, or `-f base=<commit>` for what the branch's
+changes reach. The data comes encrypted from the maintainers' private `horizon-rust/vanilla-data`. The only thing
+that leaves the runner is the harness logs: the first-attempt and failure logs, holding compared values, log tails and
+names, as this job's public logs already do ([ci-runners.md](ci-runners.md#hosted-parity)). Its result is advisory;
+this job is still the check.
+
 **Platform-specific harnesses.** A harness listed under `linux_only` in `tools/parity_hosts.json` gives
 different results on macOS for a reason that is not a Horizon bug (the reason is printed). `parity.py` skips it on
 other platforms unless it is named on the command line. Today it holds only `save_roundtrip` (it needs `vscreen`):
@@ -161,13 +168,24 @@ which runs them on main a batch of merges at a time, on the Mac mini's runner:
 - `tools/parity_main.py base` gives the newest commit main contains whose parity-main passed (else the last
   merge's parent), and the run is `tools/parity.py --changed <that commit>`: the union of the harnesses every merge
   since then can affect, once, with every earlier pass reused.
-- On a failure, `tools/parity_main.py bisect` checks out the batch's first-parent merges by halves and runs only
-  the failing harnesses, names the first merge they fail on in the run's summary and comments on its pull request
-  (`🤖 Agent: parity-main found that this merge breaks ...`). Fix it with a pull request as usual; the next
-  run checks from the last green commit again. The search has 90 minutes (`--budget`): after that it says between
-  which merges each harness broke, and the next run goes on from there (`.local/parity-runner/bisect.json`, kept
-  while the base is the same), without commenting again on a merge it already named. Before 2026-11-11 a search
-  over many merges ran into the job's 240 minutes and said nothing.
+- On a failure, `tools/parity_main.py verdict` decides the run, as before: the failed harnesses (known failing
+  ones aside) run again at HEAD on the same build, and the run passes only when they all pass then (a flake, counted
+  as a pass). It reads only the list this run's `tools/parity.py` recorded (`PARITY_RUN_ID`, the run id and attempt):
+  a batch that stopped before recording one fails the run instead of judging an earlier run's list. The step has
+  50 minutes, so a hung rerun ends red. The search for the merge that broke a harness is no longer part of the run:
+  it held the only gate runner for up to an hour. Run it by hand on a machine whose
+  `.local/parity-runner/last-run.json` holds the failed harnesses (`python3 tools/parity.py <them>` on the run's
+  commit writes it; the verdict report lists them): `python3 tools/parity_main.py bisect <base> [--comment]` reruns
+  them at HEAD as the gate did, then checks out the batch's first-parent merges by halves, names the first merge they
+  fail on and, with `--comment`, comments on its pull request. It has 90 minutes (`--budget`), then says between
+  which merges each harness broke; a later search from the same base goes on from there
+  (`.local/parity-runner/bisect.json`).
+- The verdict report, `verdict-<run id>-<attempt>.json` (the run's `parity-main-verdict` artifact, uploaded best
+  effort), holds the head, the base, the run id and attempt, the exit code, each failed harness's tries (the batch's,
+  its retry if `tools/parity.py` gave one, the rerun at HEAD) and `repeat_flakers`: harnesses not on `known_flaky`
+  that passed only when run again in 3 or more of the last 10 runs (kept in
+  `.local/parity-runner/verdict-history.json` on the runner). The run's summary names each; they don't fail it: put
+  one on `known_flaky` with its issue, or fix it. Neither the report nor the history can change the verdict.
 - Nightlies build only on a commit both `checks` and `parity-main` passed on (`tools/release_train.py`,
   `tools/ci/nightly.py`, see below), so a broken merge holds them instead of reaching players. They take the
   newest such commit even when a later batch failed: that failure is in merges the green commit doesn't contain, so
@@ -219,6 +237,10 @@ The mod SDK of a Nightly is built inside `nightly build`, for the exact main com
    All four legs must pass: Linux client and server, Windows GNU client and macOS ARM64 client. Each builds two
    native starter mods against the SDK alone, starts their installed executable, and checks Windows export capacity.
    A live run can reuse an existing SDK only after its complete inventory and signed index are authenticated.
+   Each leg logs its runner's cores and memory. On a dry run only (`dry_run`, which sets `HORIZON_SDK_TIMINGS`), it
+   also uploads `sdk-timings-<leg>` (3 days), the `cargo rustc --timings` report of its SDK build, apart from the
+   SDK's own artifact: cargo fails a build that can't write the report, so a published SDK's build never makes one. The surface export reuses the `horizon-stage` that
+   staging built (`target/prebuilt/tools`).
 2. After the game build (including its smoke test), `sdk-publish.yml` gathers identical build data and surfaces,
    builds the generated API source, writes `sdk.json`, and checks every slice's commit, host, side, compiler,
    checksums and exact carried registry patches. Publication requires successful `checks` and `parity-main` push
@@ -235,7 +257,8 @@ The mod SDK of a Nightly is built inside `nightly build`, for the exact main com
 
 `prebuilt-game.yml` is the same SDK build/publication route by hand. It defaults to a full dry run; branch runs are
 always dry. Dry runs rebuild all four legs, use a throwaway signing key, and publish no SDK tag or release. Nightly
-dry runs consume that run's validated index without requiring a published SDK.
+dry runs consume that run's validated index without requiring a published SDK, and run beside a real Nightly in a
+concurrency group of their own ([When it releases](#when-it-releases)).
 
 ```sh
 gh workflow run prebuilt-game.yml --ref main                         # full dry run
@@ -279,27 +302,50 @@ FNR_SIDE=client FNR_TARGET=aarch64-apple-darwin FNR_MIXINS_FROM_SOURCE=1 \
 The SDK producer's four hosted legs must also complete `prebuilt_game.py build`, `smoke`, `start`, `exports`
 and `pack` on their real hosts. A local source check does not substitute for these platform results.
 
-### Daily run
+### Tests outside the checks
 
-`.github/workflows/daily.yml` runs its legs once a day, at 09:00 UTC on main's head, and when a maintainer
-dispatches it (`-f commit=<sha>`, `-f dry_run=false` to write). One run runs and at most one waits; a newer waiting
-dispatch replaces an older waiting one. The schedule stops when main's head already has a completed real daily run;
-a hand dispatch never does, so it retries a run whose issues failed. Its legs are the workflows that left main pushes:
-the ignored-tests shards (`ignored-tests.yml`: on GitHub's runners, with no vanilla data, so `--without-data` leaves out
-the tests that need it and says how many), the wasm guest stacks (`wasm-mods.yml`; its fixture job needs the data and
-runs by dispatch only), `fn-replace-check.yml`, the native linkage probe (`native-dylib-probe.yml`) and the launcher's Windows runtime-lease
-tests (`launcher-windows-check.yml`), each called with the commit. The daily run publishes nothing and gates nothing:
-the Nightly does not wait for it. Its summary (`tools/ci/daily_summary.py`) reads each leg's result and its sanitised
-verdict file, never a log, and files issues:
+There is no daily run: `daily.yml` and the workflows it called (`ignored-tests.yml`, `wasm-mods.yml`,
+`fn-replace-check.yml`, `native-dylib-probe.yml`, `launcher-windows-check.yml`), and `hot-paths.yml`,
+`paper-parity.yml` and `wasm-coverage.yml`, are gone from main. The workflows that run Rust tests now:
 
-- a failing test: one issue `Daily: <crate> <test>` (label `bug`) with its panic location and the first daily run that
-  saw it; later runs comment on it, and the first run where it passes closes it. A leg that failed without a test
-  name gets one issue per leg.
+| Workflow (job) | When | What it tests |
+|---|---|---|
+| `ci.yml` (`verify (Rust tests)`) | A pull request that `tools/ci/rust_changes.py` selects (any change except `docs/`, Markdown, and Python under `tools/` and `tests/`; `rust_changes.py` and `release_train.py` themselves count); every merge-queue entry, manual dispatch and push to main (a push only builds when a merge-queue run already passed on its commit) | On Linux: the workspace's unit, binary, integration and doc tests, and the `#[ignore]`d `mod_content::tests::` (they pass at once without the vanilla data, which no GitHub runner holds) |
+| `ci.yml` (`verify (launcher)`) | A pull request or push to main that `rust_changes.py --launcher` selects, or whose earlier commit can't be read; every manual dispatch. Never in the merge queue (the job's condition), and a push to main only builds when a merge-queue run already passed on its commit | On Linux: the launcher's library and binary tests |
+| `ci.yml` (`verify (mod points)`) | A pull request that `rust_changes.py` selects for the mod points (see `needs_mod_points`: crate manifests count, for example); every merge-queue entry, manual dispatch and push to main | On Linux: `horizon-mod-points`' wire loopback test |
+| `ci.yml` (`Windows ARM64 game and launcher`) | Manual dispatch with `-f arm64=true` only | The launcher's library tests and the `#[ignore]`d `rust_toolchain::tests::managed_arm64_toolchain_builds_the_game` |
+| `ci.yml` (`Windows x64 game and launcher tests`) | Manual dispatch with `-f windows=true` only, a [try run](ci-runners.md#try-runs) | On Windows x64: the launcher's tests; the game's release build, uploaded for 3 days |
+| `launcher.yml` (`build`) | See the workflow's `on:` (pushes to `main`, `launcher` and `launcher-*` within its path filter, a schedule, manual dispatch) and its `decide` job: it builds when a launcher release is due, and on every dry run (every run off main, and a dispatch with `dry_run`, the default), which publishes nothing | The launcher's tests on Linux, macOS (two builds, one for x86-64) and Windows (x64, ARM64) |
+| `game-build.yml`, from `nightly-build.yml` | Each Nightly build | On Windows x64, in release, in its own job (`polytone windows`) beside the Windows build, which `sign` and `publish` wait for as for the builds: `horizon-client-render`'s `particles::polytone::tests::` |
+| `perf-wasm.yml` | Pull requests and pushes to main that change `crates/horizon-perf/`, `crates/horizon-perf-format/`, `crates/horizon-bench/`, `xtask/`, `Cargo.lock`, `Cargo.toml` or the workflow itself; manual dispatch | On Linux: `horizon-perf`'s `wasm` test |
+| `mod-registry.yml` | Pull requests and pushes to main that change `crates/horizon-mod-package/`, `crates/horizon-mod-registry/` or the workflow itself | On Linux: `horizon-mod-registry`'s tests |
+| `telemetry-server.yml` | Pull requests and pushes to main that change `crates/horizon-telemetry/`, `crates/horizon-telemetry-server/` or the workflow itself | On Linux: `horizon-telemetry-server`'s tests |
+| `parity.yml`, from `ci.yml` (`parity`) and `run-parity.yml` | A pull request from this repository that changes a harness, an oracle, a probe or the runner, or carries the `run-parity` or `frame-identity` label; the `run-parity` label being added | On the self-hosted `horizon-game` runners: the harnesses the change can affect (`tools/parity.py --changed`) |
+| `parity-main.yml` | Pushes to main; manual dispatch | On the self-hosted macOS `horizon-parity-main` runner: the harnesses the push can affect |
+| `nightly.yml` (`audit`) | Once a day (03:07 in Paris); manual dispatch | On the self-hosted macOS `horizon-game` runners: every harness (`tools/parity.py --all`) |
 
-Only a run on `main` with `dry_run` false files issues; any other run prints what it would do.
+An `#[ignore]`d test also runs when something else starts it:
 
-The tests that need the vanilla data run nowhere in the daily run, as no GitHub runner holds it. `hot-paths.yml`,
-`paper-parity.yml` and `wasm-coverage.yml` have no schedule either: they run when a maintainer dispatches them.
+- An ordinary test can start it as a child process, as `processes_sharing_the_secrets_file_lose_nothing` starts
+  `secrets_file_writer` (`launcher/src/account/tests.rs`).
+- A parity harness can run it with its oracle's output: the tests in `tools/ci/ignored-tests/parity-harness.txt`, such
+  as `vanilla_bed_poi_states`, which `tools/test_bed_poi_parity.py` (`bed_poi`) runs with `HORIZON_BED_POI_ORACLE` set.
+  Run these through their harness (`python3 tools/parity.py bed_poi`), not with `-- --ignored`: without the
+  oracle's file the test panics.
+
+Run by no workflow: the other `#[ignore]`d tests (many are marked `daily`), the launcher's tests on Windows between
+the runs above (a try run with `-f windows=true` runs them on a branch), and `horizon-mod-package`'s tests on Windows
+with its `runtime-process` feature. Run them by hand when a change reaches them:
+
+- A crate's ignored tests: `cargo test -p <crate> -- --ignored`, naming the test to run one. In `launcher/`, a
+  separate workspace, `cargo test -- --ignored`.
+- The launcher on Windows: `cargo test` in `launcher/`.
+- `horizon-mod-package` on Windows: `cargo test -p horizon-mod-package --features runtime-process`, and its ignored
+  tests with `-- --ignored` added.
+- Tests that read the vanilla data need resources prepared with `horizon-prepare`; without them they prove nothing.
+
+The function-replacement check above is run by hand too. It compares hashes with `sha256sum`
+(`tools/ci/fn_replace_check.sh`), so on macOS put a `sha256sum` on `PATH` first (GNU coreutils has one).
 
 ### When it releases
 
@@ -317,9 +363,13 @@ commits) since the commit the published Nightly was built on:
 - A pull request labelled `skip-release` (work players don't see) doesn't count and isn't listed in the notes.
 - An open issue labelled `release-blocker` holds every Nightly, forced ones too (`held by release-blocker #N`);
   `nightly build` checks again right before publishing.
-- One Nightly build at a time: while one runs or waits, the train starts none. At most 12 builds a UTC day (the
-  reviewers' `/nightly` builds count): past that the train waits for the next day, except for `release-now` and
-  `force=true`.
+- One Nightly build at a time: while one runs or waits, dry runs included, the train starts none. Real builds share
+  the concurrency group `nightly-build`, which never cancels a running build. A dry run (`dry_run`, or any dispatch
+  off main) gets a group of its own, `nightly-build-dry-<run id>`: it never holds up a real cut (the rerun of its
+  `sdk-publish` jobs queues in the shared group) nor replaces it or another dry run as the waiting run, so a dry run
+  can start while a cut waits. The run's name says `(dry run)` or `(real)` and the `base` it was given. At most 12
+  builds a UTC day (the reviewers' `/nightly` builds count): past that the train waits for the next day, except for
+  `release-now` and `force=true`.
 - A scheduled run takes main's newest commit where `checks` and `parity-main` passed (a later failed
   parity-main batch doesn't change it); after a run of either, the commit it passed on, once both passed there.
 
