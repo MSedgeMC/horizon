@@ -169,7 +169,7 @@ fn indexed_pickup_keeps_bound_survivors_and_processes_shifted_tail() {
                 // Vanilla awards the count the stack had before `Inventory.add`:
                 // the whole 1 and the whole 3, though only 1 of the 3 fit.
                 assert_eq!(
-                    game.stats.values["minecraft:picked_up"]["minecraft:apple"],
+                    game.stats.get("picked_up", "minecraft:apple"),
                     4
                 );
                 assert_eq!(

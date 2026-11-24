@@ -1217,6 +1217,21 @@ fn write_value(kind: i32, c: &Component, w: &mut Writer) {
         CONTAINER => !quirks.stacks_in_components,
         _ => false,
     };
+    // These are EitherHolders until 26.1 (the codecs go through EitherHolder.streamCodec in the 1.21.4, 1.21.5,
+    // 1.21.8, 1.21.10 and 1.21.11 client jars): a flag set for the holder, which is what the pinned value is.
+    // An instrument is a plain holder until 1.21.4 (its InstrumentComponent wrapper is 1.21.5's).
+    let either = match kind {
+        JUKEBOX_PLAYABLE
+        | PROVIDES_TRIM_MATERIAL
+        | DAMAGE_TYPE
+        | CHICKEN_VARIANT
+        | ZOMBIE_NAUTILUS_VARIANT => true,
+        INSTRUMENT => !quirks.components_before_1_21_5,
+        _ => false,
+    };
+    if renumbered && either && quirks.either_holders_and_tag_resistance {
+        w.bool(true);
+    }
     if !renumbered || !held {
         return c.write(kind, w);
     }
@@ -1848,14 +1863,28 @@ mod tests {
         bytes
     }
 
-    /// Decodes `bytes` as a slot on a thread with the 2 MiB stack network threads get.
-    fn read_on_network_stack(bytes: Vec<u8>) -> Result<Option<Stack>> {
+    /// The stack network threads get: 2 MiB. A Windows debug build's frames are larger than that
+    /// budget allows for `MAX_NESTING` levels (its release build fits, as Linux's builds do), so
+    /// there it gets 4 MiB.
+    const NETWORK_STACK: usize = if cfg!(all(windows, debug_assertions)) {
+        4
+    } else {
+        2
+    } << 20;
+
+    /// Runs `f` on a thread with the network threads' stack.
+    fn on_network_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
         std::thread::Builder::new()
-            .stack_size(2 << 20)
-            .spawn(move || Slot::read(&mut Reader::new(&bytes)))
+            .stack_size(NETWORK_STACK)
+            .spawn(f)
             .unwrap()
             .join()
             .unwrap()
+    }
+
+    /// Decodes `bytes` as a slot on a thread with the network threads' stack.
+    fn read_on_network_stack(bytes: Vec<u8>) -> Result<Option<Stack>> {
+        on_network_stack(move || Slot::read(&mut Reader::new(&bytes)))
     }
 
     #[test]
@@ -1885,8 +1914,12 @@ mod tests {
         }
         assert_eq!(depth, MAX_NESTING);
         // A refused stack leaves nothing counted behind on its thread.
-        assert!(Slot::read(&mut Reader::new(&nested_bundles(MAX_NESTING as usize + 1))).is_err());
-        assert!(Slot::read(&mut Reader::new(&bytes)).unwrap().is_some());
+        on_network_stack(move || {
+            assert!(
+                Slot::read(&mut Reader::new(&nested_bundles(MAX_NESTING as usize + 1))).is_err()
+            );
+            assert!(Slot::read(&mut Reader::new(&bytes)).unwrap().is_some());
+        });
     }
 
     #[test]
@@ -2323,5 +2356,57 @@ mod tests {
             Slot::write(&stack, &mut w);
             assert_eq!(w.data, bytes);
         }
+    }
+
+    /// Until 26.1 damage_type, instrument (from 1.21.5), provides_trim_material, chicken/variant and
+    /// zombie_nautilus/variant are EitherHolders: a flag set for the holder goes before the pinned holder.
+    #[test]
+    fn either_holder_components_are_written_with_their_flag_for_older_clients() {
+        use crate::adapter::{ServerVersion, ids::Way};
+        let written = |version: ServerVersion, added: Vec<(i32, Component)>| {
+            let mut stack = Stack::new(1012, 1);
+            stack.added = added;
+            let mut w = Writer::new();
+            let _down = ids::renumbering(version.ids().unwrap(), Way::Down);
+            Slot::write(&Some(stack), &mut w);
+            w.data
+        };
+        let raw = |v: u8| Component::Raw(vec![v]);
+        // diamond is 898 in 1.21.11 (0x82 0x07); damage_type 8 and zombie_nautilus/variant 94.
+        assert_eq!(
+            written(
+                ServerVersion::V1_21_11,
+                vec![
+                    (component::DAMAGE_TYPE, raw(5)),
+                    (component::ZOMBIE_NAUTILUS_VARIANT, raw(4)),
+                ]
+            ),
+            [1, 0x82, 0x07, 2, 0, 8, 1, 5, 94, 1, 4]
+        );
+        // 1.21.5: diamond 845 (0xcd 0x06); instrument 52, provides_trim_material 53, chicken/variant 86
+        assert_eq!(
+            written(
+                ServerVersion::V1_21_5,
+                vec![
+                    (component::INSTRUMENT, Component::Instrument(2)),
+                    (component::PROVIDES_TRIM_MATERIAL, raw(6)),
+                    (component::CHICKEN_VARIANT, raw(7)),
+                ]
+            ),
+            [1, 0xcd, 0x06, 3, 0, 52, 1, 3, 53, 1, 6, 86, 1, 7]
+        );
+        // 1.21.4's instrument is a plain holder: diamond 836 (0xc4 0x06), instrument 50
+        assert_eq!(
+            written(
+                ServerVersion::V1_21_4,
+                vec![(component::INSTRUMENT, Component::Instrument(2))]
+            ),
+            [1, 0xc4, 0x06, 1, 0, 50, 3]
+        );
+        // 26.2 reads the pinned holders as they are: diamond 926 (0x9e 0x07), damage_type 8
+        assert_eq!(
+            written(ServerVersion::V26_2, vec![(component::DAMAGE_TYPE, raw(5))]),
+            [1, 0x9e, 0x07, 1, 0, 8, 5]
+        );
     }
 }
