@@ -81,6 +81,7 @@ use window_handler::ClientQuit;
 // `Action` here is the title screen's buttons (`title::Action`).
 use self::api_values::TryIntoApi;
 pub(crate) use api_values::{block_jump_factor, block_speed_factor, is_ladder};
+pub(crate) use graphics_tuning::exit_if_supervisor_is_gone;
 use horizon_client::actions::Action as Mapping;
 use horizon_client::spans::{startup, time as span};
 use horizon_client::{
@@ -1173,6 +1174,8 @@ struct Game<'a> {
     last_input: Instant,
     /// Controllers (Horizon's own).
     pad: pad::Pads,
+    /// The registered input source, this player's own (`None`: the pad modules answer).
+    input_source: Option<Box<dyn horizon_client::input_source::InputSource>>,
     frames: u64,
     /// The glint clock and options, read once per frame (game/interface/item_draw.rs).
     glint_frame: horizon_client::item_render::GlintFrame,
@@ -3817,25 +3820,14 @@ impl Game<'_> {
                     pos,
                     state,
                     kind: "note_particle",
-                } => {
-                    use horizon_client::particles::{ParticleOptions, ParticleType};
-                    let note = self
-                        .pack
-                        .assets
-                        .registry
-                        .state(state)
-                        .and_then(|s| s.properties.get("note")?.parse::<f64>().ok())
-                        .unwrap_or(0.0);
-                    self.particles.add(
-                        &ParticleOptions::simple(ParticleType::Note),
-                        [
-                            f64::from(pos.x) + 0.5,
-                            f64::from(pos.y) + 1.2,
-                            f64::from(pos.z) + 0.5,
-                        ],
-                        [note / 24.0, 0.0, 0.0],
-                    );
-                }
+                } => self.note_particle(pos, state),
+                // EyeblossomBlock.Type.spawnTransformParticle.
+                LevelEvent::TrailParticle {
+                    pos,
+                    target,
+                    color,
+                    duration,
+                } => self.trail_particle(pos, target, color, duration),
                 // NoteBlock.getCustomSoundId: the skull above's note block sound,
                 // played at volume 3 (vanilla's pitch for a head is 1).
                 LevelEvent::BlockEvent {
@@ -3900,10 +3892,29 @@ impl Game<'_> {
             // The use still succeeds, but no menu, stat or piglin anger.
             return;
         }
-        // BaseContainerBlockEntity.createMenu: a lock the opener cannot
-        // unlock refuses the menu with vanilla's action bar and sound.
-        if self.refuse_locked_container(key, &name) {
+        // `ShulkerBoxBlock.useWithoutItem` asks for the lid's room before
+        // `openMenu`, so a box that cannot open never reaches the lock.
+        if storage::is_shulker_box(&name) && !self.shulker_can_open(pos) {
             return;
+        }
+        // `BaseContainerBlockEntity.createMenu`: a lock the opener cannot
+        // unlock refuses the menu with vanilla's action bar and sound. The
+        // block's `useWithoutItem` goes on regardless of what `openMenu`
+        // returned: it awards the open stat and angers the piglins that see it.
+        match self.refuse_locked_container(key, &name) {
+            None => {}
+            Some(storage::ContainerRefusal::CarrierFence) => return,
+            Some(storage::ContainerRefusal::Locked) => {
+                if let Some(stat) =
+                    storage::open_stat(&name).or_else(|| stations::station_open_stat(&name))
+                {
+                    self.award_custom_stat(stat, 1);
+                }
+                if self.guarded_by_piglins(&name) {
+                    self.anger_piglins(true);
+                }
+                return;
+            }
         }
         if &*name == "minecraft:lectern" {
             self.open_lectern(pos);
@@ -3956,8 +3967,6 @@ impl Game<'_> {
             self.world.block_entities.get_or_insert_with(key, || {
                 BlockEntity::for_block(&name).unwrap_or(BlockEntity::Chest(Vec::new()))
             });
-        } else if storage::is_shulker_box(&name) && !self.shulker_can_open(pos) {
-            // ShulkerBoxBlock.canOpen: the lid has no room; nothing opens.
         } else if let Some(entity) = BlockEntity::for_block(&name) {
             self.world.block_entities.get_or_insert_with(key, || entity);
             horizon_client::spans::time("open_loot", || self.unpack_opened_loot(key, &name));
@@ -6405,7 +6414,7 @@ impl Game<'_> {
         &self,
         chunks: impl IntoIterator<Item = &'a Arc<horizon_client::chunk::Chunk>>,
     ) -> Vec<Arc<horizon_client::chunk::Chunk>> {
-        horizon_client::save::chunks_with_block_entities(
+        horizon_client::save::chunks_with_revised_block_entities(
             chunks,
             &self.world.block_entities,
             &self.world.block_names,
@@ -7892,7 +7901,7 @@ impl Game<'_> {
     }
     /// Copy the live player and world state into the `Level` that gets saved.
     pub(super) fn sync_level(&mut self) {
-        self.level.player_impulse_grace = self.player.as_ref().map(|p| p.impulse.reset_grace_time);
+        self.level.player_impulse = self.player.as_ref().map(|p| p.impulse);
         self.level.player_fall_particles = self
             .player
             .as_ref()
@@ -11073,7 +11082,7 @@ impl<'a> Game<'a> {
         let creative = options.creative;
         let inventory = vec![None; 36];
         let now = Instant::now();
-        let look = options.look;
+        let (look, role) = (options.look, options.execution_role);
         let slow_frame_ms = options
             .spikes
             .unwrap_or(horizon_client::client_perf::SLOW_FRAME_MS);
@@ -11236,6 +11245,7 @@ impl<'a> Game<'a> {
             previous: now,
             last_input: now,
             pad: Default::default(),
+            input_source: play_input::input_source(role),
             frames: 0,
             glint_frame: Default::default(),
             kept_block_entities: Default::default(),

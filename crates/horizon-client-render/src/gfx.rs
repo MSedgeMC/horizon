@@ -1739,7 +1739,8 @@ pub struct Renderer {
     /// The offscreen colour target, sized like `config`.
     offscreen: Option<wgpu::Texture>,
     frame_export: Option<frame_export::Readbacks>,
-    /// Offscreen submissions still on the GPU: at most two frames run ahead.
+    /// Submissions still on the GPU that no swapchain paces (offscreen, or presented without
+    /// VSync to a swapchain long enough for the compositor): at most two frames run ahead.
     in_flight: std::collections::VecDeque<wgpu::SubmissionIndex>,
     /// Splitscreen: the caller waits for the GPU once every player has submitted
     /// (`wait_in_flight`), so one player's work overlaps the GPU drawing another's.
@@ -1771,8 +1772,8 @@ pub struct Renderer {
     reuse: Arc<reuse::Reuse>,
     /// Frames are finished and submitted on its submit thread ([`submit`]).
     pub queue: submit::Queue,
-    /// The last frame went to the submit thread; whether it had no window surface.
-    /// The next frame takes it in ([`Self::land_frame`]).
+    /// The last frame went to the submit thread; whether the swapchain doesn't pace it
+    /// ([`Self::unpaced`]). The next frame takes it in ([`Self::land_frame`]).
     deferred: Option<bool>,
     /// Set by the device's lost callback. wgpu reports nothing else when an
     /// operation fails on a lost device (no error scope sees it).
@@ -7130,6 +7131,11 @@ impl Renderer {
         hdr: Option<&hdr::Hdr>,
         device_lost: &std::sync::atomic::AtomicBool,
     ) -> std::result::Result<(), String> {
+        // Every configuration goes through here, so the frames ahead always follow the mode.
+        let config = &wgpu::SurfaceConfiguration {
+            desired_maximum_frame_latency: output_apply::frame_latency(config.present_mode),
+            ..config.clone()
+        };
         let validation = device.push_error_scope(wgpu::ErrorFilter::Validation);
         let memory = device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
         {
@@ -8503,6 +8509,12 @@ impl Renderer {
         // owner instead of submitting atlas patches to the invalid device.
         if self.device_lost() {
             return Err("the graphics device was lost".into());
+        }
+        if let Some(pages) = self.hud.font_pages() {
+            if pages.needs_upload() {
+                pages.upload(&self.device, &self.queue);
+            }
+            self.prepare_world_text();
         }
         if !frame_export::Readbacks::draw_allowed(self.frame_export.as_ref()) {
             // A settling redraw only drains terrain transfers. Running the world
@@ -10462,6 +10474,10 @@ impl Renderer {
             frame.see_through,
             oit_on,
         );
+        let pack_polygon_text = self
+            .core_text
+            .as_ref()
+            .is_some_and(core_text::CoreText::has_polygon_offset);
         self.entity_batch.append_shadow_only(frame.shadow_only);
         // The posed models' vertices come first: the ordinary entities' draw takes them in.
         let posed = if pack_skin {
@@ -12515,10 +12531,15 @@ impl Renderer {
             }
             if text_quads > 0 && !oit_on {
                 pass.stage(self.own_timing.as_mut(), "entity text");
-                pass.set_pipeline(&self.text_polygon_offset_pipeline);
-                self.bind_world_text(&mut pass, true, false);
                 pass.set_vertex_buffer(0, self.entity_buffer.slice(..));
-                pass.draw_indexed(0..text_quads * 6, (entity_quads * 4) as i32, 0..1);
+                self.draw_world_text(
+                    &mut pass,
+                    core_text::Mode::PolygonOffset,
+                    &self.text_polygon_offset_pipeline,
+                    entity_quads,
+                    text_quads,
+                    posed,
+                );
                 pass.set_bind_group(0, &self.group, &[]);
             }
             // FeatureRenderDispatcher.PreparedFrame.executeTranslucent: the shadows
@@ -12783,7 +12804,9 @@ impl Renderer {
                                 pass.draw_indexed(0..count * 6, (first * 4) as i32, 0..1);
                             }
                         };
-                        quads(pass, &f.text[s], text_quads, entity_quads);
+                        if !pack_polygon_text {
+                            quads(pass, &f.text[s], text_quads, entity_quads);
+                        }
                         if !hdr_gain {
                             quads(
                                 pass,
@@ -12850,7 +12873,7 @@ impl Renderer {
                         }
                     };
                     let has_oit_features = oit::FeatureCounts {
-                        text_quads,
+                        text_quads: if pack_polygon_text { 0 } else { text_quads },
                         crumbling_quads: if hdr_gain {
                             0
                         } else {
@@ -12983,23 +13006,39 @@ impl Renderer {
             // Native world text is an ordinary depth-tested overlay, after
             // particles (also after the OIT composite) and before the hand.
             // Its own geometry is independent of block-entity lifetime.
-            if world_text_quads + world_text_offset_quads > 0 {
+            if world_text_quads + world_text_offset_quads > 0
+                || oit_on && pack_polygon_text && text_quads > 0
+            {
                 pass.stage(self.own_timing.as_mut(), "world text");
-                pass.set_bind_group(0, &self.entity_group, &[]);
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
                 pass.set_vertex_buffer(0, self.entity_buffer.slice(..));
+                if oit_on && pack_polygon_text && text_quads > 0 {
+                    self.draw_world_text(
+                        &mut pass,
+                        core_text::Mode::PolygonOffset,
+                        &self.text_polygon_offset_pipeline,
+                        entity_quads,
+                        text_quads,
+                        posed,
+                    );
+                }
                 let first = base_quads + oit_entity_quads + fluid_quads;
-                for (pipeline, count, offset) in [
-                    (&self.world_text_pipeline, world_text_quads, first),
+                for (mode, pipeline, count, offset) in [
                     (
+                        core_text::Mode::Normal,
+                        &self.world_text_pipeline,
+                        world_text_quads,
+                        first,
+                    ),
+                    (
+                        core_text::Mode::PolygonOffset,
                         &self.text_polygon_offset_pipeline,
                         world_text_offset_quads,
                         first + world_text_quads,
                     ),
                 ] {
                     if count > 0 {
-                        pass.set_pipeline(pipeline);
-                        pass.draw_indexed(0..count * 6, (offset * 4) as i32, 0..1);
+                        self.draw_world_text(&mut pass, mode, pipeline, offset, count, posed);
                     }
                 }
                 pass.set_bind_group(0, &self.group, &[]);
@@ -13067,13 +13106,14 @@ impl Renderer {
             // LevelRenderer.executeSeeThrough, after the rest of the world.
             if see_through_quads > 0 {
                 pass.stage(self.own_timing.as_mut(), "see-through");
-                pass.set_pipeline(&self.see_through_pipeline);
-                self.bind_world_text(&mut pass, true, true);
                 pass.set_vertex_buffer(0, self.entity_buffer.slice(..));
-                pass.draw_indexed(
-                    0..see_through_quads * 6,
-                    ((world_quads + additive_quads + hand_quads) * 4) as i32,
-                    0..1,
+                self.draw_world_text(
+                    &mut pass,
+                    core_text::Mode::SeeThrough,
+                    &self.see_through_pipeline,
+                    world_quads + additive_quads + hand_quads,
+                    see_through_quads,
+                    posed,
                 );
             }
             // Native mods' primitives: after the entities and the rest of the world, into its
@@ -13641,7 +13681,7 @@ impl Renderer {
                 .submit_frame(job, copies.take(), Some(&self.device))
             {
                 Ok(()) => {
-                    self.deferred = Some(offscreen);
+                    self.deferred = Some(offscreen || self.unpaced());
                     self.handed_off = true;
                     self.handed_patches.clone_from(&frame.hud.patches);
                     // The frame's waits for the previous one on the submit thread.
@@ -13798,8 +13838,8 @@ impl Renderer {
         } else if let Some((real, generated)) = fg_frames {
             self.present_generated(real, generated, fg_made);
         }
-        if self.surface.is_none() {
-            // No swapchain paces offscreen frames: keep two on the GPU at most.
+        if self.surface.is_none() || self.unpaced() {
+            // No swapchain paces these frames: keep two on the GPU at most.
             self.in_flight.push_back(submission);
             if !self.paced_elsewhere {
                 self.wait_in_flight();
