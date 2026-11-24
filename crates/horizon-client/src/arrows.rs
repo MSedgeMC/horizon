@@ -1016,9 +1016,10 @@ impl Ticker<'_, '_, '_, '_> {
         let targets = if self.st.dealt_damage { &[] } else { targets };
         let scene = self.scene;
         for (who, b) in targets {
-            if !self.p.can_hit_entity(*who, |owner, target| {
-                scene.can_harm_player.can_harm_player(owner, target)
-            }) || !b.intersects(area)
+            if !b.intersects(area)
+                || !self.p.can_hit_entity(*who, |owner, target| {
+                    scene.can_harm_player.can_harm_player(owner, target)
+                })
             {
                 continue;
             }
