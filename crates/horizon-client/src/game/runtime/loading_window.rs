@@ -101,12 +101,19 @@ pub(super) fn build_renderer(
         .set_text_shader(&renderer.device, atlas.text_shaders.gui.as_deref());
     renderer
         .hud
+        .set_gui_shader(&renderer.device, atlas.gui_shader.as_deref());
+    renderer
+        .hud
         .set_blit_shader(&renderer.device, atlas.blit_shader.as_deref());
     pack.item_renderer
         .prepare_glint_atlas(renderer.device.limits().max_texture_dimension_2d, filtering)?;
     renderer.set_lines_shader(atlas.lines_shader.as_deref());
     renderer.set_world_text_shaders(&atlas.text_shaders);
-    renderer.set_sky_shaders(atlas.sky_shader.as_deref(), atlas.stars_shader.as_deref());
+    renderer.set_sky_shaders(
+        atlas.sky_shader.as_deref(),
+        atlas.stars_shader.as_deref(),
+        atlas.sunrise_shader.as_deref(),
+    );
     renderer.set_lightmap_shader(atlas.lightmap_shader.as_deref());
     renderer.set_custom_sky(&*pack.custom_sky);
     renderer.set_shared_material_maps(&atlas.material_maps);
@@ -346,6 +353,9 @@ pub(super) fn start_game<'a>(
     // Benchmarks measure the game alone.
     if game.options.benchmark.is_none() {
         game.start_mods();
+        if game.options.execution_role.is_client() {
+            game.configure_chat_history();
+        }
     }
     // The initial load's client reload listeners, registered and staged by
     // the loader thread, publish now that the game owns the assets.
@@ -362,7 +372,9 @@ pub(super) fn start_game<'a>(
             control.sender(),
             horizon_client::benchmark::Setup {
                 scenario,
-                started,
+                // The report's startup times count from the process's start, not
+                // from `run`: what `entry` does before it belongs to the start too.
+                started: horizon_client::spans::startup::origin().unwrap_or(started),
                 app: horizon_bench::App {
                     name: "horizon-client".into(),
                     version: horizon_client::crash::version(),

@@ -2475,6 +2475,18 @@ impl Refused {
     pub fn is_cancelled(&self) -> bool {
         self.reason == Self::CANCELLED
     }
+    /// The reason of a pack that found no room in video memory for what it makes as it loads:
+    /// not the pack's fault either, and the same files may load the next time.
+    const NO_ROOM: &str = "video memory is full";
+    pub(super) fn no_room() -> Self {
+        Self {
+            reason: Self::NO_ROOM.into(),
+            notes: Vec::new(),
+        }
+    }
+    pub fn is_no_room(&self) -> bool {
+        self.reason == Self::NO_ROOM
+    }
 }
 
 impl PackPost {
@@ -4652,6 +4664,11 @@ impl PackPost {
             self.mips_valid &= !pass.written;
         }
         self.hand = Some((pass, geometry));
+    }
+
+    /// The pack's `sunPathRotation` in degrees: how far it turns the sky's bodies' path.
+    pub fn sun_path_rotation(&self) -> f32 {
+        self.uniforms.shadow.sun_path_rotation
     }
 
     /// Whether the pack draws the first-person hand itself.
