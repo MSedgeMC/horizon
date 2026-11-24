@@ -1518,13 +1518,27 @@ fn receive_play(
                 // Either way it travels inside `Event::Bundle`, in packet
                 // order, never as its own ingress item ahead of the bundle.
                 let staged = batch.is_some().then(|| Arc::new(Mutex::new(Vec::new())));
-                let delivered = receive_application(
+                let delivered = match receive_application(
                     &endpoint,
                     horizon_protocol::payload_negotiation::Phase::Play,
                     payload,
                     send,
                     staged.as_ref(),
-                )?;
+                ) {
+                    Ok(delivered) => delivered,
+                    // The payload ends the connection. A closed bundle's
+                    // events before it are still staged on `batch`, so
+                    // publish them first, as the Transfer and Disconnect
+                    // arms do; the error return would otherwise drop them.
+                    Err(reason) => {
+                        if let Some(events) = batch.take()
+                            && !events.is_empty()
+                        {
+                            publish_bundle(send, events)?;
+                        }
+                        return Err(reason);
+                    }
+                };
                 if let Some(staged) = staged
                     && let Some(batch) = batch.as_mut()
                 {
@@ -4603,6 +4617,63 @@ mod tests {
         assert!(
             events.take_turn().is_empty(),
             "the disconnect was also published separately"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_payload_error_inside_a_closed_bundle_publishes_the_events_staged_before_it() {
+        let (root, data) = empty_item_data("bundle-payload-error");
+        let (client, server) = horizon_protocol::connection::Pipe::pair();
+        let (mut reader, writer) = Connection::local(client).split();
+        let writer = Arc::new(Mutex::new(Some(QueuedWriter::new(writer).unwrap())));
+        let (send, events) = event_channel();
+        let thread_writer = writer.clone();
+        let thread = std::thread::spawn(move || {
+            receive_play(
+                &mut reader,
+                &thread_writer,
+                &Arc::new(AtomicBool::new(false)),
+                &Language::new(),
+                &send,
+                &Cookies::default(),
+                &crate::lod_net::Inbox::default(),
+                &data,
+                &Arc::new(Mutex::new(None)),
+                &crate::raw_payloads::Transport::empty(),
+            )
+        });
+        let mut server = Connection::local(server);
+        let delimiter = play::Clientbound::BundleDelimiter(Empty).encode();
+        let ping = play::Clientbound::Ping(cfg::Ping { id: 7 }).encode();
+        // The negotiation channel with nothing negotiated: classification
+        // fails, which ends the connection.
+        let unnegotiated = play::Clientbound::CustomPayload(cfg::CustomPayload {
+            channel: horizon_protocol::payload_negotiation::CHANNEL.into(),
+            data: vec![0],
+        })
+        .encode();
+        server.send(&delimiter).unwrap();
+        server.send(&ping).unwrap();
+        server.send(&unnegotiated).unwrap();
+        server.send(&delimiter).unwrap();
+        assert!(
+            thread.join().unwrap().is_err(),
+            "an unnegotiated payload was admitted"
+        );
+        let turn = events.take_turn();
+        assert_eq!(
+            turn.len(),
+            1,
+            "the payload error dropped the staged events instead of publishing them"
+        );
+        let (event, _credit) = turn.into_iter().next().unwrap().into_parts();
+        let Event::Bundle(bundle) = event else {
+            panic!("a closed bundle must stay one polled unit");
+        };
+        assert_eq!(bundle.len(), 1, "the staged ping was lost");
+        assert!(
+            matches!(&bundle[0], Event::Packet(p) if **p == play::Clientbound::Ping(cfg::Ping { id: 7 }))
         );
         std::fs::remove_dir_all(root).unwrap();
     }
