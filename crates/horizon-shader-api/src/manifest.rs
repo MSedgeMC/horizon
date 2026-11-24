@@ -128,6 +128,9 @@ pub struct Manifest {
     pub material_coverage: Coverage,
     /// `[entity] coverage`.
     pub entity_coverage: Coverage,
+    /// 0.2, `[entity] surface`: the entity stage gets `set_surface` and writes the post stage's
+    /// `scene_surface` where an entity shows, as the material stage does for solid terrain.
+    pub entity_surface: bool,
     /// `[frame] fog`.
     pub fog: Fog,
     pub options: Vec<PackOption>,
@@ -159,6 +162,8 @@ pub struct Manifest {
     /// 0.2: the motion guide the post stage's `motion_at` reads, if the pack asks for it;
     /// needs `[[post]]`.
     pub motion: Option<Motion>,
+    /// Whether post passes may read the color and depth before translucent terrain.
+    pub post_opaque: bool,
     /// 0.2: kept resources and compute passes.
     pub kept: crate::kept::Kept,
 }
@@ -174,6 +179,12 @@ pub struct RayTracing {
     /// the pack is built as without the key.
     #[serde(default)]
     pub lights: bool,
+    /// `step = true`: the stages whose files name one of its names (`trace_step`, `RayCandidate`,
+    /// the `candidate_` functions, `RAY_PASS`, `RAY_STOP`, `RAY_END`) get `trace_step`, which
+    /// runs one ray query and hands every candidate to the pack's own `ray_step` with the pack's
+    /// own `RayState`, and the names are taken. Off, the pack is built as without the key.
+    #[serde(default)]
+    pub step: bool,
 }
 
 /// `[motion]` (0.2): the pack's post passes get `scene_motion`, `motion_at`, `MotionData` and
@@ -427,6 +438,10 @@ pub struct Stage {
     /// `Manifest::material_coverage` and `Manifest::entity_coverage`.
     #[serde(default)]
     pub coverage: Option<String>,
+    /// 0.2, the entity stage only: whether it gets `set_surface` and writes the post stage's
+    /// `scene_surface` where an entity shows (false when absent), `Manifest::entity_surface`.
+    #[serde(default)]
+    pub surface: Option<bool>,
     /// The sky stage only: whether Minecraft's clouds still draw (true when absent); false for
     /// a pack whose sky draws its own.
     #[serde(default)]
@@ -443,6 +458,12 @@ pub struct Stage {
     /// false for a pack whose sky draws its own.
     #[serde(default)]
     pub stars: Option<bool>,
+    /// The sky stage only: how far the sun's and moon's path is tilted, in degrees about the
+    /// world's X axis (0 when absent), as `shaders/` packs' `sunPathRotation`: it turns
+    /// `sun_direction`, `moon_direction`, `light_direction`, the shadow camera and the sun, moon
+    /// and stars Minecraft draws over the sky. Within `SUN_PATH_ROTATIONS`.
+    #[serde(default)]
+    pub sun_path_rotation: Option<f32>,
     /// A post pass only: its target's size against the world's, 1, 0.5 or 0.25 (1 when
     /// absent); below 1 the pass writes an `output`.
     #[serde(default)]
@@ -471,6 +492,8 @@ pub struct Stage {
 
 /// The scales a post pass may draw at.
 pub const POST_SCALES: [f32; 3] = [1.0, 0.5, 0.25];
+/// The tilts `[sky] sun_path_rotation` may take, in degrees.
+pub const SUN_PATH_ROTATIONS: std::ops::RangeInclusive<f32> = -90.0..=90.0;
 /// The most `[[post]] output`s a pack may write: bindings 32 to 47, below the scene's.
 pub const MAX_POST_TARGETS: usize = 16;
 /// The memory a pack's post targets may take, in render-size `rgba16float` textures: an
@@ -585,6 +608,8 @@ struct Raw {
     displacement: Option<RawDisplacement>,
     ray_tracing: Option<RayTracing>,
     motion: Option<Motion>,
+    #[serde(default)]
+    post_opaque: bool,
     kept: Option<crate::kept::RawKept>,
     #[serde(default)]
     resource: Vec<crate::kept::RawResource>,
@@ -624,7 +649,8 @@ struct RawBudget {
 }
 
 /// Whether `name` is taken from a pack's own WGSL names: by the post prelude's resources or, under
-/// `[ray_tracing]`, by its functions (the light sources' only with `lights = true`), or, under
+/// `[ray_tracing]`, by its functions (the light sources' only with `lights = true`, the step's
+/// only with `step = true`), or, under
 /// `[motion]`, by the motion guide's `scene_motion` and `motion_at`, or as a word WGSL reserves.
 pub(crate) fn taken(name: &str, ray_tracing: Option<&RayTracing>, motion: bool) -> bool {
     // The post prelude's functions `[ray_tracing]` brings.
@@ -658,6 +684,7 @@ pub(crate) fn taken(name: &str, ray_tracing: Option<&RayTracing>, motion: bool) 
     reserved.contains(&name)
         || (ray_tracing.is_some() && traced.contains(&name))
         || (ray_tracing.is_some_and(|r| r.lights) && crate::stages::LIGHT_NAMES.contains(&name))
+        || (ray_tracing.is_some_and(|r| r.step) && crate::stages::STEP_NAMES.contains(&name))
         || (motion && guide.contains(&name))
         || naga::keywords::wgsl::RESERVED.contains(&name)
 }
@@ -869,6 +896,20 @@ impl Manifest {
             .iter()
             .chain(&raw.material)
             .chain(&raw.vertex)
+            .chain(&raw.weather)
+            .chain(&raw.post)
+            .chain(&raw.tonemap)
+            .chain(&raw.before_world)
+            .any(|s| s.surface.is_some())
+        {
+            return Err(err("`surface` is a key of [entity] only".into()));
+        }
+        let entity_surface = raw.entity.as_ref().and_then(|s| s.surface) == Some(true);
+        if raw
+            .sky
+            .iter()
+            .chain(&raw.material)
+            .chain(&raw.vertex)
             .chain(&raw.tonemap)
             .chain(&raw.entity)
             .chain(&raw.before_world)
@@ -938,6 +979,9 @@ impl Manifest {
             ));
         }
         let passes = raw.post.iter().filter(|p| !p.compute).count();
+        if raw.post_opaque && passes == 0 {
+            return Err(err("post_opaque needs a raster [[post]] pass".into()));
+        }
         if passes > MAX_POST_PASSES {
             return Err(err(format!(
                 "{passes} post passes; a pack may chain {MAX_POST_PASSES}"
@@ -963,7 +1007,11 @@ impl Manifest {
             }
         }
         let sky_only = |s: &Stage| {
-            s.clouds.is_some() || s.sun.is_some() || s.moon.is_some() || s.stars.is_some()
+            s.clouds.is_some()
+                || s.sun.is_some()
+                || s.moon.is_some()
+                || s.stars.is_some()
+                || s.sun_path_rotation.is_some()
         };
         if raw
             .material
@@ -977,8 +1025,18 @@ impl Manifest {
             .any(sky_only)
         {
             return Err(err(
-                "`clouds`, `sun`, `moon` and `stars` are keys of [sky] only".into(),
+                "`clouds`, `sun`, `moon`, `stars` and `sun_path_rotation` are keys of [sky] only"
+                    .into(),
             ));
+        }
+        if let Some(tilt) = raw.sky.as_ref().and_then(|s| s.sun_path_rotation)
+            && !SUN_PATH_ROTATIONS.contains(&tilt)
+        {
+            return Err(err(format!(
+                "[sky] sun_path_rotation {tilt} is not in {}..={}",
+                SUN_PATH_ROTATIONS.start(),
+                SUN_PATH_ROTATIONS.end()
+            )));
         }
         if raw.options.len() > MAX_OPTIONS {
             return Err(err(format!(
@@ -1292,6 +1350,7 @@ impl Manifest {
             primaries,
             material_coverage,
             entity_coverage,
+            entity_surface,
             fog,
             options,
             pages,
@@ -1306,6 +1365,7 @@ impl Manifest {
             displacement,
             ray_tracing: raw.ray_tracing,
             motion: raw.motion,
+            post_opaque: raw.post_opaque,
             kept,
         })
     }

@@ -281,6 +281,7 @@ pub fn tick(m: &mut Mob, now: i64) {
 /// A hurt sleeper wakes up (`LivingEntity.hurtServer`; the `checkBedExists`
 /// wake runs earlier in `LivingEntity.tick`, for AI-less mobs too), and lies
 /// the way its bed faces (`getBedOrientation`). The brain does the rest.
+#[horizon_mod_api_macros::replaceable]
 pub fn ai_step(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     if sleeping(m) {
         let bed = sleeping_pos(m).filter(|p| w.block_name(p[0], p[1], p[2]).ends_with("_bed"));
@@ -372,8 +373,9 @@ pub struct Ext {
     /// `CanContinueSleepingEvent.mayContinueSleeping`, set by the game before the tick
     /// when a native mod may overwrite the bed check; empty means vanilla's.
     pub may_continue_sleeping: Option<bool>,
-    /// `ZombieVillager.villagerDataFinalized`: only a save with
-    /// `VillagerDataFinalized` or `VillagerData` sets it.
+    /// `Villager.DATA_VILLAGER_DATA_FINALIZED` / `ZombieVillager.villagerDataFinalized`:
+    /// false until `finalizeVillagerType` runs or a save carries
+    /// `VillagerDataFinalized: 1b` or `VillagerData`.
     pub data_finalized: bool,
     /// The villager's brain, built at its first tick.
     pub brain: Option<Box<super::villager_brain::Brain>>,
@@ -780,6 +782,8 @@ pub struct Meeting {
     pub eye: f64,
     pub to: horizon_core::geometry::Vec3,
     pub gossiped: bool,
+    /// How many gossips `GossipContainer.transferFrom` picked up.
+    pub new_gossip: usize,
 }
 /// `TradeWithVillager.tick` for villagers `a` and `b` (indices into `mobs`):
 /// `Villager.gossip` (at most once in 1200 ticks for both), then surplus
@@ -796,12 +800,13 @@ pub fn meet(
     let max_stack = |item: &str| items.get(item).map_or(64, |i| i.max_stack);
     let ready = ext(&mobs[a]).is_none_or(|e| e.can_gossip(now))
         && ext(&mobs[b]).is_none_or(|e| e.can_gossip(now));
+    let mut new_gossip = 0;
     if ready {
         let source = ext(&mobs[b]).map(|e| e.gossips.clone()).unwrap_or_default();
         let me = &mut mobs[a];
         let mut random = me.random.clone();
         let e = ext_mut(me);
-        e.gossips.transfer_from(&source, &mut random, 10);
+        new_gossip = e.gossips.transfer_from(&source, &mut random, 10);
         e.last_gossip_time = now;
         me.random = random;
         ext_mut(&mut mobs[b]).last_gossip_time = now;
@@ -846,6 +851,7 @@ pub fn meet(
         eye: mobs[a].eye_y(),
         to: mobs[b].position,
         gossiped: ready,
+        new_gossip,
     }
 }
 /// `Villager.spawnGolemIfNeeded` up to the spawn: villager `i` wants a golem
@@ -1148,6 +1154,10 @@ pub fn read_nbt(m: &mut Mob, tag: &horizon_core::nbt::Tag) {
         |v| int(Some(v)),
     );
     let e = ext_mut(m);
+    // `Villager.readAdditionalSaveData`: finalized iff `VillagerDataFinalized`
+    // is true or `VillagerData` decoded from the save.
+    e.data_finalized = matches!(tag.get("VillagerData"), Some(Tag::Compound(_)))
+        || crate::entity_nbt::flag(tag, "VillagerDataFinalized");
     // `getByteOr("FoodLevel", 0)`: any number, narrowed to a byte.
     e.food_level = i32::from(int(tag.get("FoodLevel")).unwrap_or(0) as i8);
     e.gossips = tag
@@ -1851,5 +1861,33 @@ mod tests {
         assert_eq!(hungry.villager.as_ref().map(|v| v.food_points), Some(0));
         assert!(!hungry.in_love && hungry.villager.unwrap().wants_more_food());
         assert!(can_breed(&m, &vanilla) && !can_breed(&m, &starved));
+    }
+
+    #[test]
+    fn villager_data_finalized_matches_vanilla_load_and_save() {
+        use horizon_core::nbt::Tag;
+        let finalized_byte = |m: &Mob| {
+            crate::entity_nbt::mob_to_nbt(m, [1, 2, 3, 4], None, None, |_| None)
+                .get("VillagerDataFinalized")
+                .cloned()
+        };
+        let mut bare = villager();
+        assert_eq!(finalized_byte(&bare), Some(Tag::Byte(0)));
+        let empty = horizon_core::nbt::parse_snbt("{NoAI:1b}").unwrap().0;
+        read_nbt(&mut bare, &empty);
+        assert_eq!(finalized_byte(&bare), Some(Tag::Byte(0)));
+
+        let with_data = horizon_core::nbt::parse_snbt("{VillagerData:{}}")
+            .unwrap()
+            .0;
+        read_nbt(&mut bare, &with_data);
+        assert_eq!(finalized_byte(&bare), Some(Tag::Byte(1)));
+
+        let mut flagged = villager();
+        let flag_tag = horizon_core::nbt::parse_snbt("{VillagerDataFinalized:1b}")
+            .unwrap()
+            .0;
+        read_nbt(&mut flagged, &flag_tag);
+        assert_eq!(finalized_byte(&flagged), Some(Tag::Byte(1)));
     }
 }
