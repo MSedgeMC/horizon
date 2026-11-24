@@ -3,7 +3,7 @@
 //! first starts on a world from those versions, before the json lists are
 //! loaded, in `DedicatedServer.convertOldUsers`' order.
 use super::{
-    profiles,
+    profiles::{self, NoAnswer},
     user_lists::{
         BanEntry, BanList, Entry, IpBanList, NameAndId, OpEntry, OpList, UserList, WhiteEntry,
         WhiteList, parse_date, read_utf8,
@@ -49,27 +49,48 @@ fn read_old_lines(text: &str) -> Vec<String> {
     text.split(['\n', '\r']).map(str::to_owned).collect()
 }
 
+/// Where an online conversion asks for profiles: `None` for an offline server.
+type Lookup<'a> = Option<&'a str>;
+
+/// The discovery document an online server's conversion asks, `None` offline.
+fn lookup(online: bool) -> Option<String> {
+    online.then(profiles::discovery_url)
+}
+
 /// `OldUsersConverter.lookupPlayers` with its callback's lookup: the names that
-/// are not empty, each resolved as the server resolves a name
-/// (`profiles::resolve`): the offline profile without authentication, else the
-/// account the services know. A name the services do not know is left out with
-/// vanilla's warning. The callback's `nameToIdCache().add` is not done here.
+/// are not empty, each the offline profile without authentication, else the
+/// account the services know (asked for the name in lower case). A name the
+/// services do not know (`ProfileNotFoundException`) is left out with vanilla's
+/// warning; any other failure is vanilla's `ConversionError`, which ends the
+/// conversion before the json list is saved. The callback's
+/// `nameToIdCache().add` is not done here.
 fn lookup_players(
     names: impl IntoIterator<Item = String>,
-    online: bool,
+    discovery: Lookup<'_>,
     what: &str,
-) -> Vec<NameAndId> {
-    names
-        .into_iter()
-        .filter(|name| !name.is_empty())
-        .filter_map(|name| {
-            let found = profiles::resolve(&name, online);
-            if found.is_none() {
-                log::warn!("Could not lookup {what} entry for {name}");
+) -> Result<Vec<NameAndId>, NoAnswer> {
+    let mut found = Vec::new();
+    for name in names.into_iter().filter(|name| !name.is_empty()) {
+        let Some(discovery) = discovery else {
+            found.push(NameAndId::offline(&name));
+            continue;
+        };
+        // The profile repository skips names that are not valid player names.
+        let answer = if profiles::valid_player_name(&name) {
+            profiles::look_up_by_name(discovery, &name.to_ascii_lowercase())
+        } else {
+            Ok(None)
+        };
+        match answer {
+            Ok(Some(user)) => found.push(user),
+            Ok(None) => log::warn!("Could not lookup {what} entry for {name}"),
+            Err(e) => {
+                log::warn!("Could not lookup {what} entry for {name}: the services {e}");
+                return Err(e);
             }
-            found
-        })
-        .collect()
+        }
+    }
+    Ok(found)
 }
 
 /// The shell of one conversion (`convertUserBanlist`, `convertIpBanlist`,
@@ -77,13 +98,14 @@ fn lookup_players(
 /// list's constructor and `load` do (a broken existing file is only warned
 /// about), then save it and rename the old file to `.converted`
 /// (`renameOldFile`, whose result is ignored). False on a read or save failure,
-/// which vanilla retries.
+/// or a profile lookup the services did not answer, which vanilla retries: the
+/// json list is then not written and the old file stays for the next start.
 fn convert<E: Entry>(
     dir: &Path,
     old_name: &str,
     mut list: UserList<E>,
     what: &str,
-    fill: impl FnOnce(&mut UserList<E>, &str),
+    fill: impl FnOnce(&mut UserList<E>, &str) -> Result<(), NoAnswer>,
 ) -> bool {
     let old = dir.join(old_name);
     if !old.is_file() {
@@ -94,14 +116,17 @@ fn convert<E: Entry>(
     {
         log::warn!("Could not load existing file {}: {e}", list.file.display());
     }
-    let text = match read_utf8(&old) {
-        Ok(text) => text,
+    let text = match std::fs::read(&old) {
+        Ok(bytes) => read_utf8(&bytes),
         Err(e) => {
             log::warn!("Could not parse old {what} to convert it! {e}");
             return false;
         }
     };
-    fill(&mut list, &text);
+    if let Err(e) = fill(&mut list, &text) {
+        log::warn!("Could not convert {what} because of a lookup failure: the services {e}");
+        return false;
+    }
     if let Err(e) = list.save() {
         log::warn!("Could not parse old {what} to convert it! {e}");
         return false;
@@ -122,6 +147,7 @@ pub fn convert_user_banlist(online: bool) -> bool {
 /// The profile lookup is `server.usesAuthentication()`: an offline server makes
 /// the offline profile of the lower-case key, an online one asks the services.
 pub fn convert_user_banlist_in(dir: &Path, online: bool) -> bool {
+    let discovery = lookup(online);
     convert(
         dir,
         OLD_USER_BAN_LIST,
@@ -133,12 +159,15 @@ pub fn convert_user_banlist_in(dir: &Path, online: bool) -> bool {
                 let source = parts.get(2).cloned();
                 let expires = parts.get(3).and_then(|s| parse_date(s));
                 let reason = parts.get(4).cloned();
-                if let Some(user) = lookup_players([key], online, "user banlist").pop() {
+                if let Some(user) =
+                    lookup_players([key], discovery.as_deref(), "user banlist")?.pop()
+                {
                     bans.add(BanEntry::with_created(
                         user, created, source, expires, reason,
                     ));
                 }
             }
+            Ok(())
         },
     )
 }
@@ -165,6 +194,7 @@ pub fn convert_ip_banlist_in(dir: &Path) -> bool {
                 let reason = parts.get(4).cloned();
                 bans.add(BanEntry::with_created(ip, created, source, expires, reason));
             }
+            Ok(())
         },
     )
 }
@@ -180,19 +210,24 @@ pub fn convert_ops_list(online: bool, level: i32) -> bool {
 /// `server.operatorUserPermissions()` as its level and does not bypass the
 /// player limit, as vanilla's `ServerOpListEntry(profile, permissions, false)`.
 pub fn convert_ops_list_in(dir: &Path, online: bool, level: i32) -> bool {
+    convert_ops_list_with(dir, lookup(online).as_deref(), level)
+}
+
+fn convert_ops_list_with(dir: &Path, discovery: Lookup<'_>, level: i32) -> bool {
     convert(
         dir,
         OLD_OP_LIST,
         OpList::new(dir.join("ops.json")),
         "oplist",
         |ops, text| {
-            for user in lookup_players(read_old_lines(text), online, "oplist") {
+            for user in lookup_players(read_old_lines(text), discovery, "oplist")? {
                 ops.add(OpEntry {
                     user,
                     level,
                     bypasses_player_limit: false,
                 });
             }
+            Ok(())
         },
     )
 }
@@ -206,15 +241,17 @@ pub fn convert_white_list(online: bool) -> bool {
 /// Convert `dir/white-list.txt` into `dir/whitelist.json`, keeping the entries
 /// the json file already has, then rename the old file to `.converted`.
 pub fn convert_white_list_in(dir: &Path, online: bool) -> bool {
+    let discovery = lookup(online);
     convert(
         dir,
         OLD_WHITE_LIST,
         WhiteList::new(dir.join("whitelist.json")),
         "whitelist",
         |white, text| {
-            for user in lookup_players(read_old_lines(text), online, "whitelist") {
+            for user in lookup_players(read_old_lines(text), discovery.as_deref(), "whitelist")? {
                 white.add(WhiteEntry { user });
             }
+            Ok(())
         },
     )
 }
@@ -303,6 +340,30 @@ mod tests {
         assert_eq!(names, ["Alex"]);
         assert!(written("whitelist.json").contains(&uuid_string(NameAndId::offline("Alex").id)));
 
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An online conversion whose profile lookup gets no answer writes no json
+    /// list and keeps the old file for the next start, as vanilla's
+    /// `ConversionError` makes `convertOpsList` return false.
+    #[test]
+    fn a_failed_lookup_keeps_the_old_list() {
+        let dir = std::env::temp_dir().join(format!("horizon-old-ops-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join(OLD_OP_LIST), "Notch\nJeb_\n").unwrap();
+        // Nothing listens on port 1, so the discovery request fails at once.
+        assert!(!convert_ops_list_with(
+            &dir,
+            Some("http://127.0.0.1:1/discovery"),
+            4
+        ));
+        assert_eq!(
+            std::fs::read_to_string(dir.join(OLD_OP_LIST)).unwrap(),
+            "Notch\nJeb_\n"
+        );
+        assert!(!dir.join("ops.json").exists());
+        assert!(!dir.join("ops.txt.converted").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
